@@ -3,6 +3,7 @@ import { Handle, Position, NodeProps, NodeResizer, useUpdateNodeInternals } from
 import { UserFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
 import { sendPrompt } from '../../lib/tauri';
+import { MarkdownContent } from './MarkdownContent';
 import './styles.css';
 
 type UserNodeProps = NodeProps & {
@@ -142,10 +143,18 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       ) : (
         <div
           className={`node-content ${isExpanded ? 'expanded' : ''}`}
-          onClick={hasMore ? handleExpandClick : undefined}
+          onClick={hasMore && !isExpanded ? handleExpandClick : undefined}
         >
-          {isExpanded ? content : preview}
-          {hasMore && !isExpanded && '...'}
+          {content ? (
+            isExpanded ? (
+              <MarkdownContent content={content} />
+            ) : (
+              <>
+                {preview}
+                {hasMore && '...'}
+              </>
+            )
+          ) : null}
         </div>
       )}
 

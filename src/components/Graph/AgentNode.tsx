@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Handle, Position, NodeProps, NodeResizer, useUpdateNodeInternals } from '@xyflow/react';
 import { AgentFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
+import { MarkdownContent } from './MarkdownContent';
 import './styles.css';
 
 type AgentNodeProps = NodeProps & {
@@ -60,13 +61,17 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
 
       <div
         className={`node-content ${isExpanded ? 'expanded' : ''}`}
-        onClick={hasMore ? handleExpandClick : undefined}
+        onClick={hasMore && !isExpanded ? handleExpandClick : undefined}
       >
         {content ? (
-          <>
-            {isExpanded ? content : preview}
-            {hasMore && !isExpanded && '...'}
-          </>
+          isExpanded ? (
+            <MarkdownContent content={content} />
+          ) : (
+            <>
+              {preview}
+              {hasMore && '...'}
+            </>
+          )
         ) : (
           <span className="node-placeholder">
             {isStreaming ? 'Waiting for response...' : 'Empty response'}
