@@ -1,0 +1,232 @@
+.graph-container {
+  flex: 1;
+  height: 100%;
+}
+
+/* Base node styles */
+.thought-node {
+  background: #1a1a2e;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 220px;
+  max-width: 320px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.thought-node:hover {
+  border-color: #555;
+}
+
+/* User node - blue accent */
+.user-node {
+  border-color: #3b82f6;
+}
+
+.user-node:hover {
+  border-color: #60a5fa;
+}
+
+.user-node.selected {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.user-node.editing {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+}
+
+/* Agent node - green accent */
+.agent-node {
+  border-color: #22c55e;
+}
+
+.agent-node:hover {
+  border-color: #4ade80;
+}
+
+.agent-node.selected {
+  border-color: #4ade80;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+}
+
+.agent-node.streaming {
+  border-color: #86efac;
+  animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2); }
+  50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.4); }
+}
+
+/* Node header */
+.node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.node-role {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.user-node .node-role {
+  color: #60a5fa;
+}
+
+.agent-node .node-role {
+  color: #4ade80;
+}
+
+.streaming-badge {
+  font-size: 10px;
+  color: #4ade80;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Node content */
+.node-content {
+  font-size: 13px;
+  color: #ccc;
+  line-height: 1.5;
+  max-height: 80px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.node-content.expanded {
+  max-height: none;
+  overflow: visible;
+}
+
+.node-placeholder {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+/* Textarea for editing */
+.node-textarea {
+  width: 100%;
+  min-height: 80px;
+  max-height: 200px;
+  background: #0d0d1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  padding: 8px;
+  resize: vertical;
+}
+
+.node-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.node-textarea::placeholder {
+  color: #666;
+}
+
+/* Buttons */
+.generate-button,
+.continue-button {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.generate-button {
+  background: #3b82f6;
+  color: white;
+}
+
+.generate-button:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.continue-button {
+  background: #22c55e;
+  color: white;
+}
+
+.continue-button:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.generate-button:disabled,
+.continue-button:disabled {
+  background: #4b5563;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ReactFlow controls */
+.react-flow__controls {
+  background: #1a1a2e;
+  border: 1px solid #333;
+  border-radius: 8px;
+}
+
+.react-flow__controls-button {
+  background: #1a1a2e;
+  border-color: #333;
+  fill: #888;
+}
+
+.react-flow__controls-button:hover {
+  background: #252538;
+}
+
+/* Edge styling */
+.react-flow__edge-path {
+  stroke: #555;
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #888;
+}
+
+/* Handle styling */
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: #555;
+  border: 2px solid #1a1a2e;
+}
+
+.react-flow__handle:hover {
+  background: #888;
+}
+
+.user-node .react-flow__handle {
+  background: #3b82f6;
+}
+
+.agent-node .react-flow__handle {
+  background: #22c55e;
+}
