@@ -4,7 +4,15 @@ import { UserFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
 import { sendPrompt } from '../../lib/tauri';
 import { MarkdownContent } from './MarkdownContent';
+import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
 import './styles.css';
+
+interface AutocompleteState {
+  isOpen: boolean;
+  query: string;
+  position: { top: number; left: number };
+  triggerIndex: number;
+}
 
 type UserNodeProps = NodeProps & {
   data: UserFlowNodeData;
@@ -14,7 +22,9 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const { nodeData } = data;
   const content = nodeData.content;
   const [isExpanded, setIsExpanded] = useState(false);
+  const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const autocompleteRef = useRef<FileAutocompleteRef>(null);
   const updateNodeInternals = useUpdateNodeInternals();
 
   // Notify ReactFlow when node dimensions change due to expansion
@@ -52,10 +62,58 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    updateNodeContent(id, e.target.value);
+    const newValue = e.target.value;
+    const cursorPos = e.target.selectionStart;
+
+    updateNodeContent(id, newValue);
+
+    // Check for @ trigger
+    const textBeforeCursor = newValue.slice(0, cursorPos);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+
+    console.log('[Autocomplete] textBeforeCursor:', textBeforeCursor, 'atIndex:', atIndex);
+
+    if (atIndex !== -1) {
+      // Check if @ is at start or preceded by whitespace
+      const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
+      if (/\s/.test(charBefore) || atIndex === 0) {
+        const query = textBeforeCursor.slice(atIndex + 1);
+
+        console.log('[Autocomplete] Valid @ found, query:', query);
+
+        // Only show if query doesn't contain whitespace (still typing the mention)
+        if (!/\s/.test(query)) {
+          const textarea = e.target;
+          const rect = textarea.getBoundingClientRect();
+          const position = { top: rect.bottom + 4, left: rect.left };
+          console.log('[Autocomplete] Setting autocomplete state, position:', position);
+          setAutocomplete({
+            isOpen: true,
+            query,
+            position,
+            triggerIndex: atIndex,
+          });
+          return;
+        }
+      }
+    }
+
+    // Close autocomplete if no valid trigger
+    if (autocomplete?.isOpen) {
+      setAutocomplete(null);
+    }
   };
 
-  const handleBlur = () => {
+  const handleBlur = (e: React.FocusEvent) => {
+    // Check if focus is moving to autocomplete
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    if (relatedTarget?.closest('.file-autocomplete')) {
+      return; // Don't close editing
+    }
+
+    // Close autocomplete on blur
+    setAutocomplete(null);
+
     // Only exit editing if there's content
     if (content.trim()) {
       setEditing(null);
@@ -63,13 +121,22 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Let autocomplete handle keys first if open
+    if (autocomplete?.isOpen && autocompleteRef.current) {
+      const handled = autocompleteRef.current.handleKeyDown(e.nativeEvent);
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
+    }
+
     // Cmd/Ctrl + Enter to submit
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       handleGenerate();
     }
-    // Escape to exit editing
-    if (e.key === 'Escape') {
+    // Escape to exit editing (only if autocomplete not open)
+    if (e.key === 'Escape' && !autocomplete?.isOpen) {
       setEditing(null);
     }
   };
@@ -113,6 +180,29 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     setIsExpanded(!isExpanded);
   };
 
+  const handleFileSelect = (filePath: string) => {
+    if (!autocomplete || !textareaRef.current) return;
+
+    const textarea = textareaRef.current;
+    const beforeAt = content.slice(0, autocomplete.triggerIndex);
+    const afterCursor = content.slice(textarea.selectionStart);
+
+    // Format: @/relative/path/to/file.md
+    const mention = `@/${filePath}`;
+    const newContent = beforeAt + mention + afterCursor;
+
+    updateNodeContent(id, newContent);
+    setAutocomplete(null);
+
+    // Position cursor after the mention
+    const newCursorPos = autocomplete.triggerIndex + mention.length;
+    setTimeout(() => {
+      textarea.selectionStart = newCursorPos;
+      textarea.selectionEnd = newCursorPos;
+      textarea.focus();
+    }, 0);
+  };
+
   return (
     <div
       className={`thought-node user-node ${selected ? 'selected' : ''} ${isEditing ? 'editing' : ''}`}
@@ -131,15 +221,28 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       </div>
 
       {isEditing ? (
-        <textarea
-          ref={textareaRef}
-          className="node-textarea"
-          value={content}
-          onChange={handleContentChange}
-          onBlur={handleBlur}
-          onKeyDown={handleKeyDown}
-          placeholder="Enter your message..."
-        />
+        <>
+          <textarea
+            ref={textareaRef}
+            className="node-textarea"
+            value={content}
+            onChange={handleContentChange}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder="Enter your message... (@ to mention files)"
+          />
+          {console.log('[UserNode] autocomplete state:', autocomplete)}
+          {autocomplete?.isOpen && (
+            <FileAutocomplete
+              ref={autocompleteRef}
+              isOpen={autocomplete.isOpen}
+              query={autocomplete.query}
+              position={autocomplete.position}
+              onSelect={handleFileSelect}
+              onClose={() => setAutocomplete(null)}
+            />
+          )}
+        </>
       ) : (
         <div
           className={`node-content ${isExpanded ? 'expanded' : ''}`}

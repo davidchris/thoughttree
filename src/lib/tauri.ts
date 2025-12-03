@@ -81,3 +81,7 @@ export async function respondToPermission(requestId: string, optionId: string): 
 export async function checkAcpAvailable(): Promise<boolean> {
   return invoke<boolean>('check_acp_available');
 }
+
+export async function searchFiles(query: string, limit?: number): Promise<string[]> {
+  return invoke<string[]>('search_files', { query, limit });
+}

@@ -684,6 +684,58 @@ async fn export_markdown(app: AppHandle, content: String, default_name: String) 
     }
 }
 
+#[tauri::command]
+async fn search_files(
+    app: AppHandle,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<String>, String> {
+    // Get notes directory from config
+    let notes_directory = {
+        let store = app
+            .store("config.json")
+            .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+        store
+            .get("notes_directory")
+            .and_then(|v| v.as_str().map(PathBuf::from))
+            .ok_or_else(|| "Notes directory not configured".to_string())?
+    };
+
+    let max_results = limit.unwrap_or(20);
+
+    // Use fd for fast gitignore-respecting file search
+    // If query is empty, use "." to match all files
+    let search_pattern = if query.is_empty() { ".".to_string() } else { query };
+
+    let output = std::process::Command::new("fd")
+        .args([
+            "--type",
+            "f",
+            "--follow",
+            "--max-results",
+            &max_results.to_string(),
+            &search_pattern,
+        ])
+        .current_dir(&notes_directory)
+        .output()
+        .map_err(|e| format!("Failed to execute fd: {}", e))?;
+
+    if !output.status.success() {
+        // fd returns non-zero for no matches, which is fine
+        return Ok(vec![]);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let files: Vec<String> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect();
+
+    Ok(files)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
@@ -713,6 +765,8 @@ pub fn run() {
             new_project_dialog,
             open_project_dialog,
             export_markdown,
+            // File search
+            search_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
