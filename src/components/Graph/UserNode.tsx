@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
 import { UserFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
 import { sendPrompt } from '../../lib/tauri';
@@ -111,6 +111,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       className={`thought-node user-node ${selected ? 'selected' : ''} ${isEditing ? 'editing' : ''}`}
       onDoubleClick={handleDoubleClick}
     >
+      <NodeResizer
+        minWidth={220}
+        minHeight={100}
+        isVisible={selected}
+        handleClassName="node-resize-handle"
+      />
       <Handle type="target" position={Position.Top} />
 
       <div className="node-header">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
 import { AgentFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
 import './styles.css';
@@ -39,6 +39,12 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
     <div
       className={`thought-node agent-node ${selected ? 'selected' : ''} ${isStreaming ? 'streaming' : ''}`}
     >
+      <NodeResizer
+        minWidth={220}
+        minHeight={100}
+        isVisible={selected}
+        handleClassName="node-resize-handle"
+      />
       <Handle type="target" position={Position.Top} />
 
       <div className="node-header">
