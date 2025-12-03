@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
+import { useState, useEffect } from 'react';
+import { Handle, Position, NodeProps, NodeResizer, useUpdateNodeInternals } from '@xyflow/react';
 import { AgentFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
 import './styles.css';
@@ -12,6 +12,12 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
   const { nodeData } = data;
   const content = nodeData.content;
   const [isExpanded, setIsExpanded] = useState(false);
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  // Notify ReactFlow when node dimensions change due to expansion
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [isExpanded, id, updateNodeInternals]);
 
   // Subscribe directly to store for streaming state (fixes reactivity issue)
   const streamingNodeId = useGraphStore((state) => state.streamingNodeId);

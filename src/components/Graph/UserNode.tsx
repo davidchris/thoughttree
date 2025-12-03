@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps, NodeResizer } from '@xyflow/react';
+import { Handle, Position, NodeProps, NodeResizer, useUpdateNodeInternals } from '@xyflow/react';
 import { UserFlowNodeData } from '../../types';
 import { useGraphStore } from '../../store/useGraphStore';
 import { sendPrompt } from '../../lib/tauri';
@@ -14,6 +14,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const content = nodeData.content;
   const [isExpanded, setIsExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  // Notify ReactFlow when node dimensions change due to expansion
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [isExpanded, id, updateNodeInternals]);
 
   const {
     editingNodeId,
