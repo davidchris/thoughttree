@@ -217,8 +217,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       onDoubleClick={handleDoubleClick}
     >
       <NodeResizer
-        minWidth={isEditing ? 220 : 150}
-        minHeight={isEditing ? 100 : 60}
+        minWidth={isEditing ? 220 : 120}
+        minHeight={isEditing ? 100 : 120}
         isVisible={selected}
         handleClassName="node-resize-handle"
       />

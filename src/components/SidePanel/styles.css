@@ -101,3 +101,70 @@ body.resizing {
   color: #666;
   font-style: italic;
 }
+
+/* Actions container */
+.side-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Edit button */
+.side-panel-edit-button {
+  background: none;
+  border: 1px solid #444;
+  color: #888;
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.side-panel-edit-button:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+/* Done button */
+.side-panel-done-button {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid #22c55e;
+  color: #4ade80;
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.side-panel-done-button:hover {
+  background: rgba(34, 197, 94, 0.3);
+}
+
+/* Textarea for editing */
+.side-panel-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  background: #0d0d1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+  padding: 12px;
+  resize: none;
+  box-sizing: border-box;
+}
+
+.side-panel-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.side-panel-textarea::placeholder {
+  color: #666;
+}

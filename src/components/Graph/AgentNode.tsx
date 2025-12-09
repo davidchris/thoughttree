@@ -46,8 +46,8 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
       className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} collapsed`}
     >
       <NodeResizer
-        minWidth={150}
-        minHeight={60}
+        minWidth={120}
+        minHeight={120}
         isVisible={selected}
         handleClassName="node-resize-handle"
       />
