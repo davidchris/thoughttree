@@ -16,9 +16,22 @@ export function Toolbar() {
     newProject,
     exportSubgraph,
     buildConversationContext,
+    nodeData,
+    createUserNodeDownstream,
+    streamingNodeId,
   } = useGraphStore();
 
   const [isSaving, setIsSaving] = useState(false);
+
+  // Check if selected node is an agent node (can reply)
+  const selectedNodeData = selectedNodeId ? nodeData.get(selectedNodeId) : null;
+  const canReply = selectedNodeData?.role === 'assistant' && !streamingNodeId;
+
+  const handleReply = () => {
+    if (selectedNodeId && canReply) {
+      createUserNodeDownstream(selectedNodeId);
+    }
+  };
 
   // Get project name from path
   const projectName = projectPath
@@ -156,6 +169,14 @@ export function Toolbar() {
           title="Save Project"
         >
           {isSaving ? 'Saving...' : 'Save'}
+        </button>
+        <span className="toolbar-divider" />
+        <button
+          onClick={handleReply}
+          disabled={!canReply}
+          title="Reply to selected agent node (Enter)"
+        >
+          Reply
         </button>
         <span className="toolbar-divider" />
         <button

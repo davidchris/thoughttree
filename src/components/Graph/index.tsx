@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -8,11 +8,13 @@ import {
   useReactFlow,
   addEdge,
   type OnConnectEnd,
+  type Connection,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { UserNode } from './UserNode';
 import { AgentNode } from './AgentNode';
+import { ContextMenu } from './ContextMenu';
 import { useGraphStore } from '../../store/useGraphStore';
 import './styles.css';
 
@@ -22,9 +24,60 @@ const nodeTypes: NodeTypes = {
 };
 
 export function Graph() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onConnect, selectNode, createUserNode, setEditing } = useGraphStore();
+  const {
+    nodes,
+    edges,
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    selectNode,
+    createUserNode,
+    setEditing,
+    selectedNodeId,
+    nodeData,
+    createUserNodeDownstream,
+    streamingNodeId,
+    editingNodeId,
+  } = useGraphStore();
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId: string;
+  } | null>(null);
+
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: { id: string }) => {
+      event.preventDefault();
+      setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+    },
+    []
+  );
+
+  // Keyboard shortcut: Enter to reply to selected agent node
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if editing a node or streaming
+      if (editingNodeId || streamingNodeId) return;
+
+      // Check if selected node is an agent node
+      if (!selectedNodeId) return;
+      const data = nodeData.get(selectedNodeId);
+      if (!data || data.role !== 'assistant') return;
+
+      // Enter to reply
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        createUserNodeDownstream(selectedNodeId);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
@@ -88,6 +141,30 @@ export function Graph() {
     [screenToFlowPosition, createUserNode]
   );
 
+  // Wrap onConnect to handle edge direction when connecting to agent nodes
+  // If user drags from a user node TO an agent node, reverse the direction
+  // so the agent becomes the parent (source) and user node becomes child (target)
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      const targetNodeData = connection.target ? nodeData.get(connection.target) : null;
+      const sourceNodeData = connection.source ? nodeData.get(connection.source) : null;
+
+      // If connecting TO an agent node FROM a user node, reverse direction
+      if (targetNodeData?.role === 'assistant' && sourceNodeData?.role === 'user') {
+        const reversedConnection: Connection = {
+          source: connection.target,
+          target: connection.source,
+          sourceHandle: connection.targetHandle,
+          targetHandle: connection.sourceHandle,
+        };
+        onConnect(reversedConnection);
+      } else {
+        onConnect(connection);
+      }
+    },
+    [onConnect, nodeData]
+  );
+
   return (
     <div className="graph-container">
       <ReactFlow
@@ -95,11 +172,12 @@ export function Graph() {
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
+        onConnect={handleConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onNodeContextMenu={onNodeContextMenu}
         nodeTypes={nodeTypes}
         fitView
         zoomOnDoubleClick={false}
@@ -112,6 +190,14 @@ export function Graph() {
           maskColor="rgba(0,0,0,0.8)"
         />
       </ReactFlow>
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          nodeId={contextMenu.nodeId}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }
