@@ -9,14 +9,20 @@ import {
   addEdge,
   type OnConnectEnd,
   type Connection,
+  type NodeChange,
+  type Node,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { UserNode } from './UserNode';
 import { AgentNode } from './AgentNode';
 import { ContextMenu } from './ContextMenu';
+import { AlignmentGuides, type AlignmentGuide } from './AlignmentGuides';
 import { useGraphStore } from '../../store/useGraphStore';
 import './styles.css';
+
+const SNAP_THRESHOLD = 8;
+const DEFAULT_NODE_SIZE = 120;
 
 const nodeTypes: NodeTypes = {
   user: UserNode,
@@ -50,6 +56,165 @@ export function Graph() {
     y: number;
     nodeId: string;
   } | null>(null);
+
+  // Alignment guides state
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
+
+  // Get node dimensions (use measured if available, otherwise default)
+  const getNodeDimensions = useCallback((node: Node) => {
+    const width = node.measured?.width ?? DEFAULT_NODE_SIZE;
+    const height = node.measured?.height ?? DEFAULT_NODE_SIZE;
+    return { width, height };
+  }, []);
+
+  // Calculate alignment guides and snapped position for a dragging node
+  const calculateAlignments = useCallback(
+    (draggingNode: Node, allNodes: Node[]) => {
+      const guides: AlignmentGuide[] = [];
+      let snappedX = draggingNode.position.x;
+      let snappedY = draggingNode.position.y;
+
+      const dragDims = getNodeDimensions(draggingNode);
+      const dragLeft = draggingNode.position.x;
+      const dragRight = dragLeft + dragDims.width;
+      const dragCenterX = dragLeft + dragDims.width / 2;
+      const dragTop = draggingNode.position.y;
+      const dragBottom = dragTop + dragDims.height;
+      const dragCenterY = dragTop + dragDims.height / 2;
+
+      for (const node of allNodes) {
+        if (node.id === draggingNode.id) continue;
+
+        const nodeDims = getNodeDimensions(node);
+        const nodeLeft = node.position.x;
+        const nodeRight = nodeLeft + nodeDims.width;
+        const nodeCenterX = nodeLeft + nodeDims.width / 2;
+        const nodeTop = node.position.y;
+        const nodeBottom = nodeTop + nodeDims.height;
+        const nodeCenterY = nodeTop + nodeDims.height / 2;
+
+        // Vertical alignments (check X positions)
+        // Left edge to left edge
+        if (Math.abs(dragLeft - nodeLeft) < SNAP_THRESHOLD) {
+          snappedX = nodeLeft;
+          guides.push({ type: 'vertical', position: nodeLeft });
+        }
+        // Right edge to right edge
+        else if (Math.abs(dragRight - nodeRight) < SNAP_THRESHOLD) {
+          snappedX = nodeRight - dragDims.width;
+          guides.push({ type: 'vertical', position: nodeRight });
+        }
+        // Center X to center X
+        else if (Math.abs(dragCenterX - nodeCenterX) < SNAP_THRESHOLD) {
+          snappedX = nodeCenterX - dragDims.width / 2;
+          guides.push({ type: 'vertical', position: nodeCenterX });
+        }
+        // Left edge to right edge (adjacent horizontal)
+        else if (Math.abs(dragLeft - nodeRight) < SNAP_THRESHOLD) {
+          snappedX = nodeRight;
+          guides.push({ type: 'vertical', position: nodeRight });
+        }
+        // Right edge to left edge (adjacent horizontal)
+        else if (Math.abs(dragRight - nodeLeft) < SNAP_THRESHOLD) {
+          snappedX = nodeLeft - dragDims.width;
+          guides.push({ type: 'vertical', position: nodeLeft });
+        }
+
+        // Horizontal alignments (check Y positions)
+        // Top edge to top edge
+        if (Math.abs(dragTop - nodeTop) < SNAP_THRESHOLD) {
+          snappedY = nodeTop;
+          guides.push({ type: 'horizontal', position: nodeTop });
+        }
+        // Bottom edge to bottom edge
+        else if (Math.abs(dragBottom - nodeBottom) < SNAP_THRESHOLD) {
+          snappedY = nodeBottom - dragDims.height;
+          guides.push({ type: 'horizontal', position: nodeBottom });
+        }
+        // Center Y to center Y
+        else if (Math.abs(dragCenterY - nodeCenterY) < SNAP_THRESHOLD) {
+          snappedY = nodeCenterY - dragDims.height / 2;
+          guides.push({ type: 'horizontal', position: nodeCenterY });
+        }
+        // Top edge to bottom edge (adjacent vertical)
+        else if (Math.abs(dragTop - nodeBottom) < SNAP_THRESHOLD) {
+          snappedY = nodeBottom;
+          guides.push({ type: 'horizontal', position: nodeBottom });
+        }
+        // Bottom edge to top edge (adjacent vertical)
+        else if (Math.abs(dragBottom - nodeTop) < SNAP_THRESHOLD) {
+          snappedY = nodeTop - dragDims.height;
+          guides.push({ type: 'horizontal', position: nodeTop });
+        }
+      }
+
+      // Deduplicate guides by position
+      const uniqueGuides = guides.filter(
+        (guide, index, self) =>
+          self.findIndex(
+            (g) => g.type === guide.type && g.position === guide.position
+          ) === index
+      );
+
+      return {
+        snappedPosition: { x: snappedX, y: snappedY },
+        guides: uniqueGuides,
+      };
+    },
+    [getNodeDimensions]
+  );
+
+  // Custom onNodesChange handler that adds snapping behavior
+  const handleNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      let modifiedChanges = changes;
+      let newGuides: AlignmentGuide[] = [];
+
+      // Check for dragging nodes
+      const positionChanges = changes.filter(
+        (change): change is NodeChange & { type: 'position'; dragging?: boolean; position?: { x: number; y: number } } =>
+          change.type === 'position'
+      );
+
+      const draggingChange = positionChanges.find((c) => c.dragging && c.position);
+
+      if (draggingChange && draggingChange.position) {
+        // Find the dragging node
+        const draggingNode = nodes.find((n) => n.id === draggingChange.id);
+        if (draggingNode) {
+          // Create a temporary node with the new position for calculation
+          const tempNode = {
+            ...draggingNode,
+            position: draggingChange.position,
+          };
+
+          const { snappedPosition, guides } = calculateAlignments(tempNode, nodes);
+          newGuides = guides;
+
+          // Update the position change with snapped position
+          modifiedChanges = changes.map((change) => {
+            if (change.type === 'position' && change.id === draggingChange.id && change.position) {
+              return {
+                ...change,
+                position: snappedPosition,
+              };
+            }
+            return change;
+          });
+        }
+      } else {
+        // Not dragging anymore, clear guides
+        const wasDragging = positionChanges.some((c) => c.dragging === false);
+        if (wasDragging) {
+          newGuides = [];
+        }
+      }
+
+      setAlignmentGuides(newGuides);
+      onNodesChange(modifiedChanges);
+    },
+    [nodes, onNodesChange, calculateAlignments]
+  );
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: { id: string }) => {
@@ -180,7 +345,7 @@ export function Graph() {
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
         onConnectStart={onConnectStart}
@@ -199,6 +364,7 @@ export function Graph() {
           nodeColor={(node) => node.type === 'user' ? '#3b82f6' : '#22c55e'}
           maskColor="rgba(0,0,0,0.8)"
         />
+        <AlignmentGuides guides={alignmentGuides} />
       </ReactFlow>
       {contextMenu && (
         <ContextMenu

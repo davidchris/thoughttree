@@ -149,9 +149,10 @@ export const useGraphStore = create<GraphState>()(
       timestamp: Date.now(),
     };
 
+    const COLLAPSED_NODE_HEIGHT = 120;
     const parentNode = get().nodes.find((n) => n.id === parentId);
     const position = parentNode
-      ? { x: parentNode.position.x, y: parentNode.position.y + 200 }
+      ? { x: parentNode.position.x, y: parentNode.position.y + COLLAPSED_NODE_HEIGHT }
       : { x: 100, y: 100 };
 
     const flowNodeData: AgentFlowNodeData = {
@@ -196,9 +197,10 @@ export const useGraphStore = create<GraphState>()(
       timestamp: Date.now(),
     };
 
+    const COLLAPSED_NODE_HEIGHT = 120;
     const parentNode = get().nodes.find((n) => n.id === parentId);
     const position = parentNode
-      ? { x: parentNode.position.x, y: parentNode.position.y + 200 }
+      ? { x: parentNode.position.x, y: parentNode.position.y + COLLAPSED_NODE_HEIGHT }
       : { x: 100, y: 100 };
 
     const flowNodeData: UserFlowNodeData = {

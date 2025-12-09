@@ -530,3 +530,15 @@
     color: #666;
     cursor: not-allowed;
 }
+
+/* Alignment guides */
+.alignment-guides-container {
+    z-index: 1000;
+}
+
+.alignment-guide {
+    stroke: #f472b6;
+    stroke-width: 1;
+    stroke-dasharray: 6 4;
+    opacity: 0.8;
+}
