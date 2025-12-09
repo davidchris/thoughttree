@@ -38,6 +38,8 @@ export function Graph() {
     createUserNodeDownstream,
     streamingNodeId,
     editingNodeId,
+    togglePreviewNode,
+    setPreviewNode,
   } = useGraphStore();
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
@@ -57,13 +59,20 @@ export function Graph() {
     []
   );
 
-  // Keyboard shortcut: Enter to reply to selected agent node
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if editing a node or streaming
+      // Spacebar to toggle preview panel
+      if (e.key === ' ' && selectedNodeId && !editingNodeId && !streamingNodeId) {
+        e.preventDefault();
+        togglePreviewNode(selectedNodeId);
+        return;
+      }
+
+      // Don't trigger other shortcuts if editing or streaming
       if (editingNodeId || streamingNodeId) return;
 
-      // Check if selected node is an agent node
+      // Check if selected node is an agent node for Enter shortcut
       if (!selectedNodeId) return;
       const data = nodeData.get(selectedNodeId);
       if (!data || data.role !== 'assistant') return;
@@ -77,7 +86,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId]);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
@@ -93,12 +102,13 @@ export function Graph() {
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createUserNode(position);
       } else {
-        // Single-click: deselect and exit editing
+        // Single-click: deselect, exit editing, and close preview
         selectNode(null);
         setEditing(null);
+        setPreviewNode(null);
       }
     },
-    [screenToFlowPosition, createUserNode, selectNode, setEditing]
+    [screenToFlowPosition, createUserNode, selectNode, setEditing, setPreviewNode]
   );
 
   const onConnectStart = useCallback(

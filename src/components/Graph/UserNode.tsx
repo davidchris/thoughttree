@@ -4,12 +4,10 @@ import {
   Position,
   NodeProps,
   NodeResizer,
-  useUpdateNodeInternals,
 } from "@xyflow/react";
 import { UserFlowNodeData } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import { sendPrompt } from "../../lib/tauri";
-import { MarkdownContent } from "./MarkdownContent";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
 import "./styles.css";
 
@@ -29,18 +27,11 @@ type UserNodeProps = NodeProps & {
 export function UserNode({ id, data, selected }: UserNodeProps) {
   const { nodeData } = data;
   const content = nodeData.content;
-  const [isExpanded, setIsExpanded] = useState(false);
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(
     null,
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
-  const updateNodeInternals = useUpdateNodeInternals();
-
-  // Notify ReactFlow when node dimensions change due to expansion
-  useEffect(() => {
-    updateNodeInternals(id);
-  }, [isExpanded, id, updateNodeInternals]);
 
   const {
     editingNodeId,
@@ -51,15 +42,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     buildConversationContext,
     appendToNode,
     setStreaming,
+    togglePreviewNode,
   } = useGraphStore();
 
   const isEditing = editingNodeId === id;
   const isAnyStreaming = streamingNodeId !== null;
-  const isCollapsed = !isExpanded && !isEditing;
-  const preview = content.slice(
-    0,
-    isCollapsed ? COLLAPSED_PREVIEW_LENGTH : 100,
-  );
+  const preview = content.slice(0, COLLAPSED_PREVIEW_LENGTH);
   const hasMore = content.length > COLLAPSED_PREVIEW_LENGTH;
 
   // Auto-focus textarea when entering edit mode
@@ -197,7 +185,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   const handleToggleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsExpanded(!isExpanded);
+    togglePreviewNode(id);
   };
 
   const handleFileSelect = (filePath: string) => {
@@ -225,12 +213,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   return (
     <div
-      className={`thought-node user-node ${selected ? "selected" : ""} ${isEditing ? "editing" : ""} ${isCollapsed ? "collapsed" : ""}`}
+      className={`thought-node user-node ${selected ? "selected" : ""} ${isEditing ? "editing" : ""} ${!isEditing ? "collapsed" : ""}`}
       onDoubleClick={handleDoubleClick}
     >
       <NodeResizer
-        minWidth={isCollapsed ? 150 : 220}
-        minHeight={isCollapsed ? 60 : 100}
+        minWidth={isEditing ? 220 : 150}
+        minHeight={isEditing ? 100 : 60}
         isVisible={selected}
         handleClassName="node-resize-handle"
       />
@@ -242,9 +230,9 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
           <button
             className="expand-toggle"
             onClick={handleToggleExpand}
-            title={isExpanded ? "Collapse" : "Expand"}
+            title="Preview in side panel (Space)"
           >
-            {isExpanded ? "▲" : "▼"}
+            ▼
           </button>
         )}
       </div>
@@ -273,16 +261,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
           )}
         </>
       ) : (
-        <div className={`node-content ${isExpanded ? "expanded" : ""}`}>
+        <div className="node-content">
           {content ? (
-            isExpanded ? (
-              <MarkdownContent content={content} />
-            ) : (
-              <>
-                {preview}
-                {hasMore && "..."}
-              </>
-            )
+            <>
+              {preview}
+              {hasMore && "..."}
+            </>
           ) : null}
         </div>
       )}

@@ -5,6 +5,7 @@ import { Graph } from './components/Graph';
 import { Toolbar } from './components/Toolbar';
 import { PermissionDialog } from './components/PermissionDialog';
 import { SetupWizard } from './components/SetupWizard';
+import { SidePanel } from './components/SidePanel';
 import { initializeListeners } from './lib/tauri';
 import './App.css';
 
@@ -51,7 +52,10 @@ function App() {
     <div className="app">
       <ReactFlowProvider>
         <Toolbar />
-        <Graph />
+        <div className="app-main">
+          <Graph />
+          <SidePanel />
+        </div>
       </ReactFlowProvider>
       <PermissionDialog />
     </div>

@@ -29,6 +29,7 @@ interface GraphState {
   selectedNodeId: string | null;
   streamingNodeId: string | null;
   editingNodeId: string | null;
+  previewNodeId: string | null;
   pendingPermission: PermissionRequest | null;
 
   // ReactFlow actions
@@ -45,6 +46,8 @@ interface GraphState {
   appendToNode: (nodeId: string, chunk: string) => void;
   setStreaming: (nodeId: string | null) => void;
   setEditing: (nodeId: string | null) => void;
+  setPreviewNode: (nodeId: string | null) => void;
+  togglePreviewNode: (nodeId: string) => void;
   deleteNode: (nodeId: string) => void;
 
   // Context building
@@ -83,6 +86,7 @@ export const useGraphStore = create<GraphState>()(
   selectedNodeId: null,
   streamingNodeId: null,
   editingNodeId: null,
+  previewNodeId: null,
   pendingPermission: null,
 
   onNodesChange: (changes) => {
@@ -291,6 +295,16 @@ export const useGraphStore = create<GraphState>()(
     set({ editingNodeId: nodeId });
   },
 
+  setPreviewNode: (nodeId) => {
+    set({ previewNodeId: nodeId });
+  },
+
+  togglePreviewNode: (nodeId) => {
+    set((state) => ({
+      previewNodeId: state.previewNodeId === nodeId ? null : nodeId,
+    }));
+  },
+
   deleteNode: (nodeId) => {
     set((state) => {
       const nodeData = new Map(state.nodeData);
@@ -305,6 +319,7 @@ export const useGraphStore = create<GraphState>()(
         nodeData,
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
         editingNodeId: state.editingNodeId === nodeId ? null : state.editingNodeId,
+        previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
       };
     });
   },
@@ -389,6 +404,7 @@ export const useGraphStore = create<GraphState>()(
         selectedNodeId: null,
         editingNodeId: null,
         streamingNodeId: null,
+        previewNodeId: null,
       });
       console.log('Project loaded from:', path);
     } catch (error) {
@@ -408,6 +424,7 @@ export const useGraphStore = create<GraphState>()(
       selectedNodeId: null,
       editingNodeId: null,
       streamingNodeId: null,
+      previewNodeId: null,
     });
   },
 

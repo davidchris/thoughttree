@@ -1,6 +1,7 @@
 .graph-container {
     flex: 1;
     height: 100%;
+    min-width: 0;
 }
 
 /* Base node styles */
@@ -125,11 +126,6 @@
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-word;
-}
-
-.node-content.expanded {
-    max-height: none;
-    overflow: visible;
 }
 
 .node-placeholder {

@@ -27,3 +27,10 @@ body {
   justify-content: center;
   color: #666;
 }
+
+.app-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
