@@ -1,11 +1,19 @@
-import { useState, useRef, useEffect } from 'react';
-import { Handle, Position, NodeProps, NodeResizer, useUpdateNodeInternals } from '@xyflow/react';
-import { UserFlowNodeData } from '../../types';
-import { useGraphStore } from '../../store/useGraphStore';
-import { sendPrompt } from '../../lib/tauri';
-import { MarkdownContent } from './MarkdownContent';
-import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
-import './styles.css';
+import { useState, useRef, useEffect } from "react";
+import {
+  Handle,
+  Position,
+  NodeProps,
+  NodeResizer,
+  useUpdateNodeInternals,
+} from "@xyflow/react";
+import { UserFlowNodeData } from "../../types";
+import { useGraphStore } from "../../store/useGraphStore";
+import { sendPrompt } from "../../lib/tauri";
+import { MarkdownContent } from "./MarkdownContent";
+import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
+import "./styles.css";
+
+const COLLAPSED_PREVIEW_LENGTH = 30;
 
 interface AutocompleteState {
   isOpen: boolean;
@@ -22,7 +30,9 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const { nodeData } = data;
   const content = nodeData.content;
   const [isExpanded, setIsExpanded] = useState(false);
-  const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
+  const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(
+    null,
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -45,8 +55,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   const isEditing = editingNodeId === id;
   const isAnyStreaming = streamingNodeId !== null;
-  const preview = content.slice(0, 100);
-  const hasMore = content.length > 100;
+  const isCollapsed = !isExpanded && !isEditing;
+  const preview = content.slice(
+    0,
+    isCollapsed ? COLLAPSED_PREVIEW_LENGTH : 100,
+  );
+  const hasMore = content.length > COLLAPSED_PREVIEW_LENGTH;
 
   // Auto-focus textarea when entering edit mode
   useEffect(() => {
@@ -69,24 +83,32 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
     // Check for @ trigger
     const textBeforeCursor = newValue.slice(0, cursorPos);
-    const atIndex = textBeforeCursor.lastIndexOf('@');
+    const atIndex = textBeforeCursor.lastIndexOf("@");
 
-    console.log('[Autocomplete] textBeforeCursor:', textBeforeCursor, 'atIndex:', atIndex);
+    console.log(
+      "[Autocomplete] textBeforeCursor:",
+      textBeforeCursor,
+      "atIndex:",
+      atIndex,
+    );
 
     if (atIndex !== -1) {
       // Check if @ is at start or preceded by whitespace
-      const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
+      const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : " ";
       if (/\s/.test(charBefore) || atIndex === 0) {
         const query = textBeforeCursor.slice(atIndex + 1);
 
-        console.log('[Autocomplete] Valid @ found, query:', query);
+        console.log("[Autocomplete] Valid @ found, query:", query);
 
         // Only show if query doesn't contain whitespace (still typing the mention)
         if (!/\s/.test(query)) {
           const textarea = e.target;
           const rect = textarea.getBoundingClientRect();
           const position = { top: rect.bottom + 4, left: rect.left };
-          console.log('[Autocomplete] Setting autocomplete state, position:', position);
+          console.log(
+            "[Autocomplete] Setting autocomplete state, position:",
+            position,
+          );
           setAutocomplete({
             isOpen: true,
             query,
@@ -107,7 +129,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const handleBlur = (e: React.FocusEvent) => {
     // Check if focus is moving to autocomplete
     const relatedTarget = e.relatedTarget as HTMLElement;
-    if (relatedTarget?.closest('.file-autocomplete')) {
+    if (relatedTarget?.closest(".file-autocomplete")) {
       return; // Don't close editing
     }
 
@@ -131,12 +153,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     }
 
     // Cmd/Ctrl + Enter to submit
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       handleGenerate();
     }
     // Escape to exit editing (only if autocomplete not open)
-    if (e.key === 'Escape' && !autocomplete?.isOpen) {
+    if (e.key === "Escape" && !autocomplete?.isOpen) {
       setEditing(null);
     }
   };
@@ -144,38 +166,36 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const handleGenerate = async () => {
     if (!content.trim() || isAnyStreaming) return;
 
-    console.log('[Generate] Starting generation...');
+    console.log("[Generate] Starting generation...");
 
     // Exit edit mode first
     setEditing(null);
 
     // Create downstream agent node
     const agentNodeId = createAgentNodeDownstream(id);
-    console.log('[Generate] Created agent node:', agentNodeId);
+    console.log("[Generate] Created agent node:", agentNodeId);
 
     // Build context by traversing parents (including this node)
     const context = buildConversationContext(id);
-    console.log('[Generate] Context:', context);
+    console.log("[Generate] Context:", context);
 
     try {
-      console.log('[Generate] Calling sendPrompt...');
-      await sendPrompt(
-        agentNodeId,
-        context,
-        (chunk) => appendToNode(agentNodeId, chunk)
+      console.log("[Generate] Calling sendPrompt...");
+      await sendPrompt(agentNodeId, context, (chunk) =>
+        appendToNode(agentNodeId, chunk),
       );
-      console.log('[Generate] sendPrompt completed successfully');
+      console.log("[Generate] sendPrompt completed successfully");
     } catch (error) {
-      console.error('[Generate] Generation failed:', error);
+      console.error("[Generate] Generation failed:", error);
       appendToNode(agentNodeId, `\n\n[Error: ${error}]`);
     } finally {
-      console.log('[Generate] Finally block - calling setStreaming(null)');
+      console.log("[Generate] Finally block - calling setStreaming(null)");
       setStreaming(null);
-      console.log('[Generate] setStreaming(null) called');
+      console.log("[Generate] setStreaming(null) called");
     }
   };
 
-  const handleExpandClick = (e: React.MouseEvent) => {
+  const handleToggleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsExpanded(!isExpanded);
   };
@@ -205,12 +225,12 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   return (
     <div
-      className={`thought-node user-node ${selected ? 'selected' : ''} ${isEditing ? 'editing' : ''}`}
+      className={`thought-node user-node ${selected ? "selected" : ""} ${isEditing ? "editing" : ""} ${isCollapsed ? "collapsed" : ""}`}
       onDoubleClick={handleDoubleClick}
     >
       <NodeResizer
-        minWidth={220}
-        minHeight={100}
+        minWidth={isCollapsed ? 150 : 220}
+        minHeight={isCollapsed ? 60 : 100}
         isVisible={selected}
         handleClassName="node-resize-handle"
       />
@@ -218,6 +238,15 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
       <div className="node-header">
         <span className="node-role">User</span>
+        {hasMore && !isEditing && (
+          <button
+            className="expand-toggle"
+            onClick={handleToggleExpand}
+            title={isExpanded ? "Collapse" : "Expand"}
+          >
+            {isExpanded ? "▲" : "▼"}
+          </button>
+        )}
       </div>
 
       {isEditing ? (
@@ -231,7 +260,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
             onKeyDown={handleKeyDown}
             placeholder="Enter your message... (@ to mention files)"
           />
-          {console.log('[UserNode] autocomplete state:', autocomplete)}
+          {console.log("[UserNode] autocomplete state:", autocomplete)}
           {autocomplete?.isOpen && (
             <FileAutocomplete
               ref={autocompleteRef}
@@ -244,17 +273,14 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
           )}
         </>
       ) : (
-        <div
-          className={`node-content ${isExpanded ? 'expanded' : ''}`}
-          onClick={hasMore && !isExpanded ? handleExpandClick : undefined}
-        >
+        <div className={`node-content ${isExpanded ? "expanded" : ""}`}>
           {content ? (
             isExpanded ? (
               <MarkdownContent content={content} />
             ) : (
               <>
                 {preview}
-                {hasMore && '...'}
+                {hasMore && "..."}
               </>
             )
           ) : null}
@@ -268,7 +294,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
           disabled={isAnyStreaming}
           title="Generate response (Cmd+Enter)"
         >
-          {isAnyStreaming ? '...' : 'Generate'}
+          {isAnyStreaming ? "..." : "Generate"}
         </button>
       )}
 
