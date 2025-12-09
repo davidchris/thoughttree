@@ -203,9 +203,32 @@ export function Graph() {
           });
         }
       } else {
-        // Not dragging anymore, clear guides
-        const wasDragging = positionChanges.some((c) => c.dragging === false);
-        if (wasDragging) {
+        // Check for drag end (dragging === false with a position)
+        const dragEndChange = positionChanges.find((c) => c.dragging === false && c.position);
+
+        if (dragEndChange && dragEndChange.position) {
+          // Apply snapping to the final position on drag end
+          const dragEndNode = nodes.find((n) => n.id === dragEndChange.id);
+          if (dragEndNode) {
+            const tempNode = {
+              ...dragEndNode,
+              position: dragEndChange.position,
+            };
+
+            const { snappedPosition } = calculateAlignments(tempNode, nodes);
+
+            // Update the final position with snapped position
+            modifiedChanges = changes.map((change) => {
+              if (change.type === 'position' && change.id === dragEndChange.id && change.position) {
+                return {
+                  ...change,
+                  position: snappedPosition,
+                };
+              }
+              return change;
+            });
+          }
+          // Clear guides on drag end
           newGuides = [];
         }
       }

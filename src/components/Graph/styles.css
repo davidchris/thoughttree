@@ -452,6 +452,11 @@
 
 .thought-node.collapsed .node-header {
     margin-bottom: 4px;
+    overflow: hidden;
+}
+
+.thought-node.collapsed .streaming-badge {
+    display: none;
 }
 
 .thought-node.collapsed .node-content {
