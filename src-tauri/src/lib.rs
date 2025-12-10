@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use agent_client_protocol::{
     Agent, Client, ClientCapabilities, ClientSideConnection, ContentBlock, FileSystemCapability,
@@ -297,13 +297,99 @@ impl Client for StreamingClient {
     }
 }
 
+/// Cached shell environment from login shell
+static SHELL_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
+
+/// Capture environment from login shell (called once, cached)
+fn get_shell_env() -> &'static HashMap<String, String> {
+    SHELL_ENV.get_or_init(|| {
+        info!("Capturing shell environment from login shell...");
+
+        // Get home directory
+        let home = dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "/Users".to_string());
+
+        // Detect shell, default to bash if not found or empty
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        let shell = if shell.is_empty() { "/bin/bash".to_string() } else { shell };
+
+        info!("Using shell: {}", shell);
+
+        // Run login shell to source profile/rc files
+        let output = std::process::Command::new(&shell)
+            .args(["-l", "-c", "env"])
+            .env("HOME", &home)
+            .output()
+            .ok();
+
+        let mut env = HashMap::new();
+        if let Some(output) = output {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    env.insert(key.to_string(), value.to_string());
+                }
+            }
+            info!("Captured {} environment variables from shell", env.len());
+        }
+
+        // Ensure critical vars are set
+        if !env.contains_key("HOME") {
+            env.insert("HOME".to_string(), home);
+        }
+        if !env.contains_key("PATH") {
+            env.insert("PATH".to_string(),
+                "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin".to_string());
+        }
+
+        env
+    })
+}
+
+/// Find npx executable in common installation paths
+fn find_npx() -> String {
+    let common_paths = [
+        "/opt/homebrew/bin/npx",  // Homebrew Apple Silicon
+        "/usr/local/bin/npx",     // Homebrew Intel Mac
+        "/usr/bin/npx",           // System install
+    ];
+
+    for path in common_paths {
+        if std::path::Path::new(path).exists() {
+            return path.to_string();
+        }
+    }
+
+    // Check nvm
+    if let Ok(home) = std::env::var("HOME") {
+        let nvm_path = std::path::Path::new(&home).join(".nvm/versions/node");
+        if let Ok(entries) = std::fs::read_dir(&nvm_path) {
+            if let Some(entry) = entries.filter_map(|e| e.ok()).last() {
+                let npx = entry.path().join("bin/npx");
+                if npx.exists() {
+                    return npx.to_string_lossy().to_string();
+                }
+            }
+        }
+    }
+
+    "npx".to_string()  // Fallback
+}
+
 /// Spawn the claude-code-acp subprocess
 async fn spawn_claude_code_acp(notes_directory: &Path) -> anyhow::Result<tokio::process::Child> {
-    info!("Spawning claude-code-acp in {:?}...", notes_directory);
+    let npx_path = find_npx();
+    let shell_env = get_shell_env();
+    info!("Spawning claude-code-acp in {:?} using {} with {} env vars...",
+        notes_directory, npx_path, shell_env.len());
 
-    let child = Command::new("npx")
+    // Spawn npx directly with captured shell environment
+    let child = Command::new(&npx_path)
         .args(["@zed-industries/claude-code-acp"])
         .current_dir(notes_directory)
+        .env_clear()  // Start with clean environment
+        .envs(shell_env.iter())  // Add captured login shell environment
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -528,13 +614,18 @@ async fn respond_to_permission(
 
 #[tauri::command]
 async fn check_acp_available() -> Result<bool, String> {
-    // Check if npx and claude-code-acp are available
-    let output = tokio::process::Command::new("npx")
+    let npx_path = find_npx();
+    let shell_env = get_shell_env();
+
+    // Check if npx and claude-code-acp are available using the captured environment
+    let output = tokio::process::Command::new(&npx_path)
         .args(["@zed-industries/claude-code-acp", "--version"])
+        .env_clear()
+        .envs(shell_env.iter())
         .output()
         .await;
 
-    Ok(output.is_ok())
+    Ok(output.is_ok() && output.unwrap().status.success())
 }
 
 // ============================================================================
@@ -705,25 +796,25 @@ async fn search_files(
 
     let max_results = limit.unwrap_or(20);
 
-    // Use fd for fast gitignore-respecting file search
-    // If query is empty, use "." to match all files
-    let search_pattern = if query.is_empty() { ".".to_string() } else { query };
+    // Use find for widely available file search
+    // -L: follow symlinks
+    // -type f: only files
+    let mut args = vec!["-L".to_string(), ".".to_string(), "-type".to_string(), "f".to_string()];
 
-    let output = std::process::Command::new("fd")
-        .args([
-            "--type",
-            "f",
-            "--follow",
-            "--max-results",
-            &max_results.to_string(),
-            &search_pattern,
-        ])
+    if !query.is_empty() {
+        args.push("-iname".to_string());
+        args.push(format!("*{}*", query));
+    }
+
+    // Limit output from find if possible to avoid massive buffers, but standard find doesn't have a limit flag.
+    // We handle limiting in Rust.
+    let output = std::process::Command::new("find")
+        .args(&args)
         .current_dir(&notes_directory)
         .output()
-        .map_err(|e| format!("Failed to execute fd: {}", e))?;
+        .map_err(|e| format!("Failed to execute find: {}", e))?;
 
     if !output.status.success() {
-        // fd returns non-zero for no matches, which is fine
         return Ok(vec![]);
     }
 
@@ -731,7 +822,11 @@ async fn search_files(
     let files: Vec<String> = stdout
         .lines()
         .filter(|line| !line.is_empty())
-        .map(|line| line.to_string())
+        .take(max_results)
+        .map(|line| {
+            // find output usually starts with "./", strip it for cleaner display
+            line.strip_prefix("./").unwrap_or(line).to_string()
+        })
         .collect();
 
     Ok(files)
