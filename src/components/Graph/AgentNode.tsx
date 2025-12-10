@@ -55,7 +55,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
 
       <div className="node-header">
         <span className="node-role">Assistant</span>
-        {hasMore && !isStreaming && (
+        {(hasMore || isStreaming) && (
           <button
             className="expand-toggle"
             onClick={handleToggleExpand}

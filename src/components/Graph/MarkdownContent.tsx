@@ -8,20 +8,50 @@ import mermaid from 'mermaid';
 // Initialize mermaid once
 mermaid.initialize({
   startOnLoad: false,
-  theme: 'dark',
+  theme: 'base',
   themeVariables: {
-    primaryColor: '#3b82f6',
-    primaryTextColor: '#fff',
-    primaryBorderColor: '#60a5fa',
-    lineColor: '#64748b',
-    secondaryColor: '#1e293b',
-    tertiaryColor: '#0f172a',
-    background: '#1a1a2e',
-    mainBkg: '#1e293b',
-    nodeBorder: '#3b82f6',
-    clusterBkg: '#1e293b',
-    titleColor: '#fff',
-    edgeLabelBackground: '#1a1a2e',
+    // Catppuccin Mocha palette - ALL backgrounds dark
+    background: '#1e1e2e',
+    // Force all node types to dark background
+    primaryColor: '#313244',
+    secondaryColor: '#313244',
+    tertiaryColor: '#313244',
+    quaternaryColor: '#313244',
+    // Text colors - all light
+    primaryTextColor: '#cdd6f4',
+    secondaryTextColor: '#cdd6f4',
+    tertiaryTextColor: '#cdd6f4',
+    // Borders
+    primaryBorderColor: '#89b4fa',
+    secondaryBorderColor: '#89b4fa',
+    tertiaryBorderColor: '#89b4fa',
+    lineColor: '#6c7086',
+    // Node styling
+    mainBkg: '#313244',
+    nodeBkg: '#313244',
+    nodeBorder: '#89b4fa',
+    nodeTextColor: '#cdd6f4',
+    // Default/base colors
+    defaultLinkColor: '#6c7086',
+    // Clusters
+    clusterBkg: '#181825',
+    clusterBorder: '#45475a',
+    // Labels
+    titleColor: '#cdd6f4',
+    edgeLabelBackground: '#1e1e2e',
+    // Notes
+    noteBkgColor: '#313244',
+    noteTextColor: '#cdd6f4',
+    noteBorderColor: '#45475a',
+    // Flowchart specific
+    fillType0: '#313244',
+    fillType1: '#313244',
+    fillType2: '#313244',
+    fillType3: '#313244',
+    fillType4: '#313244',
+    fillType5: '#313244',
+    fillType6: '#313244',
+    fillType7: '#313244',
   },
   flowchart: {
     curve: 'basis',

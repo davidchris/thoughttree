@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
@@ -210,8 +210,8 @@ impl Client for StreamingClient {
             });
         }
 
-        // AUTO-APPROVE: Read-only search tools (within notes directory)
-        let auto_approve_patterns = ["Read", "Grep", "Glob", "WebSearch"];
+        // AUTO-APPROVE: Read-only search tools (within notes directory) and Skills
+        let auto_approve_patterns = ["Read", "Grep", "Glob", "WebSearch", "Skill"];
         if auto_approve_patterns
             .iter()
             .any(|p| tool_name.contains(p))
@@ -298,11 +298,12 @@ impl Client for StreamingClient {
 }
 
 /// Spawn the claude-code-acp subprocess
-async fn spawn_claude_code_acp() -> anyhow::Result<tokio::process::Child> {
-    info!("Spawning claude-code-acp...");
+async fn spawn_claude_code_acp(notes_directory: &Path) -> anyhow::Result<tokio::process::Child> {
+    info!("Spawning claude-code-acp in {:?}...", notes_directory);
 
     let child = Command::new("npx")
         .args(["@zed-industries/claude-code-acp"])
+        .current_dir(notes_directory)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -326,8 +327,8 @@ async fn run_prompt_session(
     pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     notes_directory: PathBuf,
 ) -> anyhow::Result<String> {
-    // Spawn the ACP subprocess
-    let mut child = spawn_claude_code_acp().await?;
+    // Spawn the ACP subprocess in the notes directory so skills are loaded
+    let mut child = spawn_claude_code_acp(&notes_directory).await?;
 
     // Get stdin/stdout handles
     let stdin = child

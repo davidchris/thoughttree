@@ -250,8 +250,12 @@ export function Graph() {
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Spacebar to toggle preview panel
+      // Spacebar to toggle preview panel (but not when typing in an input)
       if (e.key === ' ' && selectedNodeId && !editingNodeId && !streamingNodeId) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
+          return; // Let the input handle the space
+        }
         e.preventDefault();
         togglePreviewNode(selectedNodeId);
         return;

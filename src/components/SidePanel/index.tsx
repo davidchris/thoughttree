@@ -12,6 +12,7 @@ export function SidePanel() {
   const nodeData = useGraphStore((state) => state.nodeData);
   const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
+  const streamingNodeId = useGraphStore((state) => state.streamingNodeId);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -21,6 +22,7 @@ export function SidePanel() {
 
   const data = previewNodeId ? nodeData.get(previewNodeId) : null;
   const isUserNode = data?.role === 'user';
+  const isStreaming = previewNodeId === streamingNodeId;
 
   // Reset edit state when node changes
   useEffect(() => {
@@ -122,6 +124,7 @@ export function SidePanel() {
           <span className={`side-panel-badge ${isAgent ? 'agent' : 'user'}`}>
             {isAgent ? 'Assistant' : 'User'}
           </span>
+          {isStreaming && <span className="side-panel-streaming">Generating...</span>}
           <span className="side-panel-timestamp">{formattedTime}</span>
         </div>
         <div className="side-panel-actions">
@@ -162,6 +165,8 @@ export function SidePanel() {
           />
         ) : data.content ? (
           <MarkdownContent content={data.content} />
+        ) : isStreaming ? (
+          <span className="side-panel-empty">Waiting for response...</span>
         ) : (
           <span className="side-panel-empty">No content</span>
         )}
