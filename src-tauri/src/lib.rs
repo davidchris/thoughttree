@@ -709,6 +709,93 @@ async fn open_project_dialog(app: AppHandle) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+async fn get_recent_projects(app: AppHandle) -> Result<Vec<String>, String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+    let recent_projects = store
+        .get("recent_projects")
+        .and_then(|v| {
+            v.as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+        })
+        .unwrap_or_default();
+
+    Ok(recent_projects)
+}
+
+#[tauri::command]
+async fn add_recent_project(app: AppHandle, path: String) -> Result<(), String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+    let mut recent_projects: Vec<String> = store
+        .get("recent_projects")
+        .and_then(|v| {
+            v.as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+        })
+        .unwrap_or_default();
+
+    // Remove the path if it already exists
+    recent_projects.retain(|p| p != &path);
+
+    // Add to the beginning
+    recent_projects.insert(0, path);
+
+    // Keep only the most recent 10 projects
+    recent_projects.truncate(10);
+
+    store.set("recent_projects", serde_json::json!(recent_projects));
+
+    store
+        .save()
+        .map_err(|e| format!("Failed to save config store: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+    let mut recent_projects: Vec<String> = store
+        .get("recent_projects")
+        .and_then(|v| {
+            v.as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+        })
+        .unwrap_or_default();
+
+    // Remove the path
+    recent_projects.retain(|p| p != &path);
+
+    store.set("recent_projects", serde_json::json!(recent_projects));
+
+    store
+        .save()
+        .map_err(|e| format!("Failed to save config store: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn export_markdown(app: AppHandle, content: String, default_name: String) -> Result<Option<String>, String> {
     let mut dialog = app
         .dialog()
@@ -1067,6 +1154,10 @@ pub fn run() {
             new_project_dialog,
             open_project_dialog,
             export_markdown,
+            // Recent projects commands
+            get_recent_projects,
+            add_recent_project,
+            remove_recent_project,
             // File search
             search_files,
             // Summary generation

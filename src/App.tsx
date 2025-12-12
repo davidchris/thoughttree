@@ -5,6 +5,7 @@ import { Graph } from './components/Graph';
 import { Toolbar } from './components/Toolbar';
 import { PermissionDialog } from './components/PermissionDialog';
 import { SetupWizard } from './components/SetupWizard';
+import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
 import { SidePanel } from './components/SidePanel';
 import { initializeListeners } from './lib/tauri';
 import { useSummaryGeneration } from './hooks/useSummaryGeneration';
@@ -14,7 +15,11 @@ import './App.css';
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const projectPath = useGraphStore((state) => state.projectPath);
   const loadProject = useGraphStore((state) => state.loadProject);
+  const newProject = useGraphStore((state) => state.newProject);
+  const setProjectPath = useGraphStore((state) => state.setProjectPath);
+  const saveProject = useGraphStore((state) => state.saveProject);
 
   // Automatically generate summaries for node content
   useSummaryGeneration();
@@ -72,6 +77,48 @@ function App() {
     setNeedsSetup(false);
   };
 
+  const handleProjectSelected = useCallback(
+    async (path: string) => {
+      try {
+        await loadProject(path);
+        // Track in recent projects (handled by ProjectOpeningWizard)
+      } catch (error) {
+        console.error('Failed to load project:', error);
+      }
+    },
+    [loadProject]
+  );
+
+  const handleOpenDialog = useCallback(async () => {
+    try {
+      const path = await invoke<string | null>('open_project_dialog');
+      if (path) {
+        await handleProjectSelected(path);
+      }
+    } catch (error) {
+      console.error('Failed to open project:', error);
+    }
+  }, [handleProjectSelected]);
+
+  const handleNewProject = useCallback(async () => {
+    try {
+      const path = await invoke<string | null>('new_project_dialog');
+      if (path) {
+        newProject();
+        setProjectPath(path);
+        await saveProject();
+        // Track new project in recent projects
+        try {
+          await invoke('add_recent_project', { path });
+        } catch (error) {
+          console.warn('Failed to track new project:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to create new project:', error);
+    }
+  }, [newProject, setProjectPath, saveProject]);
+
   if (isLoading) {
     return (
       <div className="app loading">
@@ -82,6 +129,17 @@ function App() {
 
   if (needsSetup) {
     return <SetupWizard onComplete={handleSetupComplete} />;
+  }
+
+  // Show project opening wizard if no project is loaded
+  if (!projectPath) {
+    return (
+      <ProjectOpeningWizard
+        onProjectSelected={handleProjectSelected}
+        onOpenDialog={handleOpenDialog}
+        onNewProject={handleNewProject}
+      />
+    );
   }
 
   return (

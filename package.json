@@ -10,28 +10,28 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2",
-    "@xyflow/react": "^12.9.3",
+    "@tauri-apps/api": "^2.9",
+    "@tauri-apps/plugin-opener": "^2.5",
+    "@xyflow/react": "^12.10",
     "katex": "^0.16.27",
-    "mermaid": "^11.12.2",
-    "react": "^19.1.2",
-    "react-dom": "^19.1.2",
-    "react-markdown": "^10.1.0",
-    "react-syntax-highlighter": "^16.1.0",
+    "mermaid": "^11.12",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "react-markdown": "^10.1",
+    "react-syntax-highlighter": "^16.1",
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "zustand": "^5.0.8"
+    "zustand": "^5.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "@types/react-syntax-highlighter": "^15.5.13",
-    "@vitejs/plugin-react": "^4.6.0",
-    "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "@tauri-apps/cli": "^2.9",
+    "@types/node": "^24.10",
+    "@types/react": "^19.2",
+    "@types/react-dom": "^19.2",
+    "@types/react-syntax-highlighter": "^15.5",
+    "@vitejs/plugin-react": "^4.7",
+    "typescript": "~5.8",
+    "vite": "^7.2"
   }
 }

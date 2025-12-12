@@ -45,6 +45,12 @@ export function Toolbar() {
         newProject();
         setProjectPath(path);
         await saveProject();
+        // Track new project in recent projects
+        try {
+          await invoke('add_recent_project', { path });
+        } catch (error) {
+          console.warn('Failed to track new project:', error);
+        }
       }
     } catch (error) {
       console.error('Failed to create new project:', error);

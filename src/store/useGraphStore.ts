@@ -440,6 +440,14 @@ export const useGraphStore = create<GraphState>()(
         streamingNodeId: null,
         previewNodeId: null,
       });
+
+      // Track in recently opened projects
+      try {
+        await invoke('add_recent_project', { path });
+      } catch (error) {
+        console.warn('Failed to update recent projects:', error);
+      }
+
       console.log('Project loaded from:', path);
     } catch (error) {
       console.error('Failed to load project:', error);
