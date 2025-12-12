@@ -4,6 +4,29 @@
     min-width: 0;
 }
 
+/* Graph action panel */
+.graph-actions-panel {
+    display: flex;
+    gap: 8px;
+}
+
+.graph-action-button {
+    background: rgba(26, 26, 46, 0.92);
+    color: #e0e0e0;
+    border: 1px solid #444;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    backdrop-filter: blur(6px);
+}
+
+.graph-action-button:hover {
+    background: rgba(37, 37, 56, 0.92);
+    border-color: #555;
+}
+
 /* Base node styles */
 .thought-node {
     background: #1a1a2e;

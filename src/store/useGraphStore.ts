@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
 import { Node, Edge, applyNodeChanges, applyEdgeChanges, addEdge, NodeChange, EdgeChange, Connection } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
 import { MessageNodeData, UserNodeData, AgentNodeData, UserFlowNodeData, AgentFlowNodeData, ThoughtTreeFlowNodeData, PermissionRequest } from '../types';
+import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 
 type ThoughtTreeNode = Node<ThoughtTreeFlowNodeData>;
 
@@ -65,6 +65,9 @@ interface GraphState {
   loadProject: (path: string) => Promise<void>;
   newProject: () => void;
   exportSubgraph: (nodeIds: string[]) => string;
+
+  // Layout actions
+  autoLayout: (options?: AutoLayoutOptions) => void;
 }
 
 const generateId = () => crypto.randomUUID();
@@ -79,7 +82,7 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: numbe
 }
 
 export const useGraphStore = create<GraphState>()(
-  subscribeWithSelector((set, get) => ({
+  (set, get) => ({
   nodes: [],
   edges: [],
   nodeData: new Map(),
@@ -513,7 +516,22 @@ export const useGraphStore = create<GraphState>()(
       .filter(Boolean)
       .join('\n\n---\n\n');
   },
-})));
+
+  autoLayout: (options) => {
+    const { nodes, edges } = get();
+    if (nodes.length === 0) return;
+
+    const pos = computeAutoLayout(nodes, edges, options);
+    set({
+      nodes: nodes.map((n) => {
+        const p = pos.get(n.id);
+        if (!p) return n;
+        return { ...n, position: p };
+      }) as ThoughtTreeNode[],
+      isDirty: true,
+    });
+  },
+}));
 
 // Auto-save subscription
 const debouncedSave = debounce(async () => {
@@ -528,10 +546,12 @@ const debouncedSave = debounce(async () => {
 }, 2000);
 
 // Subscribe to changes that should trigger auto-save
-useGraphStore.subscribe(
-  (state) => ({ nodes: state.nodes, edges: state.edges, nodeData: state.nodeData }),
-  () => {
+useGraphStore.subscribe((state, prevState) => {
+  if (
+    state.nodes !== prevState.nodes ||
+    state.edges !== prevState.edges ||
+    state.nodeData !== prevState.nodeData
+  ) {
     debouncedSave();
-  },
-  { equalityFn: (a, b) => a.nodes === b.nodes && a.edges === b.edges && a.nodeData === b.nodeData }
-);
+  }
+});

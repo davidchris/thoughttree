@@ -19,6 +19,7 @@ export function Toolbar() {
     nodeData,
     createUserNodeDownstream,
     streamingNodeId,
+    autoLayout,
   } = useGraphStore();
 
   const [isSaving, setIsSaving] = useState(false);
@@ -31,6 +32,10 @@ export function Toolbar() {
     if (selectedNodeId && canReply) {
       createUserNodeDownstream(selectedNodeId);
     }
+  };
+
+  const handleCleanUp = () => {
+    autoLayout({ direction: 'TB', gridSize: 20 });
   };
 
   // Get project name from path
@@ -175,6 +180,14 @@ export function Toolbar() {
           title="Save Project"
         >
           {isSaving ? 'Saving...' : 'Save'}
+        </button>
+        <span className="toolbar-divider" />
+        <button
+          onClick={handleCleanUp}
+          disabled={nodes.length === 0}
+          title="Tidy graph (Cmd/Ctrl+L)"
+        >
+          Tidy graph
         </button>
         <span className="toolbar-divider" />
         <button

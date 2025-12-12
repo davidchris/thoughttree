@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  Panel,
   NodeTypes,
   useReactFlow,
   addEdge,
@@ -46,8 +47,9 @@ export function Graph() {
     editingNodeId,
     togglePreviewNode,
     setPreviewNode,
+    autoLayout,
   } = useGraphStore();
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
 
   // Context menu state
@@ -247,6 +249,14 @@ export function Graph() {
     []
   );
 
+  const handleAutoLayout = useCallback(() => {
+    autoLayout({ direction: 'TB', gridSize: 20 });
+    // Let ReactFlow consume the updated nodes before fitting view.
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.2, duration: 200 });
+    });
+  }, [autoLayout, fitView]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -258,6 +268,17 @@ export function Graph() {
         }
         e.preventDefault();
         togglePreviewNode(selectedNodeId);
+        return;
+      }
+
+      // Cmd/Ctrl+L to auto-layout (but not when typing in an input)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
+          return;
+        }
+        e.preventDefault();
+        handleAutoLayout();
         return;
       }
 
@@ -278,7 +299,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode]);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode, handleAutoLayout]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
@@ -387,6 +408,16 @@ export function Graph() {
       >
         <Background color="#333" gap={20} />
         <Controls />
+        <Panel position="top-right" className="graph-actions-panel">
+          <button
+            className="graph-action-button"
+            onClick={handleAutoLayout}
+            title="Tidy graph (Cmd/Ctrl+L)"
+            type="button"
+          >
+            Tidy graph
+          </button>
+        </Panel>
         <MiniMap
           nodeColor={(node) => node.type === 'user' ? '#3b82f6' : '#22c55e'}
           maskColor="rgba(0,0,0,0.8)"
