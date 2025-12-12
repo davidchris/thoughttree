@@ -28,3 +28,6 @@ dist-ssr
 *settings.local.json
 tasks/
 learnings/
+
+# Sidecar build temp directory
+.sidecar-build/

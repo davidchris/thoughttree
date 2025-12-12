@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, Implementation, InitializeRequest,
@@ -281,110 +281,65 @@ impl Client for StreamingClient {
     }
 }
 
-/// Cached shell environment from login shell
-static SHELL_ENV: OnceLock<HashMap<String, String>> = OnceLock::new();
+/// Find the bundled claude-code-acp sidecar binary
+fn find_sidecar_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
 
-/// Capture environment from login shell (called once, cached)
-fn get_shell_env() -> &'static HashMap<String, String> {
-    SHELL_ENV.get_or_init(|| {
-        info!("Capturing shell environment from login shell...");
-
-        // Get home directory
-        let home = dirs::home_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "/Users".to_string());
-
-        // Detect shell, default to bash if not found or empty
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-        let shell = if shell.is_empty() { "/bin/bash".to_string() } else { shell };
-
-        info!("Using shell: {}", shell);
-
-        // Run login shell to source profile/rc files
-        let output = std::process::Command::new(&shell)
-            .args(["-l", "-c", "env"])
-            .env("HOME", &home)
-            .output()
-            .ok();
-
-        let mut env = HashMap::new();
-        if let Some(output) = output {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                if let Some((key, value)) = line.split_once('=') {
-                    env.insert(key.to_string(), value.to_string());
-                }
-            }
-            info!("Captured {} environment variables from shell", env.len());
-        }
-
-        // Ensure critical vars are set
-        if !env.contains_key("HOME") {
-            env.insert("HOME".to_string(), home);
-        }
-        if !env.contains_key("PATH") {
-            env.insert("PATH".to_string(),
-                "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin".to_string());
-        }
-
-        env
-    })
-}
-
-/// Find npx executable in common installation paths
-fn find_npx() -> String {
-    let common_paths = [
-        "/opt/homebrew/bin/npx",  // Homebrew Apple Silicon
-        "/usr/local/bin/npx",     // Homebrew Intel Mac
-        "/usr/bin/npx",           // System install
-    ];
-
-    for path in common_paths {
-        if std::path::Path::new(path).exists() {
-            return path.to_string();
-        }
+    // Standard location: next to the main executable
+    let sidecar = exe_dir.join("claude-code-acp");
+    if sidecar.exists() {
+        return Some(sidecar);
     }
 
-    // Check nvm
-    if let Ok(home) = std::env::var("HOME") {
-        let nvm_path = std::path::Path::new(&home).join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_path) {
-            if let Some(entry) = entries.filter_map(|e| e.ok()).last() {
-                let npx = entry.path().join("bin/npx");
-                if npx.exists() {
-                    return npx.to_string_lossy().to_string();
-                }
+    // Development: check src-tauri/binaries with target triple
+    // Get the target triple for the current platform
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let target_triple = "aarch64-apple-darwin";
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let target_triple = "x86_64-apple-darwin";
+    #[cfg(not(target_os = "macos"))]
+    let target_triple = "";
+
+    if !target_triple.is_empty() {
+        // Try to find in development location
+        // Walk up from exe to find src-tauri/binaries
+        let mut current = exe_dir.to_path_buf();
+        for _ in 0..10 {
+            let dev_sidecar = current.join("src-tauri/binaries")
+                .join(format!("claude-code-acp-{}", target_triple));
+            if dev_sidecar.exists() {
+                return Some(dev_sidecar);
+            }
+            if !current.pop() {
+                break;
             }
         }
     }
 
-    "npx".to_string()  // Fallback
+    None
 }
 
-/// Spawn the claude-code-acp subprocess
+/// Spawn the claude-code-acp sidecar
 async fn spawn_claude_code_acp(notes_directory: &Path) -> anyhow::Result<tokio::process::Child> {
-    let npx_path = find_npx();
-    let shell_env = get_shell_env();
-    info!("Spawning claude-code-acp in {:?} using {} with {} env vars...",
-        notes_directory, npx_path, shell_env.len());
+    let sidecar_path = find_sidecar_path().ok_or_else(|| {
+        anyhow::anyhow!(
+            "claude-code-acp sidecar not found.\n\
+             For development: run 'pnpm build:sidecar' first.\n\
+             For users: the app bundle may be corrupted."
+        )
+    })?;
 
-    // Spawn npx directly with captured shell environment
-    let child = Command::new(&npx_path)
-        .args(["@zed-industries/claude-code-acp"])
+    info!("Spawning claude-code-acp sidecar: {:?} in {:?}", sidecar_path, notes_directory);
+
+    let child = Command::new(&sidecar_path)
         .current_dir(notes_directory)
-        .env_clear()  // Start with clean environment
-        .envs(shell_env.iter())  // Add captured login shell environment
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| anyhow::anyhow!(
-            "Failed to spawn claude-code-acp: {}. Ensure you have:\n\
-             1. Node.js and npm installed\n\
-             2. Run: npx @zed-industries/claude-code-acp (first time may need to confirm install)",
-            e
-        ))?;
+        .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {}", e))?;
 
     Ok(child)
 }
@@ -577,18 +532,8 @@ async fn respond_to_permission(
 
 #[tauri::command]
 async fn check_acp_available() -> Result<bool, String> {
-    let npx_path = find_npx();
-    let shell_env = get_shell_env();
-
-    // Check if npx and claude-code-acp are available using the captured environment
-    let output = tokio::process::Command::new(&npx_path)
-        .args(["@zed-industries/claude-code-acp", "--version"])
-        .env_clear()
-        .envs(shell_env.iter())
-        .output()
-        .await;
-
-    Ok(output.is_ok() && output.unwrap().status.success())
+    // Check if the bundled sidecar binary exists
+    Ok(find_sidecar_path().is_some())
 }
 
 // ============================================================================
@@ -1139,6 +1084,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             send_prompt,

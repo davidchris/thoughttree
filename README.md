@@ -14,51 +14,35 @@ ThoughtTree treats conversations as a directed acyclic graph (DAG) where each no
 
 ## Prerequisites
 
-To use ThoughtTree, you will need:
-*   **Node.js**: Includes `npm` (Node Package Manager), which is used to install the Claude Code CLI.
-*   **Claude Code CLI**: This command-line tool facilitates communication between ThoughtTree and Claude.
-*   **Claude Max subscription**: Required for accessing advanced Claude models via the Claude Code CLI.
+To use ThoughtTree, you need:
+*   **Claude Max subscription**: Required for accessing Claude models.
 
-## Download and Install ThoughtTree
+That's it! The app is self-contained — no Node.js, npm, or other dependencies required.
 
-ThoughtTree is available for macOS, Windows, and Linux. Please download the appropriate installer for your operating system:
+## Download and Install
+
+ThoughtTree is currently available for macOS:
 *   **macOS:** Download the `.dmg` from TBD
-*   **Windows:** Download the `.exe` from TBD
-*   **Linux:** Download the `.AppImage` or `.deb` from TBD
 
-After downloading, install the application:
-*   **macOS:** Double-click the `.dmg` file and drag ThoughtTree to your Applications folder.
-*   **Windows:** Run the `.exe` installer and follow the on-screen prompts.
-*   **Linux:** Execute the `.AppImage` (you might need to make it executable first, e.g., `chmod +x YourApp.AppImage`) or install the `.deb` package.
+After downloading:
+1. Double-click the `.dmg` file and drag ThoughtTree to your Applications folder
+2. **First launch:** Right-click the app → "Open" (required once for unsigned apps)
 
 ## Initial Configuration
 
-After installing ThoughtTree, you need to set up your environment to connect to Claude.
+### Authenticate with Claude
 
-### 1. Install Node.js
+Before using ThoughtTree, you need to authenticate with your Claude account. Open Terminal and run:
 
-Node.js provides the `npm` (Node Package Manager) command, which is necessary for the next step.
-*   **macOS:** If you have Homebrew, open your Terminal and run:
-    ```bash
-    brew install node
-    ```
-*   **Other OS or without Homebrew:** Download and install Node.js from [https://nodejs.org](https://nodejs.org). The installer will typically include `npm` and add it to your system's PATH.
-
-### 2. Install Claude Code CLI
-
-This tool allows ThoughtTree to interact with Claude through your existing Claude Max subscription.
-Open your Terminal (macOS/Linux) or Command Prompt/PowerShell (Windows) and run:
 ```bash
-npm install -g @anthropic-ai/claude-code
+npx @anthropic-ai/claude-code
 ```
 
-### 3. Authenticate with Claude
+This will open a browser window to log in and authorize access to your Claude Max subscription. You only need to do this once.
 
-This step connects the Claude Code CLI to your Claude account. It will open a browser window for you to log in and confirm your Claude Max subscription.
-In your Terminal or Command Prompt, run:
-```bash
-claude login
-```
+**Alternative:** Set the `ANTHROPIC_API_KEY` environment variable if you prefer using an API key directly.
+
+### First Launch
 
 On first launch, ThoughtTree will prompt you to select a notes directory — this is where your `.thoughttree` files are saved and where Claude can read files (via `@/path` mentions).
 
@@ -78,17 +62,17 @@ On first launch, ThoughtTree will prompt you to select a notes directory — thi
 │  ├── Session management                                         │
 │  └── Tauri commands (IPC bridge)                                │
 ├─────────────────────────────────────────────────────────────────┤
-│  claude-code-acp (Node.js subprocess)                           │
+│  claude-code-acp (bundled sidecar, compiled with Bun)           │
 │  └── Connects to Claude via user's Max subscription             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Integration: Agent Client Protocol (ACP)
 
-We use ACP to communicate with Claude Code, which allows users to leverage their existing Claude Max subscription. The protocol is JSON-RPC over stdio — we spawn `claude-code-acp` as a subprocess and exchange messages.
+We use ACP to communicate with Claude Code, which allows users to leverage their existing Claude Max subscription. The protocol is JSON-RPC over stdio — we spawn the bundled `claude-code-acp` sidecar as a subprocess and exchange messages.
 
 **ACP flow:**
-1. Spawn `npx @zed-industries/claude-code-acp` subprocess
+1. Spawn bundled `claude-code-acp` sidecar (compiled with Bun, no Node.js required)
 2. Initialize connection with protocol version and capabilities
 3. Create session with working directory
 4. Send prompts, receive streaming responses via Tauri events
@@ -142,7 +126,9 @@ thoughttree/
 │       └── src/main.rs
 ├── package.json
 ├── tauri.conf.json
-└── pnpm-lock.yaml
+├── bun.lock
+└── scripts/
+    └── build-sidecar.sh   # Builds claude-code-acp sidecar with Bun
 ```
 
 ## Current State
@@ -177,16 +163,22 @@ thoughttree/
 
 ### Prerequisites
 
-1. Node.js and pnpm
+1. [Bun](https://bun.sh) — JavaScript runtime and package manager
 2. Rust toolchain
-3. Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
-4. Authenticated with Claude: `claude login`
+3. Authenticated with Claude: `npx @anthropic-ai/claude-code` (first time only)
+
+### Setup
+
+```bash
+bun install                # Install dependencies
+bun run build:sidecar      # Build the claude-code-acp sidecar (requires Bun)
+```
 
 ### Run
 
 ```bash
-pnpm install
-pnpm tauri dev
+bun run tauri dev          # Development mode
+bun run tauri:build        # Production build (includes sidecar)
 ```
 
 ### ACP Implementation Reference
