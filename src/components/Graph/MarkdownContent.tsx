@@ -1,9 +1,12 @@
 import { useRef, useCallback, useEffect, useState, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
+import 'katex/dist/katex.min.css';
 
 // Initialize mermaid once
 mermaid.initialize({
@@ -154,7 +157,8 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
       onCopy={handleCopy}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
         components={{
           // Code blocks with syntax highlighting or mermaid rendering
           code({ node, className, children, ...props }) {
