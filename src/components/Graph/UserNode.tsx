@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Handle,
   Position,
@@ -11,7 +11,7 @@ import { sendPrompt } from "../../lib/tauri";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
 import "./styles.css";
 
-const COLLAPSED_PREVIEW_LENGTH = 30;
+const SUMMARY_THRESHOLD = 100;
 
 interface AutocompleteState {
   isOpen: boolean;
@@ -47,8 +47,17 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   const isEditing = editingNodeId === id;
   const isAnyStreaming = streamingNodeId !== null;
-  const preview = content.slice(0, COLLAPSED_PREVIEW_LENGTH);
-  const hasMore = content.length > COLLAPSED_PREVIEW_LENGTH;
+
+  // Compute collapsed text: short content shown directly, long content uses AI summary
+  const collapsedText = useMemo(() => {
+    if (!content) return '';
+    if (content.length <= SUMMARY_THRESHOLD) return content;
+    if (nodeData.summary) return nodeData.summary;
+    return content.slice(0, 30) + '...'; // Fallback while loading
+  }, [content, nodeData.summary]);
+
+  const hasMore = content.length > SUMMARY_THRESHOLD || content.length > 30;
+  const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !nodeData.summary;
 
   // Auto-focus textarea when entering edit mode
   useEffect(() => {
@@ -264,8 +273,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
         <div className="node-content">
           {content ? (
             <>
-              {preview}
-              {hasMore && "..."}
+              {collapsedText}
+              {isGeneratingSummary && <span className="summary-loading"> ⋯</span>}
             </>
           ) : null}
         </div>

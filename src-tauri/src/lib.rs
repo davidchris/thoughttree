@@ -4,10 +4,10 @@ use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 
 use agent_client_protocol::{
-    Agent, Client, ClientCapabilities, ClientSideConnection, ContentBlock, FileSystemCapability,
-    Implementation, InitializeRequest, NewSessionRequest, PermissionOptionId, PromptRequest,
-    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SessionNotification, SessionUpdate, TextContent, VERSION,
+    Agent, Client, ClientSideConnection, ContentBlock, Implementation, InitializeRequest,
+    NewSessionRequest, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionNotification, SessionUpdate, SetSessionModelRequest, TextContent,
 };
 use async_trait::async_trait;
 use futures::lock::Mutex;
@@ -95,7 +95,7 @@ impl StreamingClient {
         }
 
         // Build description from tool call
-        let tool_type = args.tool_call.id.0.to_string();
+        let tool_type = args.tool_call.tool_call_id.0.to_string();
         let tool_name = args
             .tool_call
             .fields
@@ -105,11 +105,15 @@ impl StreamingClient {
 
         // Format locations or other details as description
         let description = if let Some(locations) = &args.tool_call.fields.locations {
-            locations
-                .iter()
-                .map(|loc| loc.path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
+            if !locations.is_empty() {
+                locations
+                    .iter()
+                    .map(|loc| loc.path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            } else {
+                "No additional details".to_string()
+            }
         } else {
             "No additional details".to_string()
         };
@@ -119,7 +123,7 @@ impl StreamingClient {
             .options
             .iter()
             .map(|opt| PermissionOption {
-                id: opt.id.0.to_string(),
+                id: opt.option_id.0.to_string(),
                 label: opt.name.clone(),
             })
             .collect();
@@ -137,28 +141,20 @@ impl StreamingClient {
             error!("Failed to emit permission request: {:?}", e);
             let mut pending = self.pending_permissions.lock().await;
             pending.remove(&request_id);
-            return Ok(RequestPermissionResponse {
-                outcome: RequestPermissionOutcome::Cancelled,
-                meta: None,
-            });
+            return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
         }
 
         // Wait for response from frontend
         match rx.await {
             Ok(option_id_str) => {
                 info!("Permission response received: {}", option_id_str);
-                let option_id = PermissionOptionId(Arc::from(option_id_str.as_str()));
-                Ok(RequestPermissionResponse {
-                    outcome: RequestPermissionOutcome::Selected { option_id },
-                    meta: None,
-                })
+                Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
+                    SelectedPermissionOutcome::new(option_id_str),
+                )))
             }
             Err(_) => {
                 warn!("Permission request cancelled (channel dropped)");
-                Ok(RequestPermissionResponse {
-                    outcome: RequestPermissionOutcome::Cancelled,
-                    meta: None,
-                })
+                Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))
             }
         }
     }
@@ -176,7 +172,7 @@ impl Client for StreamingClient {
             .title
             .as_deref()
             .unwrap_or("Unknown");
-        let tool_id = args.tool_call.id.0.to_string();
+        let tool_id = args.tool_call.tool_call_id.0.to_string();
 
         info!(
             "Permission requested - tool: {} (id: {})",
@@ -204,10 +200,7 @@ impl Client for StreamingClient {
                 "Tool '{}' denied - ThoughtTree only allows read-only operations",
                 tool_name
             );
-            return Ok(RequestPermissionResponse {
-                outcome: RequestPermissionOutcome::Cancelled,
-                meta: None,
-            });
+            return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
         }
 
         // AUTO-APPROVE: Read-only search tools (within notes directory) and Skills
@@ -224,10 +217,7 @@ impl Client for StreamingClient {
                             "Tool '{}' denied - path {:?} is outside notes directory {:?}",
                             tool_name, loc.path, self.notes_directory
                         );
-                        return Ok(RequestPermissionResponse {
-                            outcome: RequestPermissionOutcome::Cancelled,
-                            meta: None,
-                        });
+                        return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
                     }
                 }
             }
@@ -235,12 +225,9 @@ impl Client for StreamingClient {
             // Auto-approve by selecting first option
             if let Some(first_opt) = args.options.first() {
                 info!("Auto-approving tool '{}'", tool_name);
-                return Ok(RequestPermissionResponse {
-                    outcome: RequestPermissionOutcome::Selected {
-                        option_id: first_opt.id.clone(),
-                    },
-                    meta: None,
-                });
+                return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
+                    SelectedPermissionOutcome::new(first_opt.option_id.clone()),
+                )));
             }
         }
 
@@ -252,10 +239,7 @@ impl Client for StreamingClient {
 
         // DEFAULT: Deny unknown tools
         warn!("Unknown tool '{}' denied by default", tool_name);
-        Ok(RequestPermissionResponse {
-            outcome: RequestPermissionOutcome::Cancelled,
-            meta: None,
-        })
+        Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))
     }
 
     async fn session_notification(
@@ -467,24 +451,12 @@ async fn run_prompt_session(
     // Initialize
     info!("Initializing connection...");
     let init_response = connection
-        .initialize(InitializeRequest {
-            protocol_version: VERSION,
-            client_capabilities: ClientCapabilities {
-                fs: FileSystemCapability {
-                    read_text_file: false,
-                    write_text_file: false,
-                    meta: None,
-                },
-                terminal: false,
-                meta: None,
-            },
-            client_info: Some(Implementation {
-                name: "thoughttree".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                title: Some("ThoughtTree".to_string()),
-            }),
-            meta: None,
-        })
+        .initialize(
+            InitializeRequest::new(ProtocolVersion::LATEST).client_info(
+                Implementation::new("thoughttree", env!("CARGO_PKG_VERSION"))
+                    .title("ThoughtTree"),
+            ),
+        )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize: {:?}", e))?;
 
@@ -496,11 +468,7 @@ async fn run_prompt_session(
     // Create session with notes directory as cwd
     info!("Creating session with cwd: {:?}", notes_directory);
     let session_response = connection
-        .new_session(NewSessionRequest {
-            cwd: notes_directory,
-            mcp_servers: vec![],
-            meta: None,
-        })
+        .new_session(NewSessionRequest::new(notes_directory))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create session: {:?}", e))?;
 
@@ -522,15 +490,10 @@ async fn run_prompt_session(
     // Send prompt
     info!("Sending prompt...");
     let prompt_response = connection
-        .prompt(PromptRequest {
-            session_id: session_response.session_id,
-            prompt: vec![ContentBlock::Text(TextContent {
-                text: prompt_text,
-                annotations: None,
-                meta: None,
-            })],
-            meta: None,
-        })
+        .prompt(PromptRequest::new(
+            session_response.session_id,
+            vec![ContentBlock::Text(TextContent::new(prompt_text))],
+        ))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to send prompt: {:?}", e))?;
 
@@ -832,6 +795,249 @@ async fn search_files(
     Ok(files)
 }
 
+// ============================================================================
+// Summary generation (uses Haiku via ACP)
+// ============================================================================
+
+/// Simple ACP client for summarization - collects response text, auto-approves all tools
+struct SummaryClient {
+    response_text: Arc<Mutex<String>>,
+}
+
+impl SummaryClient {
+    fn new() -> Self {
+        Self {
+            response_text: Arc::new(Mutex::new(String::new())),
+        }
+    }
+}
+
+#[async_trait(?Send)]
+impl Client for SummaryClient {
+    async fn request_permission(
+        &self,
+        args: RequestPermissionRequest,
+    ) -> agent_client_protocol::Result<RequestPermissionResponse> {
+        // Auto-approve first option for summarization (it only uses read-only tools if any)
+        if let Some(first_opt) = args.options.first() {
+            Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
+                SelectedPermissionOutcome::new(first_opt.option_id.clone()),
+            )))
+        } else {
+            Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))
+        }
+    }
+
+    async fn session_notification(
+        &self,
+        args: SessionNotification,
+    ) -> agent_client_protocol::Result<()> {
+        if let SessionUpdate::AgentMessageChunk(chunk) = args.update {
+            if let ContentBlock::Text(text) = chunk.content {
+                let mut response = self.response_text.lock().await;
+                response.push_str(&text.text);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Run a summarization session with Haiku model
+async fn run_summary_session(
+    content: String,
+    notes_directory: PathBuf,
+) -> anyhow::Result<String> {
+    // Spawn ACP subprocess
+    let mut child = spawn_claude_code_acp(&notes_directory).await?;
+
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout handle"))?;
+
+    // Log stderr for debugging
+    if let Some(stderr) = child.stderr.take() {
+        tokio::task::spawn_local(async move {
+            use tokio::io::AsyncBufReadExt;
+            let reader = tokio::io::BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                warn!("[summary-acp stderr] {}", line);
+            }
+        });
+    }
+
+    // Small delay to ensure subprocess is ready
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    let client = Arc::new(SummaryClient::new());
+    let response_text = client.response_text.clone();
+
+    // Create connection
+    let (connection, io_future) = ClientSideConnection::new(
+        client,
+        stdin.compat_write(),
+        stdout.compat(),
+        |f| {
+            tokio::task::spawn_local(f);
+        },
+    );
+
+    // Run I/O in background
+    tokio::task::spawn_local(async move {
+        if let Err(e) = io_future.await {
+            error!("[summary] I/O error: {:?}", e);
+        }
+    });
+
+    // Initialize
+    info!("Summary session: initializing connection...");
+    let init_response = connection
+        .initialize(
+            InitializeRequest::new(ProtocolVersion::LATEST).client_info(
+                Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
+            ),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize summary session: {:?}", e))?;
+
+    info!(
+        "Summary session connected to: {:?}",
+        init_response.agent_info
+    );
+
+    // Create session
+    let session_response = connection
+        .new_session(NewSessionRequest::new(&notes_directory))
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create session: {:?}", e))?;
+
+    // Try to switch to Haiku if available
+    if let Some(models) = &session_response.models {
+        // Look for Haiku model
+        let haiku = models.available_models.iter().find(|m| {
+            let id = m.model_id.0.to_lowercase();
+            id.contains("haiku")
+        });
+
+        if let Some(haiku_model) = haiku {
+            info!("Switching to Haiku model: {}", haiku_model.model_id.0);
+            let _ = connection
+                .set_session_model(SetSessionModelRequest::new(
+                    session_response.session_id.clone(),
+                    haiku_model.model_id.clone(),
+                ))
+                .await;
+        } else {
+            info!(
+                "Haiku not found, using default model: {}",
+                models.current_model_id.0
+            );
+        }
+    }
+
+    // Truncate content to avoid huge inputs
+    let truncated_content = if content.len() > 2000 {
+        format!("{}...", &content[..2000])
+    } else {
+        content
+    };
+
+    // Build summarization prompt
+    let prompt_text = format!(
+        "Write a 3-5 word heading that describes what this text is about. \
+         Be specific and concise. Return ONLY the heading, nothing else:\n\n{}",
+        truncated_content
+    );
+
+    // Send prompt and wait for completion
+    let prompt_result = connection
+        .prompt(PromptRequest::new(
+            session_response.session_id,
+            vec![ContentBlock::Text(TextContent::new(prompt_text))],
+        ))
+        .await;
+
+    if let Err(e) = prompt_result {
+        warn!("Summary prompt failed: {:?}", e);
+    }
+
+    // Clean up
+    drop(connection);
+    drop(child);
+
+    // Get result and clean it up
+    let result = response_text.lock().await.trim().to_string();
+
+    // Remove any quotes the model might have added
+    let result = result.trim_matches('"').trim_matches('\'').trim();
+
+    // Truncate if too long (aim for ~40 chars max)
+    if result.len() > 40 {
+        Ok(format!("{}…", &result[..37]))
+    } else {
+        Ok(result.to_string())
+    }
+}
+
+#[derive(Clone, serde::Serialize)]
+struct SummaryResult {
+    node_id: String,
+    summary: String,
+}
+
+#[tauri::command]
+async fn generate_summary(
+    app: AppHandle,
+    node_id: String,
+    content: String,
+) -> Result<SummaryResult, String> {
+    // Get notes directory from config
+    let notes_directory = {
+        let store = app
+            .store("config.json")
+            .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+        store
+            .get("notes_directory")
+            .and_then(|v| v.as_str().map(PathBuf::from))
+            .ok_or_else(|| "Notes directory not configured".to_string())?
+    };
+
+    info!("Generating summary for node: {}", node_id);
+
+    // Run in LocalSet for non-Send futures
+    let result = tokio::task::spawn_blocking(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+
+        let local = tokio::task::LocalSet::new();
+        local.block_on(&rt, async move {
+            run_summary_session(content, notes_directory).await
+        })
+        .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+
+    match result {
+        Ok(summary) => {
+            info!("Generated summary for {}: {}", node_id, summary);
+            Ok(SummaryResult { node_id, summary })
+        }
+        Err(e) => {
+            warn!("Summary generation failed for {}: {}", node_id, e);
+            Err(e)
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize logging
@@ -863,6 +1069,8 @@ pub fn run() {
             export_markdown,
             // File search
             search_files,
+            // Summary generation
+            generate_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

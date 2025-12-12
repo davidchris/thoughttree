@@ -7,11 +7,15 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { SidePanel } from './components/SidePanel';
 import { initializeListeners } from './lib/tauri';
+import { useSummaryGeneration } from './hooks/useSummaryGeneration';
 import './App.css';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+
+  // Automatically generate summaries for node content
+  useSummaryGeneration();
 
   useEffect(() => {
     const initialize = async () => {

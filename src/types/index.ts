@@ -4,6 +4,8 @@ export interface UserNodeData {
   role: 'user';
   content: string;
   timestamp: number;
+  summary?: string;           // Generated summary for collapsed view
+  summaryTimestamp?: number;  // When summary was last generated
 }
 
 export interface AgentNodeData {
@@ -11,6 +13,8 @@ export interface AgentNodeData {
   role: 'assistant';
   content: string;
   timestamp: number;
+  summary?: string;           // Generated summary for collapsed view
+  summaryTimestamp?: number;  // When summary was last generated
   // Note: isStreaming is derived from store.streamingNodeId, not stored here
 }
 

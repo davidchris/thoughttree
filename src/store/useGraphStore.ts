@@ -53,6 +53,9 @@ interface GraphState {
   // Context building
   buildConversationContext: (nodeId: string) => Array<{ role: string; content: string }>;
 
+  // Summary actions
+  setSummary: (nodeId: string, summary: string) => void;
+
   // Permission actions
   setPendingPermission: (permission: PermissionRequest | null) => void;
 
@@ -350,6 +353,35 @@ export const useGraphStore = create<GraphState>()(
     }
 
     return messages;
+  },
+
+  setSummary: (nodeId, summary) => {
+    set((state) => {
+      const nodeData = new Map(state.nodeData);
+      const data = nodeData.get(nodeId);
+      if (!data) return state;
+
+      const updated = {
+        ...data,
+        summary,
+        summaryTimestamp: Date.now(),
+      } as MessageNodeData;
+      nodeData.set(nodeId, updated);
+
+      // Update the flow node data too
+      const nodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            nodeData: updated,
+          } as ThoughtTreeFlowNodeData,
+        };
+      }) as ThoughtTreeNode[];
+
+      return { nodes, nodeData };
+    });
   },
 
   setPendingPermission: (permission) => {

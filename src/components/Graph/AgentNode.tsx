@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   Handle,
   Position,
@@ -8,7 +9,7 @@ import { AgentFlowNodeData } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import "./styles.css";
 
-const COLLAPSED_PREVIEW_LENGTH = 30;
+const SUMMARY_THRESHOLD = 100;
 
 type AgentNodeProps = NodeProps & {
   data: AgentFlowNodeData;
@@ -28,8 +29,16 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
   const isStreaming = streamingNodeId === id;
   const isAnyStreaming = streamingNodeId !== null;
 
-  const preview = content.slice(0, COLLAPSED_PREVIEW_LENGTH);
-  const hasMore = content.length > COLLAPSED_PREVIEW_LENGTH;
+  // Compute collapsed text: short content shown directly, long content uses AI summary
+  const collapsedText = useMemo(() => {
+    if (!content) return '';
+    if (content.length <= SUMMARY_THRESHOLD) return content;
+    if (nodeData.summary) return nodeData.summary;
+    return content.slice(0, 30) + '...'; // Fallback while loading
+  }, [content, nodeData.summary]);
+
+  const hasMore = content.length > SUMMARY_THRESHOLD || content.length > 30;
+  const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !nodeData.summary && !isStreaming;
 
   const handleContinue = () => {
     if (isAnyStreaming) return;
@@ -70,8 +79,8 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
       <div className="node-content">
         {content ? (
           <>
-            {preview}
-            {hasMore && "..."}
+            {collapsedText}
+            {isGeneratingSummary && <span className="summary-loading"> ⋯</span>}
           </>
         ) : (
           <span className="node-placeholder">
