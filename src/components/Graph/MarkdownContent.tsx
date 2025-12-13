@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
@@ -120,6 +121,23 @@ interface MarkdownContentProps {
   className?: string;
 }
 
+function normalizeExternalHref(href: string): string | null {
+  const trimmed = href.trim();
+  if (!trimmed) return null;
+
+  // Disallow potentially dangerous / non-browser schemes.
+  if (/^(javascript|data|vbscript):/i.test(trimmed)) return null;
+
+  // Common case: already a full URL or mailto.
+  if (/^(https?:\/\/|mailto:)/i.test(trimmed)) return trimmed;
+
+  // Convenience: treat "www.example.com" as https.
+  if (/^www\./i.test(trimmed)) return `https://${trimmed}`;
+
+  // For anything else (relative links, anchors, custom schemes), do not force-open externally.
+  return null;
+}
+
 export function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -197,8 +215,22 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
           },
           // Links open in new tab
           a({ href, children }) {
+            const normalized = href ? normalizeExternalHref(href) : null;
             return (
-              <a href={href} target="_blank" rel="noopener noreferrer">
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (!normalized) return;
+                  e.preventDefault();
+                  // Open in the OS default handler (browser/mail client).
+                  openUrl(normalized).catch(() => {
+                    // Fallback for dev web environments.
+                    window.open(normalized, '_blank', 'noopener,noreferrer');
+                  });
+                }}
+              >
                 {children}
               </a>
             );

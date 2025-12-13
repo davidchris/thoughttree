@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
+use chrono::Local;
 use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, Implementation, InitializeRequest,
     NewSessionRequest, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
@@ -320,20 +321,72 @@ fn find_sidecar_path() -> Option<PathBuf> {
     None
 }
 
+/// Find the Claude Code CLI executable
+fn find_claude_code_executable() -> Option<PathBuf> {
+    // Homebrew on Apple Silicon
+    let homebrew_arm = PathBuf::from("/opt/homebrew/bin/claude");
+    if homebrew_arm.exists() {
+        return Some(homebrew_arm);
+    }
+
+    // Homebrew on Intel Mac
+    let homebrew_intel = PathBuf::from("/usr/local/bin/claude");
+    if homebrew_intel.exists() {
+        return Some(homebrew_intel);
+    }
+
+    // Native install script location (~/.claude/local/claude)
+    if let Ok(home) = std::env::var("HOME") {
+        let native_install = PathBuf::from(home).join(".claude/local/claude");
+        if native_install.exists() {
+            return Some(native_install);
+        }
+    }
+
+    // Fallback: check PATH using `which`
+    if let Ok(output) = std::process::Command::new("which")
+        .arg("claude")
+        .output()
+    {
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path_str.is_empty() {
+                let path = PathBuf::from(&path_str);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Spawn the claude-code-acp sidecar
 async fn spawn_claude_code_acp(notes_directory: &Path) -> anyhow::Result<tokio::process::Child> {
     let sidecar_path = find_sidecar_path().ok_or_else(|| {
         anyhow::anyhow!(
             "claude-code-acp sidecar not found.\n\
-             For development: run 'pnpm build:sidecar' first.\n\
+             For development: run 'bun run build:sidecar' first.\n\
              For users: the app bundle may be corrupted."
         )
     })?;
 
+    // Find Claude Code CLI for the sidecar to use
+    let claude_cli_path = find_claude_code_executable().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Claude Code CLI not found.\n\
+             Please install it: brew install --cask claude-code\n\
+             Or: npm install -g @anthropic-ai/claude-code"
+        )
+    })?;
+
     info!("Spawning claude-code-acp sidecar: {:?} in {:?}", sidecar_path, notes_directory);
+    info!("Using Claude Code CLI at: {:?}", claude_cli_path);
 
     let child = Command::new(&sidecar_path)
         .current_dir(notes_directory)
+        .env("CLAUDE_CODE_EXECUTABLE", &claude_cli_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -429,6 +482,10 @@ async fn run_prompt_session(
 
     info!("Session created: {}", session_response.session_id);
 
+    // Get current date and format it
+    let current_date = Local::now().format("%B %d, %Y").to_string();
+    let date_prefix = format!("Current date: {}\n\n", current_date);
+
     // Build prompt from conversation messages
     // Only include the last user message as the prompt, context comes from session
     let prompt_text = messages
@@ -436,6 +493,9 @@ async fn run_prompt_session(
         .map(|(role, content)| format!("{}: {}", role, content))
         .collect::<Vec<_>>()
         .join("\n\n");
+
+    // Prepend current date to the prompt
+    let prompt_text = format!("{}{}", date_prefix, prompt_text);
 
     // Validate prompt is not empty
     if prompt_text.trim().is_empty() {
