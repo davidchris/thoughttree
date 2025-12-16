@@ -62,6 +62,9 @@ export function Graph() {
   // Alignment guides state
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
 
+  // Pan mode state (for cursor feedback when holding spacebar)
+  const [isPanMode, setIsPanMode] = useState(false);
+
   // Get node dimensions (use measured if available, otherwise default)
   const getNodeDimensions = useCallback((node: Node) => {
     const width = node.measured?.width ?? DEFAULT_NODE_SIZE;
@@ -257,14 +260,39 @@ export function Graph() {
     });
   }, [autoLayout, fitView]);
 
+  // Track spacebar state for pan mode cursor feedback
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !isPanMode) {
+        const target = e.target as HTMLElement;
+        if (target.tagName !== 'TEXTAREA' && target.tagName !== 'INPUT' && !target.isContentEditable) {
+          setIsPanMode(true);
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsPanMode(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [isPanMode]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Spacebar to toggle preview panel (but not when typing in an input)
-      if (e.key === ' ' && selectedNodeId && !editingNodeId && !streamingNodeId) {
+      // P key to toggle preview panel (but not when typing in an input)
+      if (e.key.toLowerCase() === 'p' && selectedNodeId && !editingNodeId && !streamingNodeId) {
         const target = e.target as HTMLElement;
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
-          return; // Let the input handle the space
+          return; // Let the input handle the key
         }
         e.preventDefault();
         togglePreviewNode(selectedNodeId);
@@ -389,7 +417,7 @@ export function Graph() {
   );
 
   return (
-    <div className="graph-container">
+    <div className={`graph-container ${isPanMode ? 'pan-mode' : ''}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -404,6 +432,7 @@ export function Graph() {
         nodeTypes={nodeTypes}
         fitView
         zoomOnDoubleClick={false}
+        nodesDraggable={!isPanMode}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#333" gap={20} />

@@ -239,7 +239,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
           <button
             className="expand-toggle"
             onClick={handleToggleExpand}
-            title="Preview in side panel (Space)"
+            title="Preview in side panel (P)"
           >
             ▼
           </button>

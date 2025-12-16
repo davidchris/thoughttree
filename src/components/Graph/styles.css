@@ -4,6 +4,19 @@
     min-width: 0;
 }
 
+/* Pan mode cursor feedback (when holding spacebar) */
+.graph-container.pan-mode .react-flow__pane {
+    cursor: grab !important;
+}
+
+.graph-container.pan-mode .react-flow__pane:active {
+    cursor: grabbing !important;
+}
+
+.graph-container.pan-mode .thought-node {
+    cursor: grab !important;
+}
+
 /* Graph action panel */
 .graph-actions-panel {
     display: flex;

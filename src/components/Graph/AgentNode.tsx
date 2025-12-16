@@ -68,7 +68,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
           <button
             className="expand-toggle"
             onClick={handleToggleExpand}
-            title="Preview in side panel (Space)"
+            title="Preview in side panel (P)"
           >
             ▼
           </button>

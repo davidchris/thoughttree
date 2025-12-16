@@ -130,6 +130,7 @@ export const useGraphStore = create<GraphState>()(
       type: 'user',
       position,
       data: flowNodeData,
+      dragHandle: '.thought-node',
     };
 
     set((state) => {
@@ -171,6 +172,7 @@ export const useGraphStore = create<GraphState>()(
       type: 'agent',
       position,
       data: flowNodeData,
+      dragHandle: '.thought-node',
     };
 
     const edge: Edge = {
@@ -219,6 +221,7 @@ export const useGraphStore = create<GraphState>()(
       type: 'user',
       position,
       data: flowNodeData,
+      dragHandle: '.thought-node',
     };
 
     const edge: Edge = {
@@ -431,8 +434,14 @@ export const useGraphStore = create<GraphState>()(
       // Convert nodeData from object back to Map
       const nodeDataMap = new Map(Object.entries(projectFile.nodeData));
 
+      // Migrate nodes to include dragHandle if missing (for existing saved projects)
+      const migratedNodes = projectFile.nodes.map(node => ({
+        ...node,
+        dragHandle: node.dragHandle ?? '.thought-node',
+      }));
+
       set({
-        nodes: projectFile.nodes,
+        nodes: migratedNodes,
         edges: projectFile.edges,
         nodeData: nodeDataMap,
         projectPath: path,
