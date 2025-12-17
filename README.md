@@ -82,6 +82,12 @@ On first launch, ThoughtTree will prompt you to select a **notes directory** —
 
 ThoughtTree uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to communicate with Claude Code. This allows users to leverage their existing Claude Max subscription — no separate API costs.
 
+## Privacy
+
+ThoughtTree does not collect any telemetry, analytics, or user data. Your conversations and files stay on your machine.
+
+The only external communication is with Anthropic's Claude API through the bundled Claude Code integration. Your prompts and file contents (when using `@/path` mentions) are sent to Claude for processing. See [Anthropic's Privacy Policy](https://www.anthropic.com/privacy) and [Claude Code documentation](https://code.claude.com/docs/en/overview) for details on how Anthropic handles your data.
+
 ## Resources
 
 - [Agent Client Protocol](https://agentclientprotocol.com/)
