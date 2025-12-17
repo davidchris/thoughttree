@@ -4,7 +4,6 @@ import {
   Background,
   Controls,
   MiniMap,
-  Panel,
   NodeTypes,
   useReactFlow,
   addEdge,
@@ -47,9 +46,8 @@ export function Graph() {
     editingNodeId,
     togglePreviewNode,
     setPreviewNode,
-    autoLayout,
   } = useGraphStore();
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
 
   // Context menu state
@@ -61,9 +59,6 @@ export function Graph() {
 
   // Alignment guides state
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
-
-  // Pan mode state (for cursor feedback when holding spacebar)
-  const [isPanMode, setIsPanMode] = useState(false);
 
   // Get node dimensions (use measured if available, otherwise default)
   const getNodeDimensions = useCallback((node: Node) => {
@@ -252,61 +247,17 @@ export function Graph() {
     []
   );
 
-  const handleAutoLayout = useCallback(() => {
-    autoLayout({ direction: 'TB', gridSize: 20 });
-    // Let ReactFlow consume the updated nodes before fitting view.
-    requestAnimationFrame(() => {
-      fitView({ padding: 0.2, duration: 200 });
-    });
-  }, [autoLayout, fitView]);
-
-  // Track spacebar state for pan mode cursor feedback
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isPanMode) {
-        const target = e.target as HTMLElement;
-        if (target.tagName !== 'TEXTAREA' && target.tagName !== 'INPUT' && !target.isContentEditable) {
-          setIsPanMode(true);
-        }
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        setIsPanMode(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [isPanMode]);
-
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // P key to toggle preview panel (but not when typing in an input)
-      if (e.key.toLowerCase() === 'p' && selectedNodeId && !editingNodeId && !streamingNodeId) {
+      // Spacebar to toggle preview panel (but not when typing in an input)
+      if (e.key === ' ' && selectedNodeId && !editingNodeId && !streamingNodeId) {
         const target = e.target as HTMLElement;
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
-          return; // Let the input handle the key
+          return; // Let the input handle the space
         }
         e.preventDefault();
         togglePreviewNode(selectedNodeId);
-        return;
-      }
-
-      // Cmd/Ctrl+L to auto-layout (but not when typing in an input)
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
-          return;
-        }
-        e.preventDefault();
-        handleAutoLayout();
         return;
       }
 
@@ -327,7 +278,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode, handleAutoLayout]);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
@@ -417,7 +368,7 @@ export function Graph() {
   );
 
   return (
-    <div className={`graph-container ${isPanMode ? 'pan-mode' : ''}`}>
+    <div className="graph-container">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -432,21 +383,10 @@ export function Graph() {
         nodeTypes={nodeTypes}
         fitView
         zoomOnDoubleClick={false}
-        nodesDraggable={!isPanMode}
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#333" gap={20} />
         <Controls />
-        <Panel position="top-right" className="graph-actions-panel">
-          <button
-            className="graph-action-button"
-            onClick={handleAutoLayout}
-            title="Tidy graph (Cmd/Ctrl+L)"
-            type="button"
-          >
-            Tidy graph
-          </button>
-        </Panel>
         <MiniMap
           nodeColor={(node) => node.type === 'user' ? '#3b82f6' : '#22c55e'}
           maskColor="rgba(0,0,0,0.8)"
