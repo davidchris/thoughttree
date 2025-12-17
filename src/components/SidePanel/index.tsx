@@ -9,7 +9,9 @@ const MAX_WIDTH_PERCENT = 0.8; // 80% of viewport
 
 export function SidePanel() {
   const previewNodeId = useGraphStore((state) => state.previewNodeId);
-  const nodeData = useGraphStore((state) => state.nodeData);
+  const data = useGraphStore((state) => 
+    state.previewNodeId ? state.nodeData.get(state.previewNodeId) : null
+  );
   const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
   const streamingNodeId = useGraphStore((state) => state.streamingNodeId);
@@ -18,9 +20,9 @@ export function SidePanel() {
   const [isResizing, setIsResizing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const data = previewNodeId ? nodeData.get(previewNodeId) : null;
   const isUserNode = data?.role === 'user';
   const isStreaming = previewNodeId === streamingNodeId;
 
@@ -30,7 +32,7 @@ export function SidePanel() {
     if (data) {
       setEditContent(data.content);
     }
-  }, [previewNodeId]);
+  }, [previewNodeId, data]);
 
   // Focus textarea when entering edit mode
   useEffect(() => {
@@ -74,6 +76,33 @@ export function SidePanel() {
     setEditContent(newValue);
     if (previewNodeId) {
       updateNodeContent(previewNodeId, newValue);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!data?.content) return;
+    
+    try {
+      await navigator.clipboard.writeText(data.content);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy content:', error);
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = data.content;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+      }
+      document.body.removeChild(textarea);
     }
   };
 
@@ -128,6 +157,15 @@ export function SidePanel() {
           <span className="side-panel-timestamp">{formattedTime}</span>
         </div>
         <div className="side-panel-actions">
+          {!isEditing && data?.content && (
+            <button
+              className="side-panel-copy-button"
+              onClick={handleCopy}
+              title="Copy as markdown"
+            >
+              {copySuccess ? 'Copied!' : 'Copy'}
+            </button>
+          )}
           {isUserNode && !isEditing && (
             <button
               className="side-panel-edit-button"
@@ -163,8 +201,12 @@ export function SidePanel() {
             onChange={handleContentChange}
             placeholder="Enter your message..."
           />
-        ) : data.content ? (
-          <MarkdownContent content={data.content} />
+        ) : data?.content ? (
+          isStreaming ? (
+            <pre className="side-panel-plain-text">{data.content}</pre>
+          ) : (
+            <MarkdownContent content={data.content} />
+          )
         ) : isStreaming ? (
           <span className="side-panel-empty">Waiting for response...</span>
         ) : (
