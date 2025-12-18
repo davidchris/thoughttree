@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
 import { sendPrompt } from '../../lib/tauri';
+import { ProviderSelector } from '../ProviderSelector';
+import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData } from '../../types';
 import './styles.css';
 
 const DEFAULT_WIDTH = 850; // ~100 character columns at 14px monospace
@@ -20,12 +22,15 @@ export function SidePanel() {
   const buildConversationContext = useGraphStore((state) => state.buildConversationContext);
   const appendToNode = useGraphStore((state) => state.appendToNode);
   const setStreaming = useGraphStore((state) => state.setStreaming);
+  const defaultProvider = useGraphStore((state) => state.defaultProvider);
+  const availableProviders = useGraphStore((state) => state.availableProviders);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<AgentProvider>(defaultProvider);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isUserNode = data?.role === 'user';
@@ -126,8 +131,8 @@ export function SidePanel() {
     // Exit edit mode
     setIsEditing(false);
 
-    // Create downstream agent node
-    const agentNodeId = createAgentNodeDownstream(previewNodeId);
+    // Create downstream agent node with selected provider
+    const agentNodeId = createAgentNodeDownstream(previewNodeId, selectedProvider);
 
     // Switch preview to the new agent node to show streaming response
     setPreviewNode(agentNodeId);
@@ -137,7 +142,8 @@ export function SidePanel() {
 
     try {
       await sendPrompt(agentNodeId, context, (chunk) =>
-        appendToNode(agentNodeId, chunk)
+        appendToNode(agentNodeId, chunk),
+        selectedProvider
       );
     } catch (error) {
       console.error('Generation failed:', error);
@@ -192,7 +198,11 @@ export function SidePanel() {
       <div className="side-panel-header">
         <div className="side-panel-title">
           <span className={`side-panel-badge ${isAgent ? 'agent' : 'user'}`}>
-            {isAgent ? 'Assistant' : 'User'}
+            {isAgent
+              ? ((data as AgentNodeData).provider
+                  ? PROVIDER_SHORT_NAMES[(data as AgentNodeData).provider!]
+                  : 'Assistant')
+              : 'User'}
           </span>
           {isStreaming && <span className="side-panel-streaming">Generating...</span>}
           <span className="side-panel-timestamp">{formattedTime}</span>
@@ -218,6 +228,15 @@ export function SidePanel() {
           )}
           {isEditing && (
             <>
+              {availableProviders.length > 0 && (
+                <ProviderSelector
+                  value={selectedProvider}
+                  onChange={setSelectedProvider}
+                  availableProviders={availableProviders}
+                  disabled={isAnyStreaming}
+                  compact
+                />
+              )}
               <button
                 className="side-panel-generate-button"
                 onClick={handleGenerate}

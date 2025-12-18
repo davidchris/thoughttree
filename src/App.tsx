@@ -7,7 +7,11 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
 import { SidePanel } from './components/SidePanel';
-import { initializeListeners } from './lib/tauri';
+import {
+  initializeListeners,
+  getAvailableProviders,
+  getDefaultProvider,
+} from './lib/tauri';
 import { useSummaryGeneration } from './hooks/useSummaryGeneration';
 import { useGraphStore } from './store/useGraphStore';
 import './App.css';
@@ -33,6 +37,16 @@ function App() {
 
         // Initialize event listeners
         await initializeListeners();
+
+        // Load provider configuration
+        try {
+          const providers = await getAvailableProviders();
+          const defaultProv = await getDefaultProvider();
+          useGraphStore.getState().setAvailableProviders(providers);
+          useGraphStore.getState().setDefaultProvider(defaultProv);
+        } catch (error) {
+          console.warn('Failed to load provider config:', error);
+        }
       } catch (error) {
         console.error('Failed to initialize:', error);
       } finally {

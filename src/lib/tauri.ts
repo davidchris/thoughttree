@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useGraphStore } from '../store/useGraphStore';
-import { PermissionRequest } from '../types';
+import type { AgentProvider, PermissionRequest, ProviderStatus } from '../types';
 
 interface ChunkPayload {
   node_id: string;
@@ -39,7 +39,8 @@ export async function initializeListeners(): Promise<void> {
 export async function sendPrompt(
   nodeId: string,
   messages: { role: string; content: string }[],
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  provider?: AgentProvider
 ): Promise<string> {
   // Set up listener for streaming chunks
   const unlisten = await listen<ChunkPayload>('stream-chunk', (event) => {
@@ -63,6 +64,7 @@ export async function sendPrompt(
     const result = await invoke<string>('send_prompt', {
       nodeId,
       messages: messageTuples,
+      provider: provider || null,
     });
 
     return result;
@@ -84,4 +86,20 @@ export async function checkAcpAvailable(): Promise<boolean> {
 
 export async function searchFiles(query: string, limit?: number): Promise<string[]> {
   return invoke<string[]>('search_files', { query, limit });
+}
+
+// ============================================================================
+// Provider management
+// ============================================================================
+
+export async function getAvailableProviders(): Promise<ProviderStatus[]> {
+  return invoke<ProviderStatus[]>('get_available_providers');
+}
+
+export async function getDefaultProvider(): Promise<AgentProvider> {
+  return invoke<AgentProvider>('get_default_provider');
+}
+
+export async function setDefaultProvider(provider: AgentProvider): Promise<void> {
+  await invoke('set_default_provider', { provider });
 }

@@ -3,6 +3,47 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
+// ============================================================================
+// Agent Provider Types
+// ============================================================================
+
+/// Supported agent providers for ACP connections
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentProvider {
+    #[default]
+    ClaudeCode,
+    GeminiCli,
+}
+
+impl AgentProvider {
+    /// Human-readable display name for UI
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            AgentProvider::ClaudeCode => "Claude Code",
+            AgentProvider::GeminiCli => "Gemini CLI",
+        }
+    }
+
+    /// Short name for badges/labels
+    pub fn short_name(&self) -> &'static str {
+        match self {
+            AgentProvider::ClaudeCode => "Claude",
+            AgentProvider::GeminiCli => "Gemini",
+        }
+    }
+}
+
+/// Provider availability status for frontend
+#[derive(Clone, Debug, Serialize)]
+pub struct ProviderStatus {
+    pub provider: AgentProvider,
+    pub available: bool,
+    pub error_message: Option<String>,
+}
+
 use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, Implementation, InitializeRequest,
     NewSessionRequest, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
@@ -451,6 +492,112 @@ async fn spawn_claude_code_acp(notes_directory: &Path) -> anyhow::Result<tokio::
     Ok(child)
 }
 
+/// Find the Gemini CLI executable
+/// Security: Only checks known installation paths, canonicalizes results to prevent symlink attacks
+fn find_gemini_cli_executable() -> Option<PathBuf> {
+    // Known installation paths (in order of preference)
+    let known_paths = [
+        // Homebrew on Apple Silicon
+        "/opt/homebrew/bin/gemini",
+        // Homebrew on Intel Mac
+        "/usr/local/bin/gemini",
+    ];
+
+    for path_str in known_paths {
+        let path = PathBuf::from(path_str);
+        if path.exists() {
+            match std::fs::canonicalize(&path) {
+                Ok(canonical) => {
+                    info!(
+                        "Found Gemini CLI at {:?} (canonical: {:?})",
+                        path, canonical
+                    );
+                    return Some(canonical);
+                }
+                Err(e) => {
+                    warn!("Failed to canonicalize Gemini CLI path {:?}: {}", path, e);
+                    continue;
+                }
+            }
+        }
+    }
+
+    // Check user-local installation paths
+    if let Some(home) = dirs::home_dir() {
+        let user_paths = [
+            // bun global install
+            home.join(".bun/bin/gemini"),
+            // npm global install (standard location)
+            home.join(".npm-global/bin/gemini"),
+            // nvm-managed npm global
+            home.join(".nvm/versions/node").join("*/bin/gemini"),
+        ];
+
+        for path in user_paths {
+            // Skip glob patterns (nvm path) - would need expansion
+            if path.to_string_lossy().contains('*') {
+                continue;
+            }
+            if path.exists() {
+                match std::fs::canonicalize(&path) {
+                    Ok(canonical) => {
+                        info!("Found Gemini CLI at {:?} (canonical: {:?})", path, canonical);
+                        return Some(canonical);
+                    }
+                    Err(e) => {
+                        warn!("Failed to canonicalize Gemini CLI path {:?}: {}", path, e);
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // Security: We intentionally do NOT fall back to PATH lookup via `which`
+    // This prevents PATH injection attacks where a malicious binary could be executed
+    warn!("Gemini CLI not found in any known location");
+    None
+}
+
+/// Spawn Gemini CLI in ACP mode
+async fn spawn_gemini_cli_acp(notes_directory: &Path) -> anyhow::Result<tokio::process::Child> {
+    let gemini_path = find_gemini_cli_executable().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Gemini CLI not found.\n\
+             Install via: brew install gemini-cli\n\
+             Or: bun install -g @google/gemini-cli"
+        )
+    })?;
+
+    info!(
+        "Spawning Gemini CLI ACP mode: {:?} in {:?}",
+        gemini_path, notes_directory
+    );
+
+    let child = Command::new(&gemini_path)
+        .args(["--experimental-acp"])
+        .current_dir(notes_directory)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn Gemini CLI: {}", e))?;
+
+    Ok(child)
+}
+
+/// Spawn an ACP-compatible agent subprocess based on provider
+async fn spawn_agent_subprocess(
+    provider: &AgentProvider,
+    notes_directory: &Path,
+) -> anyhow::Result<tokio::process::Child> {
+    match provider {
+        AgentProvider::ClaudeCode => spawn_claude_code_acp(notes_directory).await,
+        AgentProvider::GeminiCli => spawn_gemini_cli_acp(notes_directory).await,
+    }
+}
+
 /// Run a prompt session with ACP
 async fn run_prompt_session(
     app_handle: AppHandle,
@@ -458,9 +605,10 @@ async fn run_prompt_session(
     messages: Vec<(String, String)>,
     pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     notes_directory: PathBuf,
+    provider: AgentProvider,
 ) -> anyhow::Result<String> {
     // Spawn the ACP subprocess in the notes directory so skills are loaded
-    let mut child = spawn_claude_code_acp(&notes_directory).await?;
+    let mut child = spawn_agent_subprocess(&provider, &notes_directory).await?;
 
     // Get stdin/stdout handles
     let stdin = child
@@ -574,24 +722,38 @@ async fn send_prompt(
     state: State<'_, AppState>,
     node_id: String,
     messages: Vec<(String, String)>,
+    provider: Option<AgentProvider>,
 ) -> Result<String, String> {
     let pending_permissions = state.pending_permissions.clone();
 
-    // Load notes directory from config store
-    let notes_directory = {
+    // Load notes directory and default provider from config store
+    let (notes_directory, default_provider) = {
         let store = app_handle
             .store("config.json")
             .map_err(|e| format!("Failed to open config store: {}", e))?;
 
-        store
+        let notes_dir = store
             .get("notes_directory")
             .and_then(|v| v.as_str().map(PathBuf::from))
             .ok_or_else(|| {
                 "Notes directory not configured. Please set it in settings.".to_string()
-            })?
+            })?;
+
+        let default_prov = store
+            .get("default_provider")
+            .and_then(|v| serde_json::from_value::<AgentProvider>(v.clone()).ok())
+            .unwrap_or_default();
+
+        (notes_dir, default_prov)
     };
 
-    info!("Using notes directory: {:?}", notes_directory);
+    // Use provided provider or fall back to default
+    let active_provider = provider.unwrap_or(default_provider);
+
+    info!(
+        "Using provider: {:?}, notes directory: {:?}",
+        active_provider, notes_directory
+    );
 
     // Run in LocalSet for non-Send futures
     let result = tokio::task::spawn_blocking(move || {
@@ -609,6 +771,7 @@ async fn send_prompt(
                     messages,
                     pending_permissions,
                     notes_directory,
+                    active_provider,
                 )
                 .await
             })
@@ -645,6 +808,87 @@ async fn respond_to_permission(
 async fn check_acp_available() -> Result<bool, String> {
     // Check if the bundled sidecar binary exists
     Ok(find_sidecar_path().is_some())
+}
+
+// ============================================================================
+// Provider management commands
+// ============================================================================
+
+/// Check if a specific provider is available on this system
+fn check_provider_availability(provider: &AgentProvider) -> ProviderStatus {
+    match provider {
+        AgentProvider::ClaudeCode => {
+            let sidecar_available = find_sidecar_path().is_some();
+            let cli_available = find_claude_code_executable().is_some();
+
+            ProviderStatus {
+                provider: provider.clone(),
+                available: sidecar_available && cli_available,
+                error_message: if !sidecar_available {
+                    Some("claude-code-acp sidecar not found".into())
+                } else if !cli_available {
+                    Some(
+                        "Claude Code CLI not found. Install via: brew install --cask claude-code"
+                            .into(),
+                    )
+                } else {
+                    None
+                },
+            }
+        }
+        AgentProvider::GeminiCli => {
+            let cli_available = find_gemini_cli_executable().is_some();
+
+            ProviderStatus {
+                provider: provider.clone(),
+                available: cli_available,
+                error_message: if !cli_available {
+                    Some("Gemini CLI not found. Install via: brew install gemini-cli".into())
+                } else {
+                    None
+                },
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn get_available_providers() -> Vec<ProviderStatus> {
+    vec![
+        check_provider_availability(&AgentProvider::ClaudeCode),
+        check_provider_availability(&AgentProvider::GeminiCli),
+    ]
+}
+
+#[tauri::command]
+async fn get_default_provider(app: AppHandle) -> Result<AgentProvider, String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+    Ok(store
+        .get("default_provider")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default())
+}
+
+#[tauri::command]
+async fn set_default_provider(app: AppHandle, provider: AgentProvider) -> Result<(), String> {
+    let store = app
+        .store("config.json")
+        .map_err(|e| format!("Failed to open config store: {}", e))?;
+
+    store.set(
+        "default_provider",
+        serde_json::to_value(&provider).unwrap(),
+    );
+
+    store
+        .save()
+        .map_err(|e| format!("Failed to save config: {}", e))?;
+
+    info!("Default provider set to: {:?}", provider);
+    Ok(())
 }
 
 // ============================================================================
@@ -1269,6 +1513,10 @@ pub fn run() {
             send_prompt,
             respond_to_permission,
             check_acp_available,
+            // Provider commands
+            get_available_providers,
+            get_default_provider,
+            set_default_provider,
             // Config commands
             get_notes_directory,
             set_notes_directory,
@@ -1290,4 +1538,56 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod provider_tests {
+        use super::*;
+
+        #[test]
+        fn test_provider_default_is_claude_code() {
+            let provider = AgentProvider::default();
+            assert_eq!(provider, AgentProvider::ClaudeCode);
+        }
+
+        #[test]
+        fn test_provider_serializes_to_kebab_case() {
+            let claude = AgentProvider::ClaudeCode;
+            let gemini = AgentProvider::GeminiCli;
+
+            let claude_json = serde_json::to_string(&claude).unwrap();
+            let gemini_json = serde_json::to_string(&gemini).unwrap();
+
+            assert_eq!(claude_json, "\"claude-code\"");
+            assert_eq!(gemini_json, "\"gemini-cli\"");
+        }
+
+        #[test]
+        fn test_provider_deserializes_from_kebab_case() {
+            let claude: AgentProvider = serde_json::from_str("\"claude-code\"").unwrap();
+            let gemini: AgentProvider = serde_json::from_str("\"gemini-cli\"").unwrap();
+
+            assert_eq!(claude, AgentProvider::ClaudeCode);
+            assert_eq!(gemini, AgentProvider::GeminiCli);
+        }
+
+        #[test]
+        fn test_provider_display_names() {
+            assert_eq!(AgentProvider::ClaudeCode.display_name(), "Claude Code");
+            assert_eq!(AgentProvider::GeminiCli.display_name(), "Gemini CLI");
+        }
+
+        #[test]
+        fn test_provider_short_names() {
+            assert_eq!(AgentProvider::ClaudeCode.short_name(), "Claude");
+            assert_eq!(AgentProvider::GeminiCli.short_name(), "Gemini");
+        }
+    }
 }

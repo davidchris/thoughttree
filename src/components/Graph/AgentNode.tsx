@@ -5,7 +5,7 @@ import {
   NodeProps,
   NodeResizer,
 } from "@xyflow/react";
-import { AgentFlowNodeData } from "../../types";
+import { AgentFlowNodeData, PROVIDER_SHORT_NAMES } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import "./styles.css";
 
@@ -63,7 +63,11 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
       <Handle type="target" position={Position.Top} />
 
       <div className="node-header">
-        <span className="node-role">Assistant</span>
+        <span className="node-role">
+          {nodeData.provider
+            ? PROVIDER_SHORT_NAMES[nodeData.provider]
+            : 'Assistant'}
+        </span>
         {(hasMore || isStreaming) && (
           <button
             className="expand-toggle"

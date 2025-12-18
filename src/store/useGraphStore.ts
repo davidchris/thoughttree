@@ -1,7 +1,18 @@
 import { create } from 'zustand';
 import { Node, Edge, applyNodeChanges, applyEdgeChanges, addEdge, NodeChange, EdgeChange, Connection } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
-import { MessageNodeData, UserNodeData, AgentNodeData, UserFlowNodeData, AgentFlowNodeData, ThoughtTreeFlowNodeData, PermissionRequest } from '../types';
+import {
+  MessageNodeData,
+  UserNodeData,
+  AgentNodeData,
+  UserFlowNodeData,
+  AgentFlowNodeData,
+  ThoughtTreeFlowNodeData,
+  PermissionRequest,
+  AgentProvider,
+  ProviderStatus,
+  DEFAULT_PROVIDER,
+} from '../types';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 
 type ThoughtTreeNode = Node<ThoughtTreeFlowNodeData>;
@@ -25,6 +36,10 @@ interface GraphState {
   lastSavedAt: number | null;
   isDirty: boolean;
 
+  // Provider state
+  defaultProvider: AgentProvider;
+  availableProviders: ProviderStatus[];
+
   // UI state
   selectedNodeId: string | null;
   streamingNodeId: string | null;
@@ -40,7 +55,7 @@ interface GraphState {
 
   // Node actions
   createUserNode: (position?: { x: number; y: number }) => string;
-  createAgentNodeDownstream: (parentId: string) => string;
+  createAgentNodeDownstream: (parentId: string, provider?: AgentProvider) => string;
   createUserNodeDownstream: (parentId: string) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, chunk: string) => void;
@@ -58,6 +73,10 @@ interface GraphState {
 
   // Permission actions
   setPendingPermission: (permission: PermissionRequest | null) => void;
+
+  // Provider actions
+  setDefaultProvider: (provider: AgentProvider) => void;
+  setAvailableProviders: (providers: ProviderStatus[]) => void;
 
   // Project actions
   setProjectPath: (path: string | null) => void;
@@ -89,6 +108,8 @@ export const useGraphStore = create<GraphState>()(
   projectPath: null,
   lastSavedAt: null,
   isDirty: false,
+  defaultProvider: DEFAULT_PROVIDER,
+  availableProviders: [],
   selectedNodeId: null,
   streamingNodeId: null,
   editingNodeId: null,
@@ -147,13 +168,15 @@ export const useGraphStore = create<GraphState>()(
     return id;
   },
 
-  createAgentNodeDownstream: (parentId) => {
+  createAgentNodeDownstream: (parentId, provider) => {
     const id = generateId();
+    const activeProvider = provider ?? get().defaultProvider;
     const data: AgentNodeData = {
       id,
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
+      provider: activeProvider,
     };
 
     const COLLAPSED_NODE_HEIGHT = 120;
@@ -394,6 +417,15 @@ export const useGraphStore = create<GraphState>()(
     set({ pendingPermission: permission });
   },
 
+  // Provider actions
+  setDefaultProvider: (provider) => {
+    set({ defaultProvider: provider });
+  },
+
+  setAvailableProviders: (providers) => {
+    set({ availableProviders: providers });
+  },
+
   // Project actions
   setProjectPath: (path) => {
     set({ projectPath: path });
@@ -431,8 +463,21 @@ export const useGraphStore = create<GraphState>()(
       const data = await invoke<string>('load_project', { path });
       const projectFile: ProjectFile = JSON.parse(data);
 
+      // Migrate nodeData: agent nodes without provider default to 'claude-code'
+      const migratedNodeData: Record<string, MessageNodeData> = {};
+      for (const [id, node] of Object.entries(projectFile.nodeData)) {
+        if (node.role === 'assistant' && !('provider' in node)) {
+          migratedNodeData[id] = {
+            ...node,
+            provider: DEFAULT_PROVIDER,
+          } as AgentNodeData;
+        } else {
+          migratedNodeData[id] = node;
+        }
+      }
+
       // Convert nodeData from object back to Map
-      const nodeDataMap = new Map(Object.entries(projectFile.nodeData));
+      const nodeDataMap = new Map(Object.entries(migratedNodeData));
 
       // Migrate nodes to include dragHandle if missing (for existing saved projects)
       const migratedNodes = projectFile.nodes.map(node => ({

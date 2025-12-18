@@ -29,7 +29,7 @@ describe("SidePanel", () => {
   });
 
   const setupMockStore = (overrides: Record<string, unknown> = {}) => {
-    const nodeData = new Map([
+    const defaultNodeData = new Map([
       [
         "user-node-1",
         {
@@ -51,7 +51,7 @@ describe("SidePanel", () => {
     mockUseGraphStore.mockImplementation((selector) => {
       const state = {
         previewNodeId: "user-node-1",
-        nodeData,
+        nodeData: overrides.nodeData ?? defaultNodeData,
         streamingNodeId: null,
         setPreviewNode: mockSetPreviewNode,
         updateNodeContent: mockUpdateNodeContent,
@@ -59,6 +59,11 @@ describe("SidePanel", () => {
         buildConversationContext: mockBuildConversationContext,
         appendToNode: mockAppendToNode,
         setStreaming: mockSetStreaming,
+        defaultProvider: "claude-code",
+        availableProviders: [
+          { provider: "claude-code", available: true, error_message: null },
+          { provider: "gemini-cli", available: true, error_message: null },
+        ],
         ...overrides,
       };
       return selector(state as unknown as Parameters<typeof selector>[0]);
@@ -133,7 +138,8 @@ describe("SidePanel", () => {
       const generateButton = screen.getByRole("button", { name: /generate/i });
       await userEvent.click(generateButton);
 
-      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1");
+      // Now takes parentId and provider
+      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code");
     });
   });
 
@@ -150,7 +156,8 @@ describe("SidePanel", () => {
       const textarea = screen.getByRole("textbox");
       fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
 
-      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1");
+      // Now takes parentId and provider
+      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code");
     });
   });
 
@@ -169,11 +176,57 @@ describe("SidePanel", () => {
       expect(screen.getByText("User")).toBeInTheDocument();
     });
 
-    it("shows Assistant badge for agent nodes", () => {
+    it("shows Assistant badge for agent nodes without provider", () => {
       setupMockStore({ previewNodeId: "agent-node-1" });
       render(<SidePanel />);
 
       expect(screen.getByText("Assistant")).toBeInTheDocument();
+    });
+  });
+
+  describe("Provider display", () => {
+    it('shows "Claude" badge for claude-code provider', () => {
+      const nodeData = new Map([
+        [
+          "agent-node-claude",
+          {
+            role: "assistant" as const,
+            content: "Test content",
+            timestamp: Date.now(),
+            provider: "claude-code" as const,
+          },
+        ],
+      ]);
+
+      setupMockStore({
+        previewNodeId: "agent-node-claude",
+        nodeData,
+      });
+      render(<SidePanel />);
+
+      expect(screen.getByText("Claude")).toBeInTheDocument();
+    });
+
+    it('shows "Gemini" badge for gemini-cli provider', () => {
+      const nodeData = new Map([
+        [
+          "agent-node-gemini",
+          {
+            role: "assistant" as const,
+            content: "Test content",
+            timestamp: Date.now(),
+            provider: "gemini-cli" as const,
+          },
+        ],
+      ]);
+
+      setupMockStore({
+        previewNodeId: "agent-node-gemini",
+        nodeData,
+      });
+      render(<SidePanel />);
+
+      expect(screen.getByText("Gemini")).toBeInTheDocument();
     });
   });
 });

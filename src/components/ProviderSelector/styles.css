@@ -1,0 +1,41 @@
+.provider-selector {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #3a3a3a);
+  background: var(--surface-color, #2a2a2a);
+  color: var(--text-color, #e0e0e0);
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.provider-selector:hover:not(:disabled) {
+  border-color: var(--border-hover-color, #4a4a4a);
+  background: var(--surface-hover-color, #333333);
+}
+
+.provider-selector:focus {
+  outline: none;
+  border-color: var(--accent-color, #6366f1);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.provider-selector:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.provider-selector.compact {
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 80px;
+}
+
+.provider-selector option {
+  background: var(--surface-color, #2a2a2a);
+  color: var(--text-color, #e0e0e0);
+}
+
+.provider-selector option:disabled {
+  color: var(--text-muted-color, #888888);
+}

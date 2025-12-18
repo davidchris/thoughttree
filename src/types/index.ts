@@ -1,4 +1,31 @@
+// ============================================================================
+// Agent Provider Types
+// ============================================================================
+
+export type AgentProvider = 'claude-code' | 'gemini-cli';
+
+export interface ProviderStatus {
+  provider: AgentProvider;
+  available: boolean;
+  error_message: string | null;
+}
+
+export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = {
+  'claude-code': 'Claude Code',
+  'gemini-cli': 'Gemini CLI',
+};
+
+export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = {
+  'claude-code': 'Claude',
+  'gemini-cli': 'Gemini',
+};
+
+export const DEFAULT_PROVIDER: AgentProvider = 'claude-code';
+
+// ============================================================================
 // Node data types - discriminated union for user vs agent nodes
+// ============================================================================
+
 export interface UserNodeData {
   id: string;
   role: 'user';
@@ -15,6 +42,7 @@ export interface AgentNodeData {
   timestamp: number;
   summary?: string;           // Generated summary for collapsed view
   summaryTimestamp?: number;  // When summary was last generated
+  provider?: AgentProvider;   // Which provider generated this response
   // Note: isStreaming is derived from store.streamingNodeId, not stored here
 }
 
