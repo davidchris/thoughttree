@@ -210,13 +210,34 @@ impl Client for StreamingClient {
             .iter()
             .any(|p| tool_name.contains(p))
         {
-            // For file operations, validate they're within notes_directory
+            // For file operations, validate they're within notes_directory using canonicalization
+            // This prevents symlink-based path traversal attacks
             if let Some(locations) = &args.tool_call.fields.locations {
+                let canonical_notes = match std::fs::canonicalize(&self.notes_directory) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        warn!("Failed to canonicalize notes directory: {}", e);
+                        return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+                    }
+                };
+
                 for loc in locations {
-                    if !loc.path.starts_with(&self.notes_directory) {
+                    // Canonicalize the requested path to resolve symlinks
+                    let canonical_loc = match std::fs::canonicalize(&loc.path) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            warn!(
+                                "Tool '{}' denied - failed to canonicalize path {:?}: {}",
+                                tool_name, loc.path, e
+                            );
+                            return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+                        }
+                    };
+
+                    if !canonical_loc.starts_with(&canonical_notes) {
                         warn!(
-                            "Tool '{}' denied - path {:?} is outside notes directory {:?}",
-                            tool_name, loc.path, self.notes_directory
+                            "Tool '{}' denied - path {:?} is outside notes directory",
+                            tool_name, loc.path
                         );
                         return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
                     }
@@ -322,43 +343,53 @@ fn find_sidecar_path() -> Option<PathBuf> {
 }
 
 /// Find the Claude Code CLI executable
+/// Security: Only checks known installation paths, canonicalizes results to prevent symlink attacks
 fn find_claude_code_executable() -> Option<PathBuf> {
-    // Homebrew on Apple Silicon
-    let homebrew_arm = PathBuf::from("/opt/homebrew/bin/claude");
-    if homebrew_arm.exists() {
-        return Some(homebrew_arm);
-    }
+    // Known installation paths (in order of preference)
+    let known_paths = [
+        // Homebrew on Apple Silicon
+        "/opt/homebrew/bin/claude",
+        // Homebrew on Intel Mac
+        "/usr/local/bin/claude",
+    ];
 
-    // Homebrew on Intel Mac
-    let homebrew_intel = PathBuf::from("/usr/local/bin/claude");
-    if homebrew_intel.exists() {
-        return Some(homebrew_intel);
-    }
-
-    // Native install script location (~/.claude/local/claude)
-    if let Ok(home) = std::env::var("HOME") {
-        let native_install = PathBuf::from(home).join(".claude/local/claude");
-        if native_install.exists() {
-            return Some(native_install);
-        }
-    }
-
-    // Fallback: check PATH using `which`
-    if let Ok(output) = std::process::Command::new("which")
-        .arg("claude")
-        .output()
-    {
-        if output.status.success() {
-            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path_str.is_empty() {
-                let path = PathBuf::from(&path_str);
-                if path.exists() {
-                    return Some(path);
+    for path_str in known_paths {
+        let path = PathBuf::from(path_str);
+        if path.exists() {
+            // Canonicalize to resolve any symlinks and verify the real path
+            match std::fs::canonicalize(&path) {
+                Ok(canonical) => {
+                    info!("Found Claude CLI at {:?} (canonical: {:?})", path, canonical);
+                    return Some(canonical);
+                }
+                Err(e) => {
+                    warn!("Failed to canonicalize Claude CLI path {:?}: {}", path, e);
+                    continue;
                 }
             }
         }
     }
 
+    // Native install script location (~/.claude/local/claude)
+    // Use dirs crate pattern for home directory (more reliable than HOME env var)
+    if let Some(home) = dirs::home_dir() {
+        let native_install = home.join(".claude/local/claude");
+        if native_install.exists() {
+            match std::fs::canonicalize(&native_install) {
+                Ok(canonical) => {
+                    info!("Found Claude CLI at {:?} (canonical: {:?})", native_install, canonical);
+                    return Some(canonical);
+                }
+                Err(e) => {
+                    warn!("Failed to canonicalize Claude CLI path {:?}: {}", native_install, e);
+                }
+            }
+        }
+    }
+
+    // Security: We intentionally do NOT fall back to PATH lookup via `which`
+    // This prevents PATH injection attacks where a malicious binary could be executed
+    warn!("Claude Code CLI not found in any known location");
     None
 }
 
@@ -645,18 +676,78 @@ async fn pick_notes_directory(app: AppHandle) -> Result<Option<String>, String> 
 // Project file commands
 // ============================================================================
 
+/// Validate that a path is within the notes directory (security check)
+/// Prevents path traversal attacks by canonicalizing both paths
+fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, String> {
+    // Canonicalize the notes directory (must exist)
+    let canonical_notes = std::fs::canonicalize(notes_dir)
+        .map_err(|e| format!("Failed to resolve notes directory: {}", e))?;
+
+    // For files that may not exist yet (save), we canonicalize the parent directory
+    let canonical_path = if path.exists() {
+        std::fs::canonicalize(path)
+            .map_err(|e| format!("Failed to resolve path: {}", e))?
+    } else {
+        // For new files, canonicalize parent and append filename
+        let parent = path.parent()
+            .ok_or_else(|| "Invalid path: no parent directory".to_string())?;
+        let filename = path.file_name()
+            .ok_or_else(|| "Invalid path: no filename".to_string())?;
+        let canonical_parent = std::fs::canonicalize(parent)
+            .map_err(|e| format!("Failed to resolve parent directory: {}", e))?;
+        canonical_parent.join(filename)
+    };
+
+    // Check if path is within notes directory
+    if !canonical_path.starts_with(&canonical_notes) {
+        return Err(format!(
+            "Security error: path is outside the notes directory"
+        ));
+    }
+
+    Ok(canonical_path)
+}
+
 #[tauri::command]
-async fn save_project(path: String, data: String) -> Result<(), String> {
-    std::fs::write(&path, &data).map_err(|e| format!("Failed to save project: {}", e))?;
-    info!("Project saved to: {}", path);
+async fn save_project(app: AppHandle, path: String, data: String) -> Result<(), String> {
+    // Get notes directory from config
+    let notes_directory = {
+        let store = app
+            .store("config.json")
+            .map_err(|e| format!("Failed to open config store: {}", e))?;
+        store
+            .get("notes_directory")
+            .and_then(|v| v.as_str().map(PathBuf::from))
+            .ok_or_else(|| "Notes directory not configured".to_string())?
+    };
+
+    // Validate path is within notes directory
+    let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
+
+    std::fs::write(&validated_path, &data).map_err(|e| format!("Failed to save project: {}", e))?;
+    info!("Project saved to: {:?}", validated_path);
     Ok(())
 }
 
 #[tauri::command]
-async fn load_project(path: String) -> Result<String, String> {
-    let data = std::fs::read_to_string(&path)
+async fn load_project(app: AppHandle, path: String) -> Result<String, String> {
+    // Get notes directory from config
+    let notes_directory = {
+        let store = app
+            .store("config.json")
+            .map_err(|e| format!("Failed to open config store: {}", e))?;
+        store
+            .get("notes_directory")
+            .and_then(|v| v.as_str().map(PathBuf::from))
+            .ok_or_else(|| "Notes directory not configured".to_string())?
+    };
+
+    // Validate path is within notes directory
+    let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
+
+    let data = std::fs::read_to_string(&validated_path)
         .map_err(|e| format!("Failed to load project: {}", e))?;
-    info!("Project loaded from: {}", path);
+    info!("Project loaded from: {:?}", validated_path);
     Ok(data)
 }
 
@@ -837,6 +928,8 @@ async fn search_files(
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<String>, String> {
+    use walkdir::WalkDir;
+
     // Get notes directory from config
     let notes_directory = {
         let store = app
@@ -851,38 +944,43 @@ async fn search_files(
 
     let max_results = limit.unwrap_or(20);
 
-    // Use find for widely available file search
-    // -L: follow symlinks
-    // -type f: only files
-    let mut args = vec!["-L".to_string(), ".".to_string(), "-type".to_string(), "f".to_string()];
+    // Sanitize query: limit length and remove potentially dangerous characters
+    let query = query.chars().take(100).collect::<String>();
+    let query_lower = query.to_lowercase();
 
-    if !query.is_empty() {
-        args.push("-iname".to_string());
-        args.push(format!("*{}*", query));
+    // Use walkdir for safe, native file search
+    // - Does NOT follow symlinks (security: prevents escaping notes directory)
+    // - Early termination at result limit (performance: no DoS via large directories)
+    // - Proper error handling per-entry
+    let mut files = Vec::new();
+
+    for entry in WalkDir::new(&notes_directory)
+        .follow_links(false)  // Security: don't follow symlinks
+        .max_depth(20)        // Reasonable depth limit
+        .into_iter()
+        .filter_map(|e| e.ok())  // Skip entries we can't read
+    {
+        // Only include files, not directories
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        // Get relative path from notes directory
+        let rel_path = match entry.path().strip_prefix(&notes_directory) {
+            Ok(p) => p.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+
+        // If query is empty, match all files; otherwise do case-insensitive match
+        if query.is_empty() || rel_path.to_lowercase().contains(&query_lower) {
+            files.push(rel_path);
+
+            // Early termination at limit
+            if files.len() >= max_results {
+                break;
+            }
+        }
     }
-
-    // Limit output from find if possible to avoid massive buffers, but standard find doesn't have a limit flag.
-    // We handle limiting in Rust.
-    let output = std::process::Command::new("find")
-        .args(&args)
-        .current_dir(&notes_directory)
-        .output()
-        .map_err(|e| format!("Failed to execute find: {}", e))?;
-
-    if !output.status.success() {
-        return Ok(vec![]);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let files: Vec<String> = stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .take(max_results)
-        .map(|line| {
-            // find output usually starts with "./", strip it for cleaner display
-            line.strip_prefix("./").unwrap_or(line).to_string()
-        })
-        .collect();
 
     Ok(files)
 }

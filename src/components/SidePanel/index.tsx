@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
+import { sendPrompt } from '../../lib/tauri';
 import './styles.css';
 
 const DEFAULT_WIDTH = 850; // ~100 character columns at 14px monospace
@@ -9,20 +10,27 @@ const MAX_WIDTH_PERCENT = 0.8; // 80% of viewport
 
 export function SidePanel() {
   const previewNodeId = useGraphStore((state) => state.previewNodeId);
-  const nodeData = useGraphStore((state) => state.nodeData);
+  const data = useGraphStore((state) =>
+    state.previewNodeId ? state.nodeData.get(state.previewNodeId) : null
+  );
   const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
   const streamingNodeId = useGraphStore((state) => state.streamingNodeId);
+  const createAgentNodeDownstream = useGraphStore((state) => state.createAgentNodeDownstream);
+  const buildConversationContext = useGraphStore((state) => state.buildConversationContext);
+  const appendToNode = useGraphStore((state) => state.appendToNode);
+  const setStreaming = useGraphStore((state) => state.setStreaming);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const [copySuccess, setCopySuccess] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const data = previewNodeId ? nodeData.get(previewNodeId) : null;
   const isUserNode = data?.role === 'user';
   const isStreaming = previewNodeId === streamingNodeId;
+  const isAnyStreaming = streamingNodeId !== null;
 
   // Reset edit state when node changes
   useEffect(() => {
@@ -77,6 +85,68 @@ export function SidePanel() {
     }
   };
 
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Cmd/Ctrl + Enter to generate
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleGenerate();
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!data?.content) return;
+
+    try {
+      await navigator.clipboard.writeText(data.content);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy content:', error);
+      // Fallback for older browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = data.content;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      } catch (err) {
+        console.error('Fallback copy failed:', err);
+      }
+      document.body.removeChild(textarea);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (!previewNodeId || !data?.content.trim() || isAnyStreaming) return;
+
+    // Exit edit mode
+    setIsEditing(false);
+
+    // Create downstream agent node
+    const agentNodeId = createAgentNodeDownstream(previewNodeId);
+
+    // Switch preview to the new agent node to show streaming response
+    setPreviewNode(agentNodeId);
+
+    // Build context by traversing parents (including the edited user node)
+    const context = buildConversationContext(previewNodeId);
+
+    try {
+      await sendPrompt(agentNodeId, context, (chunk) =>
+        appendToNode(agentNodeId, chunk)
+      );
+    } catch (error) {
+      console.error('Generation failed:', error);
+      appendToNode(agentNodeId, `\n\n[Error: ${error}]`);
+    } finally {
+      setStreaming(null);
+    }
+  };
+
   // Handle resize drag
   useEffect(() => {
     if (!isResizing) return;
@@ -128,6 +198,15 @@ export function SidePanel() {
           <span className="side-panel-timestamp">{formattedTime}</span>
         </div>
         <div className="side-panel-actions">
+          {!isEditing && data?.content && (
+            <button
+              className="side-panel-copy-button"
+              onClick={handleCopy}
+              title="Copy as markdown"
+            >
+              {copySuccess ? 'Copied!' : 'Copy'}
+            </button>
+          )}
           {isUserNode && !isEditing && (
             <button
               className="side-panel-edit-button"
@@ -138,12 +217,22 @@ export function SidePanel() {
             </button>
           )}
           {isEditing && (
-            <button
-              className="side-panel-done-button"
-              onClick={handleDone}
-            >
-              Done
-            </button>
+            <>
+              <button
+                className="side-panel-generate-button"
+                onClick={handleGenerate}
+                disabled={isAnyStreaming || !data?.content.trim()}
+                title="Generate response (Cmd+Enter)"
+              >
+                {isAnyStreaming ? 'Generating...' : 'Generate'}
+              </button>
+              <button
+                className="side-panel-done-button"
+                onClick={handleDone}
+              >
+                Done
+              </button>
+            </>
           )}
           <button
             className="side-panel-close"
@@ -161,10 +250,15 @@ export function SidePanel() {
             className="side-panel-textarea"
             value={editContent}
             onChange={handleContentChange}
+            onKeyDown={handleTextareaKeyDown}
             placeholder="Enter your message..."
           />
-        ) : data.content ? (
-          <MarkdownContent content={data.content} />
+        ) : data?.content ? (
+          isStreaming ? (
+            <pre className="side-panel-plain-text">{data.content}</pre>
+          ) : (
+            <MarkdownContent content={data.content} />
+          )
         ) : isStreaming ? (
           <span className="side-panel-empty">Waiting for response...</span>
         ) : (

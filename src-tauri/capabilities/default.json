@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "shell:allow-spawn",
     {
       "identifier": "shell:allow-execute",
       "allow": [
