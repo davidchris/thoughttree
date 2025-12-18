@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 
-use chrono::Local;
 use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, Implementation, InitializeRequest,
     NewSessionRequest, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
@@ -11,6 +10,7 @@ use agent_client_protocol::{
     SessionNotification, SessionUpdate, SetSessionModelRequest, TextContent,
 };
 use async_trait::async_trait;
+use chrono::Local;
 use futures::lock::Mutex;
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
@@ -142,20 +142,26 @@ impl StreamingClient {
             error!("Failed to emit permission request: {:?}", e);
             let mut pending = self.pending_permissions.lock().await;
             pending.remove(&request_id);
-            return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ));
         }
 
         // Wait for response from frontend
         match rx.await {
             Ok(option_id_str) => {
                 info!("Permission response received: {}", option_id_str);
-                Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
-                    SelectedPermissionOutcome::new(option_id_str),
-                )))
+                Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        option_id_str,
+                    )),
+                ))
             }
             Err(_) => {
                 warn!("Permission request cancelled (channel dropped)");
-                Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))
+                Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Cancelled,
+                ))
             }
         }
     }
@@ -167,12 +173,7 @@ impl Client for StreamingClient {
         &self,
         args: RequestPermissionRequest,
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
-        let tool_name = args
-            .tool_call
-            .fields
-            .title
-            .as_deref()
-            .unwrap_or("Unknown");
+        let tool_name = args.tool_call.fields.title.as_deref().unwrap_or("Unknown");
         let tool_id = args.tool_call.tool_call_id.0.to_string();
 
         info!(
@@ -201,15 +202,14 @@ impl Client for StreamingClient {
                 "Tool '{}' denied - ThoughtTree only allows read-only operations",
                 tool_name
             );
-            return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ));
         }
 
         // AUTO-APPROVE: Read-only search tools (within notes directory) and Skills
         let auto_approve_patterns = ["Read", "Grep", "Glob", "WebSearch", "Skill"];
-        if auto_approve_patterns
-            .iter()
-            .any(|p| tool_name.contains(p))
-        {
+        if auto_approve_patterns.iter().any(|p| tool_name.contains(p)) {
             // For file operations, validate they're within notes_directory using canonicalization
             // This prevents symlink-based path traversal attacks
             if let Some(locations) = &args.tool_call.fields.locations {
@@ -217,7 +217,9 @@ impl Client for StreamingClient {
                     Ok(p) => p,
                     Err(e) => {
                         warn!("Failed to canonicalize notes directory: {}", e);
-                        return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+                        return Ok(RequestPermissionResponse::new(
+                            RequestPermissionOutcome::Cancelled,
+                        ));
                     }
                 };
 
@@ -230,7 +232,9 @@ impl Client for StreamingClient {
                                 "Tool '{}' denied - failed to canonicalize path {:?}: {}",
                                 tool_name, loc.path, e
                             );
-                            return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+                            return Ok(RequestPermissionResponse::new(
+                                RequestPermissionOutcome::Cancelled,
+                            ));
                         }
                     };
 
@@ -239,7 +243,9 @@ impl Client for StreamingClient {
                             "Tool '{}' denied - path {:?} is outside notes directory",
                             tool_name, loc.path
                         );
-                        return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled));
+                        return Ok(RequestPermissionResponse::new(
+                            RequestPermissionOutcome::Cancelled,
+                        ));
                     }
                 }
             }
@@ -247,9 +253,11 @@ impl Client for StreamingClient {
             // Auto-approve by selecting first option
             if let Some(first_opt) = args.options.first() {
                 info!("Auto-approving tool '{}'", tool_name);
-                return Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
-                    SelectedPermissionOutcome::new(first_opt.option_id.clone()),
-                )));
+                return Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                        first_opt.option_id.clone(),
+                    )),
+                ));
             }
         }
 
@@ -261,7 +269,9 @@ impl Client for StreamingClient {
 
         // DEFAULT: Deny unknown tools
         warn!("Unknown tool '{}' denied by default", tool_name);
-        Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))
+        Ok(RequestPermissionResponse::new(
+            RequestPermissionOutcome::Cancelled,
+        ))
     }
 
     async fn session_notification(
@@ -328,7 +338,8 @@ fn find_sidecar_path() -> Option<PathBuf> {
         // Walk up from exe to find src-tauri/binaries
         let mut current = exe_dir.to_path_buf();
         for _ in 0..10 {
-            let dev_sidecar = current.join("src-tauri/binaries")
+            let dev_sidecar = current
+                .join("src-tauri/binaries")
                 .join(format!("claude-code-acp-{}", target_triple));
             if dev_sidecar.exists() {
                 return Some(dev_sidecar);
@@ -359,7 +370,10 @@ fn find_claude_code_executable() -> Option<PathBuf> {
             // Canonicalize to resolve any symlinks and verify the real path
             match std::fs::canonicalize(&path) {
                 Ok(canonical) => {
-                    info!("Found Claude CLI at {:?} (canonical: {:?})", path, canonical);
+                    info!(
+                        "Found Claude CLI at {:?} (canonical: {:?})",
+                        path, canonical
+                    );
                     return Some(canonical);
                 }
                 Err(e) => {
@@ -377,11 +391,17 @@ fn find_claude_code_executable() -> Option<PathBuf> {
         if native_install.exists() {
             match std::fs::canonicalize(&native_install) {
                 Ok(canonical) => {
-                    info!("Found Claude CLI at {:?} (canonical: {:?})", native_install, canonical);
+                    info!(
+                        "Found Claude CLI at {:?} (canonical: {:?})",
+                        native_install, canonical
+                    );
                     return Some(canonical);
                 }
                 Err(e) => {
-                    warn!("Failed to canonicalize Claude CLI path {:?}: {}", native_install, e);
+                    warn!(
+                        "Failed to canonicalize Claude CLI path {:?}: {}",
+                        native_install, e
+                    );
                 }
             }
         }
@@ -412,7 +432,10 @@ async fn spawn_claude_code_acp(notes_directory: &Path) -> anyhow::Result<tokio::
         )
     })?;
 
-    info!("Spawning claude-code-acp sidecar: {:?} in {:?}", sidecar_path, notes_directory);
+    info!(
+        "Spawning claude-code-acp sidecar: {:?} in {:?}",
+        sidecar_path, notes_directory
+    );
     info!("Using Claude Code CLI at: {:?}", claude_cli_path);
 
     let child = Command::new(&sidecar_path)
@@ -471,14 +494,10 @@ async fn run_prompt_session(
 
     // Create connection
     info!("Creating ACP connection...");
-    let (connection, io_future) = ClientSideConnection::new(
-        client,
-        stdin.compat_write(),
-        stdout.compat(),
-        |f| {
+    let (connection, io_future) =
+        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
             tokio::task::spawn_local(f);
-        },
-    );
+        });
 
     // Run I/O in background
     tokio::task::spawn_local(async move {
@@ -490,12 +509,9 @@ async fn run_prompt_session(
     // Initialize
     info!("Initializing connection...");
     let init_response = connection
-        .initialize(
-            InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-                Implementation::new("thoughttree", env!("CARGO_PKG_VERSION"))
-                    .title("ThoughtTree"),
-            ),
-        )
+        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
+            Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
+        ))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize: {:?}", e))?;
 
@@ -585,17 +601,18 @@ async fn send_prompt(
             .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
         let local = tokio::task::LocalSet::new();
-        local.block_on(&rt, async move {
-            run_prompt_session(
-                app_handle,
-                node_id,
-                messages,
-                pending_permissions,
-                notes_directory,
-            )
-            .await
-        })
-        .map_err(|e| e.to_string())
+        local
+            .block_on(&rt, async move {
+                run_prompt_session(
+                    app_handle,
+                    node_id,
+                    messages,
+                    pending_permissions,
+                    notes_directory,
+                )
+                .await
+            })
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?;
@@ -617,7 +634,10 @@ async fn respond_to_permission(
             .map_err(|_| "Failed to send permission response")?;
         Ok(())
     } else {
-        Err(format!("No pending permission request with ID: {}", request_id))
+        Err(format!(
+            "No pending permission request with ID: {}",
+            request_id
+        ))
     }
 }
 
@@ -648,8 +668,7 @@ async fn set_notes_directory(app: AppHandle, path: String) -> Result<(), String>
         .store("config.json")
         .map_err(|e| format!("Failed to open config store: {}", e))?;
 
-    store
-        .set("notes_directory", serde_json::json!(path));
+    store.set("notes_directory", serde_json::json!(path));
 
     store
         .save()
@@ -685,13 +704,14 @@ fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, 
 
     // For files that may not exist yet (save), we canonicalize the parent directory
     let canonical_path = if path.exists() {
-        std::fs::canonicalize(path)
-            .map_err(|e| format!("Failed to resolve path: {}", e))?
+        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve path: {}", e))?
     } else {
         // For new files, canonicalize parent and append filename
-        let parent = path.parent()
+        let parent = path
+            .parent()
             .ok_or_else(|| "Invalid path: no parent directory".to_string())?;
-        let filename = path.file_name()
+        let filename = path
+            .file_name()
             .ok_or_else(|| "Invalid path: no filename".to_string())?;
         let canonical_parent = std::fs::canonicalize(parent)
             .map_err(|e| format!("Failed to resolve parent directory: {}", e))?;
@@ -813,12 +833,11 @@ async fn get_recent_projects(app: AppHandle) -> Result<Vec<String>, String> {
     let recent_projects = store
         .get("recent_projects")
         .and_then(|v| {
-            v.as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
         })
         .unwrap_or_default();
 
@@ -834,12 +853,11 @@ async fn add_recent_project(app: AppHandle, path: String) -> Result<(), String> 
     let mut recent_projects: Vec<String> = store
         .get("recent_projects")
         .and_then(|v| {
-            v.as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
         })
         .unwrap_or_default();
 
@@ -870,12 +888,11 @@ async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), Strin
     let mut recent_projects: Vec<String> = store
         .get("recent_projects")
         .and_then(|v| {
-            v.as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                        .collect()
-                })
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
         })
         .unwrap_or_default();
 
@@ -892,7 +909,11 @@ async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-async fn export_markdown(app: AppHandle, content: String, default_name: String) -> Result<Option<String>, String> {
+async fn export_markdown(
+    app: AppHandle,
+    content: String,
+    default_name: String,
+) -> Result<Option<String>, String> {
     let mut dialog = app
         .dialog()
         .file()
@@ -905,7 +926,10 @@ async fn export_markdown(app: AppHandle, content: String, default_name: String) 
         .store("config.json")
         .map_err(|e| format!("Failed to open config store: {}", e))?;
 
-    if let Some(dir) = store.get("notes_directory").and_then(|v| v.as_str().map(PathBuf::from)) {
+    if let Some(dir) = store
+        .get("notes_directory")
+        .and_then(|v| v.as_str().map(PathBuf::from))
+    {
         dialog = dialog.set_directory(dir);
     }
 
@@ -955,10 +979,11 @@ async fn search_files(
     let mut files = Vec::new();
 
     for entry in WalkDir::new(&notes_directory)
-        .follow_links(false)  // Security: don't follow symlinks
-        .max_depth(20)        // Reasonable depth limit
+        .follow_links(false) // Security: don't follow symlinks
+        .max_depth(20) // Reasonable depth limit
         .into_iter()
-        .filter_map(|e| e.ok())  // Skip entries we can't read
+        .filter_map(|e| e.ok())
+    // Skip entries we can't read
     {
         // Only include files, not directories
         if !entry.file_type().is_file() {
@@ -1010,11 +1035,15 @@ impl Client for SummaryClient {
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
         // Auto-approve first option for summarization (it only uses read-only tools if any)
         if let Some(first_opt) = args.options.first() {
-            Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Selected(
-                SelectedPermissionOutcome::new(first_opt.option_id.clone()),
-            )))
+            Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                    first_opt.option_id.clone(),
+                )),
+            ))
         } else {
-            Ok(RequestPermissionResponse::new(RequestPermissionOutcome::Cancelled))
+            Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ))
         }
     }
 
@@ -1033,10 +1062,7 @@ impl Client for SummaryClient {
 }
 
 /// Run a summarization session with Haiku model
-async fn run_summary_session(
-    content: String,
-    notes_directory: PathBuf,
-) -> anyhow::Result<String> {
+async fn run_summary_session(content: String, notes_directory: PathBuf) -> anyhow::Result<String> {
     // Spawn ACP subprocess
     let mut child = spawn_claude_code_acp(&notes_directory).await?;
 
@@ -1068,14 +1094,10 @@ async fn run_summary_session(
     let response_text = client.response_text.clone();
 
     // Create connection
-    let (connection, io_future) = ClientSideConnection::new(
-        client,
-        stdin.compat_write(),
-        stdout.compat(),
-        |f| {
+    let (connection, io_future) =
+        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
             tokio::task::spawn_local(f);
-        },
-    );
+        });
 
     // Run I/O in background
     tokio::task::spawn_local(async move {
@@ -1087,11 +1109,9 @@ async fn run_summary_session(
     // Initialize
     info!("Summary session: initializing connection...");
     let init_response = connection
-        .initialize(
-            InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-                Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
-            ),
-        )
+        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
+            Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
+        ))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize summary session: {:?}", e))?;
 
@@ -1208,10 +1228,11 @@ async fn generate_summary(
             .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
         let local = tokio::task::LocalSet::new();
-        local.block_on(&rt, async move {
-            run_summary_session(content, notes_directory).await
-        })
-        .map_err(|e| e.to_string())
+        local
+            .block_on(&rt, async move {
+                run_summary_session(content, notes_directory).await
+            })
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?;
