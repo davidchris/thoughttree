@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- Security Hardening - CSP enabled, path validation, traversal protection
+- Preview Toggle - Shortcut changed from P to spacebar
+
 ## 0.2.0
 
 - Copy as Markdown - Copy button for side panel content

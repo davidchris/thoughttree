@@ -6,13 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Full app development
-pnpm install          # Install dependencies
-pnpm tauri dev        # Run app in development mode
-pnpm tauri build      # Build production app
+bun install           # Install dependencies
+bun run tauri dev     # Run app in development mode
+bun run tauri:build   # Build production app (includes sidecar)
 
 # Frontend only
-pnpm dev              # Vite dev server (port 1420)
-pnpm build            # TypeScript check + Vite build
+bun run dev           # Vite dev server (port 1420)
+bun run build         # TypeScript check + Vite build
+
+# Testing
+bun test              # Run tests in watch mode
+bun test:run          # Run tests once
 
 # ACP client prototype (standalone test harness)
 cd src-tauri/acp
@@ -39,11 +43,17 @@ The ACP client (prototyped in `src-tauri/acp/`) has critical implementation deta
 
 ## Current Development State
 
-Check README.md "Current State" section for task status. The ACP prototype is working; main app integration is in progress.
+App is released and functional. See CHANGELOG.md for version history and README.md for user documentation.
+
+## Development Guidelines
+
+- **Test-Driven Development:** Use TDD where beneficial—write tests before implementation for complex logic, edge cases, and critical paths.
+- **Security First:** All changes must improve security or maintain the current level. Never introduce vulnerabilities (XSS, path traversal, command injection, etc.).
 
 ## Key Files
 
-- `src-tauri/acp/src/main.rs` - Working ACP client reference implementation
 - `src-tauri/src/lib.rs` - Tauri app entry point and commands
+- `src-tauri/acp/src/main.rs` - ACP client reference implementation
 - `src/App.tsx` - React app root
-- `tauri.conf.json` - Tauri configuration (ports, build commands, window settings)
+- `src/components/SidePanel/SidePanel.test.tsx` - Example test file
+- `src-tauri/tauri.conf.json` - Tauri configuration
