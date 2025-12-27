@@ -51,8 +51,6 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     triggerSidePanelEditMode,
     addNodeImage,
     removeNodeImage,
-    setPreviewNode,
-    triggerSidePanelEditMode,
   } = useGraphStore();
 
   const isEditing = editingNodeId === id;
