@@ -5,7 +5,8 @@ import { sendPrompt, getAvailableModels } from '../../lib/tauri';
 import { ProviderSelector } from '../ProviderSelector';
 import { ModelSelector } from '../ModelSelector';
 import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
-import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData } from '../../types';
+import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData, type UserNodeData, type ImageAttachment } from '../../types';
+import { resizeIfNeeded, fileToBase64 } from '../../lib/imageUtils';
 import './styles.css';
 
 interface AutocompleteState {
@@ -39,6 +40,8 @@ export function SidePanel() {
   const getEffectiveModel = useGraphStore((state) => state.getEffectiveModel);
   const triggerSidePanelEdit = useGraphStore((state) => state.triggerSidePanelEdit);
   const clearSidePanelEditTrigger = useGraphStore((state) => state.clearSidePanelEditTrigger);
+  const addNodeImage = useGraphStore((state) => state.addNodeImage);
+  const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -49,10 +52,12 @@ export function SidePanel() {
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const [loadingModels, setLoadingModels] = useState(false);
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
 
   const isUserNode = data?.role === 'user';
+  const images = isUserNode ? (data as UserNodeData).images || [] : [];
   const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
   const isBlocked = previewNodeId ? isNodeBlockedFn(previewNodeId) : false;
 
@@ -211,6 +216,83 @@ export function SidePanel() {
       handleGenerate();
     }
   };
+
+  // Process and add an image file
+  const processImageFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/') || !previewNodeId) return;
+
+    try {
+      const resized = await resizeIfNeeded(file);
+      const base64 = await fileToBase64(resized);
+      const image: ImageAttachment = {
+        data: base64,
+        mimeType: file.type,
+        name: file.name,
+      };
+      addNodeImage(previewNodeId, image);
+    } catch (error) {
+      console.error('Failed to process image:', error);
+    }
+  }, [previewNodeId, addNodeImage]);
+
+  // Handle paste events (for Cmd+V with images)
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await processImageFile(file);
+        }
+      }
+    }
+  }, [processImageFile]);
+
+  // Handle drag over
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  // Handle drag leave - only if actually leaving the container
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Check if we're leaving to a child element (don't reset in that case)
+    const relatedTarget = e.relatedTarget as Node | null;
+    if (relatedTarget && e.currentTarget.contains(relatedTarget)) {
+      return;
+    }
+    setIsDragOver(false);
+  }, []);
+
+  // Handle drop events
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await processImageFile(file);
+      }
+    }
+  }, [processImageFile]);
+
+  // Handle image removal
+  const handleRemoveImage = useCallback((index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (previewNodeId) {
+      removeNodeImage(previewNodeId, index);
+    }
+  }, [previewNodeId, removeNodeImage]);
 
   const handleFileSelect = (filePath: string) => {
     if (!autocomplete || !textareaRef.current || !previewNodeId) return;
@@ -421,7 +503,12 @@ export function SidePanel() {
       </div>
       <div className="side-panel-content">
         {isEditing ? (
-          <>
+          <div
+            className={`side-panel-edit-area ${isDragOver ? 'drag-over' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <textarea
               ref={textareaRef}
               className="side-panel-textarea"
@@ -429,8 +516,30 @@ export function SidePanel() {
               onChange={handleContentChange}
               onBlur={handleTextareaBlur}
               onKeyDown={handleTextareaKeyDown}
-              placeholder="Enter your message... (@ to mention files)"
+              onPaste={handlePaste}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              placeholder="Enter your message... (@ to mention files, paste or drop images)"
             />
+            {images.length > 0 && (
+              <div className="side-panel-image-thumbnails">
+                {images.map((img, index) => (
+                  <div key={index} className="side-panel-image-thumbnail">
+                    <img
+                      src={`data:${img.mimeType};base64,${img.data}`}
+                      alt={img.name || `Image ${index + 1}`}
+                    />
+                    <button
+                      className="side-panel-image-remove"
+                      onClick={(e) => handleRemoveImage(index, e)}
+                      title="Remove image"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {autocomplete?.isOpen && (
               <FileAutocomplete
                 ref={autocompleteRef}
@@ -441,7 +550,7 @@ export function SidePanel() {
                 onClose={() => setAutocomplete(null)}
               />
             )}
-          </>
+          </div>
         ) : data?.content ? (
           isStreaming ? (
             <pre className="side-panel-plain-text">{data.content}</pre>
