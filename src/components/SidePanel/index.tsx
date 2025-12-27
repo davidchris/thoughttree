@@ -59,20 +59,20 @@ export function SidePanel() {
     }
   }, [availableModels, setAvailableModels]);
 
-  // Fetch models when editing starts or provider changes
+  // Fetch models when user node is selected or provider changes
   useEffect(() => {
-    if (isEditing && selectedProvider) {
+    if (isUserNode && selectedProvider) {
       fetchModels(selectedProvider);
     }
-  }, [isEditing, selectedProvider, fetchModels]);
+  }, [isUserNode, selectedProvider, fetchModels]);
 
-  // Initialize selectedModel from effective model when entering edit mode
+  // Initialize selectedModel from effective model when user node is selected
   useEffect(() => {
-    if (isEditing) {
+    if (isUserNode) {
       const effectiveModel = getEffectiveModel(selectedProvider);
       setSelectedModel(effectiveModel);
     }
-  }, [isEditing, selectedProvider, getEffectiveModel]);
+  }, [isUserNode, selectedProvider, getEffectiveModel]);
 
   // Reset edit state when node changes
   useEffect(() => {
@@ -267,7 +267,7 @@ export function SidePanel() {
               Edit
             </button>
           )}
-          {isEditing && (
+          {isUserNode && (
             <>
               {availableProviders.length > 0 && (
                 <ProviderSelector
@@ -299,13 +299,15 @@ export function SidePanel() {
               >
                 {isAnyStreaming ? 'Generating...' : 'Generate'}
               </button>
-              <button
-                className="side-panel-done-button"
-                onClick={handleDone}
-              >
-                Done
-              </button>
             </>
+          )}
+          {isEditing && (
+            <button
+              className="side-panel-done-button"
+              onClick={handleDone}
+            >
+              Done
+            </button>
           )}
           <button
             className="side-panel-close"

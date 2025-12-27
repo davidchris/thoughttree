@@ -10,6 +10,7 @@ vi.mock("../../store/useGraphStore");
 // Mock tauri lib
 vi.mock("../../lib/tauri", () => ({
   sendPrompt: vi.fn(() => Promise.resolve()),
+  getAvailableModels: vi.fn(() => Promise.resolve([])),
 }));
 
 const mockUseGraphStore = vi.mocked(useGraphStore);
@@ -27,6 +28,9 @@ describe("SidePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
+
+  const mockGetEffectiveModel = vi.fn(() => undefined);
+  const mockSetAvailableModels = vi.fn();
 
   const setupMockStore = (overrides: Record<string, unknown> = {}) => {
     const defaultNodeData = new Map([
@@ -64,6 +68,9 @@ describe("SidePanel", () => {
           { provider: "claude-code", available: true, error_message: null },
           { provider: "gemini-cli", available: true, error_message: null },
         ],
+        availableModels: {},
+        getEffectiveModel: mockGetEffectiveModel,
+        setAvailableModels: mockSetAvailableModels,
         ...overrides,
       };
       return selector(state as unknown as Parameters<typeof selector>[0]);
@@ -92,14 +99,11 @@ describe("SidePanel", () => {
   });
 
   describe("Generate button", () => {
-    it("shows Generate button for user nodes when in edit mode", async () => {
+    it("shows Generate button for user nodes without requiring edit mode", async () => {
       setupMockStore();
       render(<SidePanel />);
 
-      // Enter edit mode first
-      const editButton = screen.getByRole("button", { name: /edit/i });
-      await userEvent.click(editButton);
-
+      // Generate button should be visible immediately for user nodes
       expect(
         screen.getByRole("button", { name: /generate/i })
       ).toBeInTheDocument();
@@ -119,10 +123,6 @@ describe("SidePanel", () => {
       setupMockStore({ streamingNodeId: "some-streaming-node" });
       render(<SidePanel />);
 
-      // Enter edit mode first
-      const editButton = screen.getByRole("button", { name: /edit/i });
-      await userEvent.click(editButton);
-
       const generateButton = screen.getByRole("button", { name: /generating/i });
       expect(generateButton).toBeDisabled();
     });
@@ -131,15 +131,11 @@ describe("SidePanel", () => {
       setupMockStore();
       render(<SidePanel />);
 
-      // Enter edit mode first
-      const editButton = screen.getByRole("button", { name: /edit/i });
-      await userEvent.click(editButton);
-
       const generateButton = screen.getByRole("button", { name: /generate/i });
       await userEvent.click(generateButton);
 
-      // Now takes parentId and provider
-      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code");
+      // Takes parentId, provider, and model
+      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code", undefined);
     });
   });
 
@@ -156,8 +152,8 @@ describe("SidePanel", () => {
       const textarea = screen.getByRole("textbox");
       fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
 
-      // Now takes parentId and provider
-      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code");
+      // Takes parentId, provider, and model
+      expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code", undefined);
     });
   });
 
