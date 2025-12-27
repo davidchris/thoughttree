@@ -35,7 +35,8 @@
       "binaries/claude-code-acp"
     ],
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
     }
   }
 }
