@@ -19,6 +19,67 @@ import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 
 type ThoughtTreeNode = Node<ThoughtTreeFlowNodeData>;
 
+// Helper: Get all ancestors of a node (walk edges backward)
+function getAncestors(nodeId: string, edges: Edge[]): Set<string> {
+  const parentMap = new Map<string, string>();
+  edges.forEach((edge) => parentMap.set(edge.target, edge.source));
+
+  const ancestors = new Set<string>();
+  let current = parentMap.get(nodeId);
+  while (current) {
+    ancestors.add(current);
+    current = parentMap.get(current);
+  }
+  return ancestors;
+}
+
+// Helper: Get all descendants of a node (walk edges forward)
+function getDescendants(nodeId: string, edges: Edge[]): Set<string> {
+  const childrenMap = new Map<string, string[]>();
+  edges.forEach((edge) => {
+    const children = childrenMap.get(edge.source) || [];
+    children.push(edge.target);
+    childrenMap.set(edge.source, children);
+  });
+
+  const descendants = new Set<string>();
+  const queue = childrenMap.get(nodeId) || [];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (!descendants.has(current)) {
+      descendants.add(current);
+      const children = childrenMap.get(current) || [];
+      queue.push(...children);
+    }
+  }
+  return descendants;
+}
+
+// Helper: Check if node is blocked by any streaming node in its lineage
+function isNodeBlockedByStreaming(
+  nodeId: string,
+  streamingNodeIds: Set<string>,
+  edges: Edge[]
+): boolean {
+  if (streamingNodeIds.size === 0) return false;
+
+  // If this node is streaming, it's blocked
+  if (streamingNodeIds.has(nodeId)) return true;
+
+  // Get lineage of the target node
+  const nodeAncestors = getAncestors(nodeId, edges);
+  const nodeDescendants = getDescendants(nodeId, edges);
+
+  // Check if any streaming node is in the target node's lineage
+  for (const streamingId of streamingNodeIds) {
+    if (nodeAncestors.has(streamingId) || nodeDescendants.has(streamingId)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Project file format
 interface ProjectFile {
   version: number;
@@ -49,7 +110,7 @@ interface GraphState {
 
   // UI state
   selectedNodeId: string | null;
-  streamingNodeId: string | null;
+  streamingNodeIds: Set<string>;
   editingNodeId: string | null;
   previewNodeId: string | null;
   pendingPermission: PermissionRequest | null;
@@ -67,7 +128,9 @@ interface GraphState {
   createUserNodeDownstream: (parentId: string) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, chunk: string) => void;
-  setStreaming: (nodeId: string | null) => void;
+  startStreaming: (nodeId: string) => void;
+  stopStreaming: (nodeId: string) => void;
+  isNodeBlocked: (nodeId: string) => boolean;
   setEditing: (nodeId: string | null) => void;
   setPreviewNode: (nodeId: string | null) => void;
   togglePreviewNode: (nodeId: string) => void;
@@ -132,7 +195,7 @@ export const useGraphStore = create<GraphState>()(
   projectModelPreferences: null,
   availableModels: {} as Record<AgentProvider, ModelInfo[]>,
   selectedNodeId: null,
-  streamingNodeId: null,
+  streamingNodeIds: new Set<string>(),
   editingNodeId: null,
   previewNodeId: null,
   pendingPermission: null,
@@ -231,12 +294,14 @@ export const useGraphStore = create<GraphState>()(
     set((state) => {
       const nodeData = new Map(state.nodeData);
       nodeData.set(id, data);
+      const newStreamingIds = new Set(state.streamingNodeIds);
+      newStreamingIds.add(id);
       return {
         nodes: [...state.nodes, node],
         edges: [...state.edges, edge],
         nodeData,
         selectedNodeId: id,
-        streamingNodeId: id,
+        streamingNodeIds: newStreamingIds,
       };
     });
 
@@ -342,11 +407,27 @@ export const useGraphStore = create<GraphState>()(
     });
   },
 
-  setStreaming: (nodeId) => {
-    console.log('[Store] setStreaming called with:', nodeId);
-    // Streaming state is now derived from streamingNodeId, so just update that
-    set({ streamingNodeId: nodeId });
-    console.log('[Store] streamingNodeId after set:', get().streamingNodeId);
+  startStreaming: (nodeId) => {
+    console.log('[Store] startStreaming called with:', nodeId);
+    set((state) => {
+      const newSet = new Set(state.streamingNodeIds);
+      newSet.add(nodeId);
+      return { streamingNodeIds: newSet };
+    });
+  },
+
+  stopStreaming: (nodeId) => {
+    console.log('[Store] stopStreaming called with:', nodeId);
+    set((state) => {
+      const newSet = new Set(state.streamingNodeIds);
+      newSet.delete(nodeId);
+      return { streamingNodeIds: newSet };
+    });
+  },
+
+  isNodeBlocked: (nodeId) => {
+    const { streamingNodeIds, edges } = get();
+    return isNodeBlockedByStreaming(nodeId, streamingNodeIds, edges);
   },
 
   setEditing: (nodeId) => {
@@ -371,10 +452,15 @@ export const useGraphStore = create<GraphState>()(
       const nodes = state.nodes.filter((n) => n.id !== nodeId);
       const edges = state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
 
+      // Also remove from streaming if present
+      const streamingNodeIds = new Set(state.streamingNodeIds);
+      streamingNodeIds.delete(nodeId);
+
       return {
         nodes,
         edges,
         nodeData,
+        streamingNodeIds,
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
         editingNodeId: state.editingNodeId === nodeId ? null : state.editingNodeId,
         previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
@@ -575,7 +661,7 @@ export const useGraphStore = create<GraphState>()(
         isDirty: false,
         selectedNodeId: null,
         editingNodeId: null,
-        streamingNodeId: null,
+        streamingNodeIds: new Set<string>(),
         previewNodeId: null,
       });
 
@@ -603,7 +689,7 @@ export const useGraphStore = create<GraphState>()(
       isDirty: false,
       selectedNodeId: null,
       editingNodeId: null,
-      streamingNodeId: null,
+      streamingNodeIds: new Set<string>(),
       previewNodeId: null,
     });
   },

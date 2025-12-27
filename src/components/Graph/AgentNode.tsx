@@ -20,14 +20,15 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
   const content = nodeData.content;
 
   // Subscribe directly to store for streaming state (fixes reactivity issue)
-  const streamingNodeId = useGraphStore((state) => state.streamingNodeId);
+  const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
+  const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const createUserNodeDownstream = useGraphStore(
     (state) => state.createUserNodeDownstream,
   );
   const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
 
-  const isStreaming = streamingNodeId === id;
-  const isAnyStreaming = streamingNodeId !== null;
+  const isStreaming = streamingNodeIds.has(id);
+  const isBlocked = isNodeBlocked(id);
 
   // Compute collapsed text: short content shown directly, long content uses AI summary
   const collapsedText = useMemo(() => {
@@ -41,7 +42,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
   const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !nodeData.summary && !isStreaming;
 
   const handleContinue = () => {
-    if (isAnyStreaming) return;
+    if (isBlocked) return;
     createUserNodeDownstream(id);
   };
 
@@ -97,7 +98,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
         <button
           className="continue-button"
           onClick={handleContinue}
-          disabled={isAnyStreaming}
+          disabled={isBlocked}
           title="Continue conversation"
         >
           Continue

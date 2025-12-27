@@ -18,11 +18,12 @@ export function SidePanel() {
   );
   const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
-  const streamingNodeId = useGraphStore((state) => state.streamingNodeId);
+  const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
   const createAgentNodeDownstream = useGraphStore((state) => state.createAgentNodeDownstream);
   const buildConversationContext = useGraphStore((state) => state.buildConversationContext);
   const appendToNode = useGraphStore((state) => state.appendToNode);
-  const setStreaming = useGraphStore((state) => state.setStreaming);
+  const stopStreaming = useGraphStore((state) => state.stopStreaming);
+  const isNodeBlockedFn = useGraphStore((state) => state.isNodeBlocked);
   const defaultProvider = useGraphStore((state) => state.defaultProvider);
   const availableProviders = useGraphStore((state) => state.availableProviders);
   const availableModels = useGraphStore((state) => state.availableModels);
@@ -42,8 +43,8 @@ export function SidePanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isUserNode = data?.role === 'user';
-  const isStreaming = previewNodeId === streamingNodeId;
-  const isAnyStreaming = streamingNodeId !== null;
+  const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
+  const isBlocked = previewNodeId ? isNodeBlockedFn(previewNodeId) : false;
 
   // Fetch models when provider changes (lazy load)
   const fetchModels = useCallback(async (provider: AgentProvider) => {
@@ -174,7 +175,7 @@ export function SidePanel() {
   };
 
   const handleGenerate = async () => {
-    if (!previewNodeId || !data?.content.trim() || isAnyStreaming) return;
+    if (!previewNodeId || !data?.content.trim() || isBlocked) return;
 
     // Exit edit mode
     setIsEditing(false);
@@ -201,7 +202,7 @@ export function SidePanel() {
       console.error('Generation failed:', error);
       appendToNode(agentNodeId, `\n\n[Error: ${error}]`);
     } finally {
-      setStreaming(null);
+      stopStreaming(agentNodeId);
     }
   };
 
@@ -289,7 +290,7 @@ export function SidePanel() {
                     setSelectedModel(undefined);
                   }}
                   availableProviders={availableProviders}
-                  disabled={isAnyStreaming}
+                  disabled={isBlocked}
                   compact
                 />
               )}
@@ -298,17 +299,17 @@ export function SidePanel() {
                 value={selectedModel}
                 onChange={setSelectedModel}
                 availableModels={availableModels[selectedProvider] ?? []}
-                disabled={isAnyStreaming}
+                disabled={isBlocked}
                 loading={loadingModels}
                 compact
               />
               <button
                 className="side-panel-generate-button"
                 onClick={handleGenerate}
-                disabled={isAnyStreaming || !data?.content.trim()}
+                disabled={isBlocked || !data?.content.trim()}
                 title="Generate response (Cmd+Enter)"
               >
-                {isAnyStreaming ? 'Generating...' : 'Generate'}
+                {isBlocked ? 'Generating...' : 'Generate'}
               </button>
             </>
           )}

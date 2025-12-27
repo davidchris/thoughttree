@@ -23,7 +23,8 @@ describe("SidePanel", () => {
     { role: "user", content: "Hello" },
   ]);
   const mockAppendToNode = vi.fn();
-  const mockSetStreaming = vi.fn();
+  const mockStopStreaming = vi.fn();
+  const mockIsNodeBlocked = vi.fn(() => false);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -56,13 +57,14 @@ describe("SidePanel", () => {
       const state = {
         previewNodeId: "user-node-1",
         nodeData: overrides.nodeData ?? defaultNodeData,
-        streamingNodeId: null,
+        streamingNodeIds: new Set<string>(),
         setPreviewNode: mockSetPreviewNode,
         updateNodeContent: mockUpdateNodeContent,
         createAgentNodeDownstream: mockCreateAgentNodeDownstream,
         buildConversationContext: mockBuildConversationContext,
         appendToNode: mockAppendToNode,
-        setStreaming: mockSetStreaming,
+        stopStreaming: mockStopStreaming,
+        isNodeBlocked: overrides.isNodeBlocked ?? mockIsNodeBlocked,
         defaultProvider: "claude-code",
         availableProviders: [
           { provider: "claude-code", available: true, error_message: null },
@@ -119,8 +121,8 @@ describe("SidePanel", () => {
       ).not.toBeInTheDocument();
     });
 
-    it("disables Generate button during streaming", async () => {
-      setupMockStore({ streamingNodeId: "some-streaming-node" });
+    it("disables Generate button when node is blocked", async () => {
+      setupMockStore({ isNodeBlocked: vi.fn(() => true) });
       render(<SidePanel />);
 
       const generateButton = screen.getByRole("button", { name: /generating/i });
