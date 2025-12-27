@@ -28,6 +28,8 @@ export function SidePanel() {
   const availableModels = useGraphStore((state) => state.availableModels);
   const setAvailableModels = useGraphStore((state) => state.setAvailableModels);
   const getEffectiveModel = useGraphStore((state) => state.getEffectiveModel);
+  const triggerSidePanelEdit = useGraphStore((state) => state.triggerSidePanelEdit);
+  const clearSidePanelEditTrigger = useGraphStore((state) => state.clearSidePanelEditTrigger);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -89,6 +91,15 @@ export function SidePanel() {
       textareaRef.current.selectionStart = textareaRef.current.value.length;
     }
   }, [isEditing]);
+
+  // React to keyboard shortcut trigger for edit mode
+  useEffect(() => {
+    if (triggerSidePanelEdit && isUserNode && data) {
+      setEditContent(data.content);
+      setIsEditing(true);
+      clearSidePanelEditTrigger();
+    }
+  }, [triggerSidePanelEdit, isUserNode, data, clearSidePanelEditTrigger]);
 
   // Handle Escape key
   useEffect(() => {

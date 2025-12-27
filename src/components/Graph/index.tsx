@@ -46,6 +46,8 @@ export function Graph() {
     editingNodeId,
     togglePreviewNode,
     setPreviewNode,
+    previewNodeId,
+    triggerSidePanelEditMode,
   } = useGraphStore();
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
@@ -261,6 +263,20 @@ export function Graph() {
         return;
       }
 
+      // "E" to enter edit mode on side panel (when previewing a user node)
+      if (e.key.toLowerCase() === 'e' && previewNodeId && !editingNodeId && !streamingNodeId) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
+          return; // Let the input handle the keystroke
+        }
+        const previewData = nodeData.get(previewNodeId);
+        if (previewData?.role === 'user') {
+          e.preventDefault();
+          triggerSidePanelEditMode();
+          return;
+        }
+      }
+
       // Don't trigger other shortcuts if editing or streaming
       if (editingNodeId || streamingNodeId) return;
 
@@ -278,7 +294,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode]);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode, previewNodeId, triggerSidePanelEditMode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {

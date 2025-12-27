@@ -53,6 +53,7 @@ interface GraphState {
   editingNodeId: string | null;
   previewNodeId: string | null;
   pendingPermission: PermissionRequest | null;
+  triggerSidePanelEdit: boolean;
 
   // ReactFlow actions
   onNodesChange: (changes: NodeChange[]) => void;
@@ -71,6 +72,8 @@ interface GraphState {
   setPreviewNode: (nodeId: string | null) => void;
   togglePreviewNode: (nodeId: string) => void;
   deleteNode: (nodeId: string) => void;
+  triggerSidePanelEditMode: () => void;
+  clearSidePanelEditTrigger: () => void;
 
   // Context building
   buildConversationContext: (nodeId: string) => Array<{ role: string; content: string }>;
@@ -133,6 +136,7 @@ export const useGraphStore = create<GraphState>()(
   editingNodeId: null,
   previewNodeId: null,
   pendingPermission: null,
+  triggerSidePanelEdit: false,
 
   onNodesChange: (changes) => {
     set({ nodes: applyNodeChanges(changes, get().nodes) as ThoughtTreeNode[], isDirty: true });
@@ -376,6 +380,14 @@ export const useGraphStore = create<GraphState>()(
         previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
       };
     });
+  },
+
+  triggerSidePanelEditMode: () => {
+    set({ triggerSidePanelEdit: true });
+  },
+
+  clearSidePanelEditTrigger: () => {
+    set({ triggerSidePanelEdit: false });
   },
 
   buildConversationContext: (nodeId) => {
