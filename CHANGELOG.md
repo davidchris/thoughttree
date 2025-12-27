@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- Parallel Streaming - Multiple simultaneous generations with lineage-based blocking
+- Edit Shortcut - Press E to enter edit mode when previewing a user node
+
 ## 0.2.1
 
 - Security Hardening - CSP enabled, path validation, traversal protection
