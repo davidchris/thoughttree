@@ -11,6 +11,8 @@ import {
   PermissionRequest,
   AgentProvider,
   ProviderStatus,
+  ModelInfo,
+  ModelPreferences,
   DEFAULT_PROVIDER,
 } from '../types';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
@@ -40,6 +42,11 @@ interface GraphState {
   defaultProvider: AgentProvider;
   availableProviders: ProviderStatus[];
 
+  // Model state
+  globalModelPreferences: ModelPreferences;
+  projectModelPreferences: ModelPreferences | null;
+  availableModels: Record<AgentProvider, ModelInfo[]>;
+
   // UI state
   selectedNodeId: string | null;
   streamingNodeId: string | null;
@@ -55,7 +62,7 @@ interface GraphState {
 
   // Node actions
   createUserNode: (position?: { x: number; y: number }) => string;
-  createAgentNodeDownstream: (parentId: string, provider?: AgentProvider) => string;
+  createAgentNodeDownstream: (parentId: string, provider?: AgentProvider, model?: string) => string;
   createUserNodeDownstream: (parentId: string) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, chunk: string) => void;
@@ -77,6 +84,14 @@ interface GraphState {
   // Provider actions
   setDefaultProvider: (provider: AgentProvider) => void;
   setAvailableProviders: (providers: ProviderStatus[]) => void;
+
+  // Model actions
+  setGlobalModelPreferences: (preferences: ModelPreferences) => void;
+  setGlobalModelPreference: (provider: AgentProvider, modelId: string | null) => void;
+  setProjectModelPreferences: (preferences: ModelPreferences | null) => void;
+  setProjectModelPreference: (provider: AgentProvider, modelId: string | null) => void;
+  setAvailableModels: (provider: AgentProvider, models: ModelInfo[]) => void;
+  getEffectiveModel: (provider: AgentProvider) => string | undefined;
 
   // Project actions
   setProjectPath: (path: string | null) => void;
@@ -110,6 +125,9 @@ export const useGraphStore = create<GraphState>()(
   isDirty: false,
   defaultProvider: DEFAULT_PROVIDER,
   availableProviders: [],
+  globalModelPreferences: {},
+  projectModelPreferences: null,
+  availableModels: {} as Record<AgentProvider, ModelInfo[]>,
   selectedNodeId: null,
   streamingNodeId: null,
   editingNodeId: null,
@@ -168,15 +186,17 @@ export const useGraphStore = create<GraphState>()(
     return id;
   },
 
-  createAgentNodeDownstream: (parentId, provider) => {
+  createAgentNodeDownstream: (parentId, provider, model) => {
     const id = generateId();
     const activeProvider = provider ?? get().defaultProvider;
+    const activeModel = model ?? get().getEffectiveModel(activeProvider);
     const data: AgentNodeData = {
       id,
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
       provider: activeProvider,
+      model: activeModel,
     };
 
     const COLLAPSED_NODE_HEIGHT = 120;
@@ -424,6 +444,55 @@ export const useGraphStore = create<GraphState>()(
 
   setAvailableProviders: (providers) => {
     set({ availableProviders: providers });
+  },
+
+  // Model actions
+  setGlobalModelPreferences: (preferences) => {
+    set({ globalModelPreferences: preferences });
+  },
+
+  setGlobalModelPreference: (provider, modelId) => {
+    const current = get().globalModelPreferences;
+    set({
+      globalModelPreferences: {
+        ...current,
+        [provider]: modelId ?? undefined,
+      },
+    });
+  },
+
+  setProjectModelPreferences: (preferences) => {
+    set({ projectModelPreferences: preferences, isDirty: preferences !== null });
+  },
+
+  setProjectModelPreference: (provider, modelId) => {
+    const current = get().projectModelPreferences ?? {};
+    set({
+      projectModelPreferences: {
+        ...current,
+        [provider]: modelId ?? undefined,
+      },
+      isDirty: true,
+    });
+  },
+
+  setAvailableModels: (provider, models) => {
+    const current = get().availableModels;
+    set({
+      availableModels: {
+        ...current,
+        [provider]: models,
+      },
+    });
+  },
+
+  getEffectiveModel: (provider) => {
+    const { projectModelPreferences, globalModelPreferences } = get();
+    // Project-level overrides global
+    const projectModel = projectModelPreferences?.[provider];
+    if (projectModel) return projectModel;
+    // Fall back to global
+    return globalModelPreferences[provider];
   },
 
   // Project actions

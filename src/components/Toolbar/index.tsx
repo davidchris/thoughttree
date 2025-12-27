@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useGraphStore } from '../../store/useGraphStore';
+import { SettingsDialog } from '../SettingsDialog';
 import './Toolbar.css';
 
 export function Toolbar() {
@@ -23,6 +24,7 @@ export function Toolbar() {
   } = useGraphStore();
 
   const [isSaving, setIsSaving] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Check if selected node is an agent node (can reply)
   const selectedNodeData = selectedNodeId ? nodeData.get(selectedNodeId) : null;
@@ -215,8 +217,20 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar-right">
+        <button
+          onClick={() => setShowSettings(true)}
+          title="Settings"
+          className="settings-button"
+        >
+          Settings
+        </button>
         <span className="node-count">{nodes.length} nodes</span>
       </div>
+
+      <SettingsDialog
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }

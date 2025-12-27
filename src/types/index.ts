@@ -23,6 +23,25 @@ export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = {
 export const DEFAULT_PROVIDER: AgentProvider = 'claude-code';
 
 // ============================================================================
+// Model Types
+// ============================================================================
+
+export interface ModelInfo {
+  model_id: string;
+  display_name: string;
+}
+
+export interface ModelPreferences {
+  'claude-code'?: string;
+  'gemini-cli'?: string;
+}
+
+export interface ProviderPaths {
+  'claude-code'?: string;
+  'gemini-cli'?: string;
+}
+
+// ============================================================================
 // Node data types - discriminated union for user vs agent nodes
 // ============================================================================
 
@@ -43,6 +62,7 @@ export interface AgentNodeData {
   summary?: string;           // Generated summary for collapsed view
   summaryTimestamp?: number;  // When summary was last generated
   provider?: AgentProvider;   // Which provider generated this response
+  model?: string;             // Which model was used for this response
   // Note: isStreaming is derived from store.streamingNodeId, not stored here
 }
 

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useGraphStore } from '../store/useGraphStore';
-import type { AgentProvider, PermissionRequest, ProviderStatus } from '../types';
+import type { AgentProvider, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus } from '../types';
 
 interface ChunkPayload {
   node_id: string;
@@ -40,7 +40,8 @@ export async function sendPrompt(
   nodeId: string,
   messages: { role: string; content: string }[],
   onChunk: (chunk: string) => void,
-  provider?: AgentProvider
+  provider?: AgentProvider,
+  modelId?: string
 ): Promise<string> {
   // Set up listener for streaming chunks
   const unlisten = await listen<ChunkPayload>('stream-chunk', (event) => {
@@ -65,6 +66,7 @@ export async function sendPrompt(
       nodeId,
       messages: messageTuples,
       provider: provider || null,
+      modelId: modelId || null,
     });
 
     return result;
@@ -102,4 +104,51 @@ export async function getDefaultProvider(): Promise<AgentProvider> {
 
 export async function setDefaultProvider(provider: AgentProvider): Promise<void> {
   await invoke('set_default_provider', { provider });
+}
+
+// ============================================================================
+// Model management
+// ============================================================================
+
+export async function getModelPreferences(): Promise<ModelPreferences> {
+  return invoke<ModelPreferences>('get_model_preferences');
+}
+
+export async function setModelPreference(
+  provider: AgentProvider,
+  modelId: string | null
+): Promise<void> {
+  await invoke('set_model_preference', { provider, modelId });
+}
+
+export async function getAvailableModels(provider: AgentProvider): Promise<ModelInfo[]> {
+  return invoke<ModelInfo[]>('get_available_models', { provider });
+}
+
+// ============================================================================
+// Provider path configuration
+// ============================================================================
+
+export async function getProviderPaths(): Promise<ProviderPaths> {
+  return invoke<ProviderPaths>('get_provider_paths');
+}
+
+export async function setProviderPath(
+  provider: AgentProvider,
+  path: string | null
+): Promise<void> {
+  await invoke('set_provider_path', { provider, path });
+}
+
+export async function validateProviderPath(
+  provider: AgentProvider,
+  path: string
+): Promise<string> {
+  return invoke<string>('validate_provider_path', { provider, path });
+}
+
+export async function pickProviderExecutable(
+  provider: AgentProvider
+): Promise<string | null> {
+  return invoke<string | null>('pick_provider_executable', { provider });
 }

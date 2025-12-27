@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
-import { sendPrompt } from '../../lib/tauri';
+import { sendPrompt, getAvailableModels } from '../../lib/tauri';
 import { ProviderSelector } from '../ProviderSelector';
+import { ModelSelector } from '../ModelSelector';
 import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData } from '../../types';
 import './styles.css';
 
@@ -24,6 +25,9 @@ export function SidePanel() {
   const setStreaming = useGraphStore((state) => state.setStreaming);
   const defaultProvider = useGraphStore((state) => state.defaultProvider);
   const availableProviders = useGraphStore((state) => state.availableProviders);
+  const availableModels = useGraphStore((state) => state.availableModels);
+  const setAvailableModels = useGraphStore((state) => state.setAvailableModels);
+  const getEffectiveModel = useGraphStore((state) => state.getEffectiveModel);
 
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -31,11 +35,44 @@ export function SidePanel() {
   const [editContent, setEditContent] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<AgentProvider>(defaultProvider);
+  const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
+  const [loadingModels, setLoadingModels] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isUserNode = data?.role === 'user';
   const isStreaming = previewNodeId === streamingNodeId;
   const isAnyStreaming = streamingNodeId !== null;
+
+  // Fetch models when provider changes (lazy load)
+  const fetchModels = useCallback(async (provider: AgentProvider) => {
+    // Skip if already loaded
+    if (availableModels[provider]?.length > 0) return;
+
+    setLoadingModels(true);
+    try {
+      const models = await getAvailableModels(provider);
+      setAvailableModels(provider, models);
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+    } finally {
+      setLoadingModels(false);
+    }
+  }, [availableModels, setAvailableModels]);
+
+  // Fetch models when editing starts or provider changes
+  useEffect(() => {
+    if (isEditing && selectedProvider) {
+      fetchModels(selectedProvider);
+    }
+  }, [isEditing, selectedProvider, fetchModels]);
+
+  // Initialize selectedModel from effective model when entering edit mode
+  useEffect(() => {
+    if (isEditing) {
+      const effectiveModel = getEffectiveModel(selectedProvider);
+      setSelectedModel(effectiveModel);
+    }
+  }, [isEditing, selectedProvider, getEffectiveModel]);
 
   // Reset edit state when node changes
   useEffect(() => {
@@ -131,8 +168,11 @@ export function SidePanel() {
     // Exit edit mode
     setIsEditing(false);
 
-    // Create downstream agent node with selected provider
-    const agentNodeId = createAgentNodeDownstream(previewNodeId, selectedProvider);
+    // Use selected model or fall back to empty string for default
+    const modelToUse = selectedModel || undefined;
+
+    // Create downstream agent node with selected provider and model
+    const agentNodeId = createAgentNodeDownstream(previewNodeId, selectedProvider, modelToUse);
 
     // Switch preview to the new agent node to show streaming response
     setPreviewNode(agentNodeId);
@@ -143,7 +183,8 @@ export function SidePanel() {
     try {
       await sendPrompt(agentNodeId, context, (chunk) =>
         appendToNode(agentNodeId, chunk),
-        selectedProvider
+        selectedProvider,
+        modelToUse
       );
     } catch (error) {
       console.error('Generation failed:', error);
@@ -231,12 +272,25 @@ export function SidePanel() {
               {availableProviders.length > 0 && (
                 <ProviderSelector
                   value={selectedProvider}
-                  onChange={setSelectedProvider}
+                  onChange={(provider) => {
+                    setSelectedProvider(provider);
+                    // Reset model selection when provider changes
+                    setSelectedModel(undefined);
+                  }}
                   availableProviders={availableProviders}
                   disabled={isAnyStreaming}
                   compact
                 />
               )}
+              <ModelSelector
+                provider={selectedProvider}
+                value={selectedModel}
+                onChange={setSelectedModel}
+                availableModels={availableModels[selectedProvider] ?? []}
+                disabled={isAnyStreaming}
+                loading={loadingModels}
+                compact
+              />
               <button
                 className="side-panel-generate-button"
                 onClick={handleGenerate}

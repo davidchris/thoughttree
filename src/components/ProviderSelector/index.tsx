@@ -30,6 +30,7 @@ export function ProviderSelector({
           key={status.provider}
           value={status.provider}
           disabled={!status.available}
+          title={status.error_message ?? undefined}
         >
           {PROVIDER_SHORT_NAMES[status.provider]}
           {!status.available && ' (unavailable)'}

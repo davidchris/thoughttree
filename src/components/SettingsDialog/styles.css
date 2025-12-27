@@ -1,0 +1,210 @@
+.settings-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.settings-dialog {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  color: #e0e0e0;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.settings-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.settings-dialog-header h1 {
+  margin: 0;
+  font-size: 20px;
+  color: #fff;
+}
+
+.settings-dialog-close {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.settings-dialog-close:hover {
+  background: #333;
+  color: #fff;
+}
+
+.settings-section {
+  background: #252525;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-section h2 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #fff;
+  font-weight: 600;
+}
+
+.settings-description {
+  color: #888;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 0 0 16px 0;
+}
+
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-label {
+  font-size: 14px;
+  color: #e0e0e0;
+  flex-shrink: 0;
+}
+
+.settings-unavailable {
+  font-size: 13px;
+  color: #666;
+  font-style: italic;
+}
+
+.settings-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.settings-done-button {
+  background: #4a9eff;
+  color: #fff;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.settings-done-button:hover {
+  background: #3a8eef;
+}
+
+/* Provider path configuration styles */
+.provider-path-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.provider-path-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.provider-path-input {
+  flex: 1;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #e0e0e0;
+  font-size: 13px;
+  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  min-width: 0;
+}
+
+.provider-path-input::placeholder {
+  color: #666;
+  font-style: italic;
+}
+
+.provider-path-input:focus {
+  outline: none;
+  border-color: #4a9eff;
+}
+
+.provider-path-input:disabled {
+  opacity: 0.5;
+}
+
+.provider-path-button {
+  background: #333;
+  color: #e0e0e0;
+  border: 1px solid #444;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.provider-path-button:hover:not(:disabled) {
+  background: #444;
+}
+
+.provider-path-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.provider-path-reset {
+  background: transparent;
+  border-color: #555;
+  color: #888;
+}
+
+.provider-path-reset:hover:not(:disabled) {
+  background: #333;
+  color: #e0e0e0;
+}
+
+.provider-path-status {
+  font-size: 12px;
+  color: #888;
+  min-height: 16px;
+}
+
+.provider-path-status.status-valid {
+  color: #4ade80;
+}
+
+.provider-path-status.status-invalid {
+  color: #f87171;
+}
+
+.provider-path-status.status-validating {
+  color: #fbbf24;
+}
