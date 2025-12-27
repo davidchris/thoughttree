@@ -4,8 +4,16 @@ import { MarkdownContent } from '../Graph/MarkdownContent';
 import { sendPrompt, getAvailableModels } from '../../lib/tauri';
 import { ProviderSelector } from '../ProviderSelector';
 import { ModelSelector } from '../ModelSelector';
+import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
 import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData } from '../../types';
 import './styles.css';
+
+interface AutocompleteState {
+  isOpen: boolean;
+  query: string;
+  position: { top: number; left: number };
+  triggerIndex: number;
+}
 
 const DEFAULT_WIDTH = 850; // ~100 character columns at 14px monospace
 const MIN_WIDTH = 200;
@@ -40,7 +48,9 @@ export function SidePanel() {
   const [selectedProvider, setSelectedProvider] = useState<AgentProvider>(defaultProvider);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const autocompleteRef = useRef<FileAutocompleteRef>(null);
 
   const isUserNode = data?.role === 'user';
   const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
@@ -80,6 +90,7 @@ export function SidePanel() {
   // Reset edit state when node changes
   useEffect(() => {
     setIsEditing(false);
+    setAutocomplete(null);
     if (data) {
       setEditContent(data.content);
     }
@@ -108,7 +119,9 @@ export function SidePanel() {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (isEditing) {
+        if (autocomplete?.isOpen) {
+          setAutocomplete(null);
+        } else if (isEditing) {
           setIsEditing(false);
         } else {
           setPreviewNode(null);
@@ -118,7 +131,7 @@ export function SidePanel() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewNodeId, setPreviewNode, isEditing]);
+  }, [previewNodeId, setPreviewNode, isEditing, autocomplete]);
 
   const handleEdit = () => {
     if (data) {
@@ -129,22 +142,98 @@ export function SidePanel() {
 
   const handleDone = () => {
     setIsEditing(false);
+    setAutocomplete(null);
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
+    const cursorPos = e.target.selectionStart;
+
     setEditContent(newValue);
     if (previewNodeId) {
       updateNodeContent(previewNodeId, newValue);
     }
+
+    // Check for @ trigger
+    const textBeforeCursor = newValue.slice(0, cursorPos);
+    const atIndex = textBeforeCursor.lastIndexOf('@');
+
+    if (atIndex !== -1) {
+      // Check if @ is at start or preceded by whitespace
+      const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
+      if (/\s/.test(charBefore) || atIndex === 0) {
+        const query = textBeforeCursor.slice(atIndex + 1);
+
+        // Only show if query doesn't contain whitespace (still typing the mention)
+        if (!/\s/.test(query)) {
+          const textarea = e.target;
+          const rect = textarea.getBoundingClientRect();
+          const position = { top: rect.bottom + 4, left: rect.left };
+          setAutocomplete({
+            isOpen: true,
+            query,
+            position,
+            triggerIndex: atIndex,
+          });
+          return;
+        }
+      }
+    }
+
+    // Close autocomplete if no valid trigger
+    if (autocomplete?.isOpen) {
+      setAutocomplete(null);
+    }
+  };
+
+  const handleTextareaBlur = (e: React.FocusEvent) => {
+    // Check if focus is moving to autocomplete
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    if (relatedTarget?.closest('.file-autocomplete')) {
+      return; // Don't close autocomplete
+    }
+    setAutocomplete(null);
   };
 
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Let autocomplete handle keys first if open
+    if (autocomplete?.isOpen && autocompleteRef.current) {
+      const handled = autocompleteRef.current.handleKeyDown(e.nativeEvent);
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
+    }
+
     // Cmd/Ctrl + Enter to generate
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
       handleGenerate();
     }
+  };
+
+  const handleFileSelect = (filePath: string) => {
+    if (!autocomplete || !textareaRef.current || !previewNodeId) return;
+
+    const textarea = textareaRef.current;
+    const beforeAt = editContent.slice(0, autocomplete.triggerIndex);
+    const afterCursor = editContent.slice(textarea.selectionStart);
+
+    // Format: @/relative/path/to/file.md
+    const mention = `@/${filePath}`;
+    const newContent = beforeAt + mention + afterCursor;
+
+    setEditContent(newContent);
+    updateNodeContent(previewNodeId, newContent);
+    setAutocomplete(null);
+
+    // Position cursor after the mention
+    const newCursorPos = autocomplete.triggerIndex + mention.length;
+    setTimeout(() => {
+      textarea.selectionStart = newCursorPos;
+      textarea.selectionEnd = newCursorPos;
+      textarea.focus();
+    }, 0);
   };
 
   const handleCopy = async () => {
@@ -332,14 +421,27 @@ export function SidePanel() {
       </div>
       <div className="side-panel-content">
         {isEditing ? (
-          <textarea
-            ref={textareaRef}
-            className="side-panel-textarea"
-            value={editContent}
-            onChange={handleContentChange}
-            onKeyDown={handleTextareaKeyDown}
-            placeholder="Enter your message..."
-          />
+          <>
+            <textarea
+              ref={textareaRef}
+              className="side-panel-textarea"
+              value={editContent}
+              onChange={handleContentChange}
+              onBlur={handleTextareaBlur}
+              onKeyDown={handleTextareaKeyDown}
+              placeholder="Enter your message... (@ to mention files)"
+            />
+            {autocomplete?.isOpen && (
+              <FileAutocomplete
+                ref={autocompleteRef}
+                isOpen={autocomplete.isOpen}
+                query={autocomplete.query}
+                position={autocomplete.position}
+                onSelect={handleFileSelect}
+                onClose={() => setAutocomplete(null)}
+              />
+            )}
+          </>
         ) : data?.content ? (
           isStreaming ? (
             <pre className="side-panel-plain-text">{data.content}</pre>
