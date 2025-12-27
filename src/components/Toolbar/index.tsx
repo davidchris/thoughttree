@@ -19,7 +19,7 @@ export function Toolbar() {
     buildConversationContext,
     nodeData,
     createUserNodeDownstream,
-    streamingNodeId,
+    isNodeBlocked,
     autoLayout,
   } = useGraphStore();
 
@@ -28,7 +28,7 @@ export function Toolbar() {
 
   // Check if selected node is an agent node (can reply)
   const selectedNodeData = selectedNodeId ? nodeData.get(selectedNodeId) : null;
-  const canReply = selectedNodeData?.role === 'assistant' && !streamingNodeId;
+  const canReply = selectedNodeData?.role === 'assistant' && selectedNodeId && !isNodeBlocked(selectedNodeId);
 
   const handleReply = () => {
     if (selectedNodeId && canReply) {

@@ -54,14 +54,14 @@ export function useSummaryGeneration() {
   const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const nodeData = useGraphStore((state) => state.nodeData);
-  const streamingNodeId = useGraphStore((state) => state.streamingNodeId);
+  const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
   const setSummary = useGraphStore((state) => state.setSummary);
 
   useEffect(() => {
     // Check all nodes for pending summaries
     for (const [nodeId, data] of nodeData) {
       // Skip if currently streaming
-      if (streamingNodeId === nodeId) continue;
+      if (streamingNodeIds.has(nodeId)) continue;
 
       // Skip if no content
       if (!data.content || !data.content.trim()) continue;
@@ -96,7 +96,7 @@ export function useSummaryGeneration() {
         timeoutsRef.current.delete(nodeId);
 
         // Double-check it's not streaming now
-        if (useGraphStore.getState().streamingNodeId === nodeId) return;
+        if (useGraphStore.getState().streamingNodeIds.has(nodeId)) return;
 
         // Check content hasn't changed significantly
         const currentData = useGraphStore.getState().nodeData.get(nodeId);
@@ -133,5 +133,5 @@ export function useSummaryGeneration() {
         clearTimeout(timeout);
       }
     };
-  }, [nodeData, streamingNodeId, setSummary]);
+  }, [nodeData, streamingNodeIds, setSummary]);
 }

@@ -10,10 +10,10 @@ interface ContextMenuProps {
 }
 
 export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
-  const { createUserNodeDownstream, deleteNode, nodeData, streamingNodeId } = useGraphStore();
+  const { createUserNodeDownstream, deleteNode, nodeData, isNodeBlocked } = useGraphStore();
   const data = nodeData.get(nodeId);
   const isAgent = data?.role === 'assistant';
-  const canReply = isAgent && !streamingNodeId;
+  const canReply = isAgent && !isNodeBlocked(nodeId);
 
   useEffect(() => {
     const handleClick = () => onClose();

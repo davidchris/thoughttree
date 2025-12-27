@@ -42,7 +42,7 @@ export function Graph() {
     selectedNodeId,
     nodeData,
     createUserNodeDownstream,
-    streamingNodeId,
+    isNodeBlocked,
     editingNodeId,
     togglePreviewNode,
     setPreviewNode,
@@ -251,7 +251,7 @@ export function Graph() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Spacebar to toggle preview panel (but not when typing in an input)
-      if (e.key === ' ' && selectedNodeId && !editingNodeId && !streamingNodeId) {
+      if (e.key === ' ' && selectedNodeId && !editingNodeId) {
         const target = e.target as HTMLElement;
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
           return; // Let the input handle the space
@@ -261,13 +261,16 @@ export function Graph() {
         return;
       }
 
-      // Don't trigger other shortcuts if editing or streaming
-      if (editingNodeId || streamingNodeId) return;
+      // Don't trigger other shortcuts if editing
+      if (editingNodeId) return;
 
       // Check if selected node is an agent node for Enter shortcut
       if (!selectedNodeId) return;
       const data = nodeData.get(selectedNodeId);
       if (!data || data.role !== 'assistant') return;
+
+      // Block if this node is in a streaming lineage
+      if (isNodeBlocked(selectedNodeId)) return;
 
       // Enter to reply
       if (e.key === 'Enter') {
@@ -278,7 +281,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, streamingNodeId, editingNodeId, togglePreviewNode]);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, isNodeBlocked, editingNodeId, togglePreviewNode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {

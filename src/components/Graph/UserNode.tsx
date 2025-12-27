@@ -35,18 +35,18 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   const {
     editingNodeId,
-    streamingNodeId,
     updateNodeContent,
     setEditing,
     createAgentNodeDownstream,
     buildConversationContext,
     appendToNode,
-    setStreaming,
+    stopStreaming,
+    isNodeBlocked,
     togglePreviewNode,
   } = useGraphStore();
 
   const isEditing = editingNodeId === id;
-  const isAnyStreaming = streamingNodeId !== null;
+  const isBlocked = isNodeBlocked(id);
 
   // Compute collapsed text: short content shown directly, long content uses AI summary
   const collapsedText = useMemo(() => {
@@ -161,7 +161,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   };
 
   const handleGenerate = async () => {
-    if (!content.trim() || isAnyStreaming) return;
+    if (!content.trim() || isBlocked) return;
 
     console.log("[Generate] Starting generation...");
 
@@ -186,9 +186,9 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       console.error("[Generate] Generation failed:", error);
       appendToNode(agentNodeId, `\n\n[Error: ${error}]`);
     } finally {
-      console.log("[Generate] Finally block - calling setStreaming(null)");
-      setStreaming(null);
-      console.log("[Generate] setStreaming(null) called");
+      console.log("[Generate] Finally block - calling stopStreaming");
+      stopStreaming(agentNodeId);
+      console.log("[Generate] stopStreaming called");
     }
   };
 
@@ -284,10 +284,10 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
         <button
           className="generate-button"
           onClick={handleGenerate}
-          disabled={isAnyStreaming}
+          disabled={isBlocked}
           title="Generate response (Cmd+Enter)"
         >
-          {isAnyStreaming ? "..." : "Generate"}
+          {isBlocked ? "..." : "Generate"}
         </button>
       )}
 
