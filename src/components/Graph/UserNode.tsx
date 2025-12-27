@@ -43,6 +43,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     stopStreaming,
     isNodeBlocked,
     togglePreviewNode,
+    setPreviewNode,
+    triggerSidePanelEditMode,
   } = useGraphStore();
 
   const isEditing = editingNodeId === id;
@@ -69,7 +71,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setEditing(id);
+    setPreviewNode(id);
+    triggerSidePanelEditMode();
   };
 
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -292,7 +295,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       )}
 
       {!content.trim() && !isEditing && (
-        <div className="node-placeholder">Double-click to edit</div>
+        <div className="node-placeholder">Double-click to edit in panel</div>
       )}
 
       <Handle type="source" position={Position.Bottom} />
