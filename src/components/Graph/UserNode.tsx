@@ -1,13 +1,14 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Handle,
   Position,
   NodeProps,
   NodeResizer,
 } from "@xyflow/react";
-import { UserFlowNodeData } from "../../types";
+import { UserFlowNodeData, ImageAttachment } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import { sendPrompt } from "../../lib/tauri";
+import { resizeIfNeeded, fileToBase64 } from "../../lib/imageUtils";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
 import "./styles.css";
 
@@ -27,10 +28,13 @@ type UserNodeProps = NodeProps & {
 export function UserNode({ id, data, selected }: UserNodeProps) {
   const { nodeData } = data;
   const content = nodeData.content;
+  const images = nodeData.images || [];
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(
     null,
   );
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const nodeRef = useRef<HTMLDivElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
 
   const {
@@ -45,6 +49,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     togglePreviewNode,
     setPreviewNode,
     triggerSidePanelEditMode,
+    addNodeImage,
+    removeNodeImage,
   } = useGraphStore();
 
   const isEditing = editingNodeId === id;
@@ -223,10 +229,84 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     }, 0);
   };
 
+  // Process and add an image file
+  const processImageFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+
+    try {
+      const resized = await resizeIfNeeded(file);
+      const base64 = await fileToBase64(resized);
+      const image: ImageAttachment = {
+        data: base64,
+        mimeType: file.type,
+        name: file.name,
+      };
+      addNodeImage(id, image);
+    } catch (error) {
+      console.error('Failed to process image:', error);
+    }
+  }, [id, addNodeImage]);
+
+  // Handle paste events (for Cmd+V with images)
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await processImageFile(file);
+        }
+      }
+    }
+  }, [processImageFile]);
+
+  // Handle drag over
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true);
+    }
+  }, []);
+
+  // Handle drag leave
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  // Handle drop events
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    for (const file of Array.from(files)) {
+      if (file.type.startsWith('image/')) {
+        await processImageFile(file);
+      }
+    }
+  }, [processImageFile]);
+
+  // Handle image removal
+  const handleRemoveImage = useCallback((index: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    removeNodeImage(id, index);
+  }, [id, removeNodeImage]);
+
   return (
     <div
-      className={`thought-node user-node ${selected ? "selected" : ""} ${isEditing ? "editing" : ""} ${!isEditing ? "collapsed" : ""}`}
+      ref={nodeRef}
+      className={`thought-node user-node ${selected ? "selected" : ""} ${isEditing ? "editing" : ""} ${!isEditing ? "collapsed" : ""} ${isDragOver ? "drag-over" : ""}`}
       onDoubleClick={handleDoubleClick}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       <NodeResizer
         minWidth={isEditing ? 220 : 120}
@@ -238,6 +318,11 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
 
       <div className="node-header">
         <span className="node-role">User</span>
+        {images.length > 0 && !isEditing && (
+          <span className="image-count" title={`${images.length} image${images.length > 1 ? 's' : ''} attached`}>
+            {images.length}
+          </span>
+        )}
         {hasMore && !isEditing && (
           <button
             className="expand-toggle"
@@ -249,6 +334,27 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
         )}
       </div>
 
+      {/* Image thumbnails */}
+      {images.length > 0 && (
+        <div className="image-thumbnails">
+          {images.map((img, index) => (
+            <div key={index} className="image-thumbnail">
+              <img
+                src={`data:${img.mimeType};base64,${img.data}`}
+                alt={img.name || `Image ${index + 1}`}
+              />
+              <button
+                className="image-remove"
+                onClick={(e) => handleRemoveImage(index, e)}
+                title="Remove image"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {isEditing ? (
         <>
           <textarea
@@ -258,7 +364,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
             onChange={handleContentChange}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
-            placeholder="Enter your message... (@ to mention files)"
+            onPaste={handlePaste}
+            placeholder="Enter your message... (@ to mention files, paste or drop images)"
           />
           {console.log("[UserNode] autocomplete state:", autocomplete)}
           {autocomplete?.isOpen && (
@@ -283,7 +390,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
         </div>
       )}
 
-      {!isEditing && content.trim() && (
+      {!isEditing && (content.trim() || images.length > 0) && (
         <button
           className="generate-button"
           onClick={handleGenerate}
@@ -294,7 +401,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
         </button>
       )}
 
-      {!content.trim() && !isEditing && (
+      {!content.trim() && images.length === 0 && !isEditing && (
         <div className="node-placeholder">Double-click to edit in panel</div>
       )}
 

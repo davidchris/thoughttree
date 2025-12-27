@@ -13,6 +13,7 @@ import {
   ProviderStatus,
   ModelInfo,
   ModelPreferences,
+  ImageAttachment,
   DEFAULT_PROVIDER,
 } from '../types';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
@@ -138,8 +139,16 @@ interface GraphState {
   triggerSidePanelEditMode: () => void;
   clearSidePanelEditTrigger: () => void;
 
+  // Image actions
+  addNodeImage: (nodeId: string, image: ImageAttachment) => void;
+  removeNodeImage: (nodeId: string, index: number) => void;
+
   // Context building
-  buildConversationContext: (nodeId: string) => Array<{ role: string; content: string }>;
+  buildConversationContext: (nodeId: string) => Array<{
+    role: string;
+    content: string;
+    images?: ImageAttachment[];
+  }>;
 
   // Summary actions
   setSummary: (nodeId: string, summary: string) => void;
@@ -476,6 +485,66 @@ export const useGraphStore = create<GraphState>()(
     set({ triggerSidePanelEdit: false });
   },
 
+  addNodeImage: (nodeId, image) => {
+    set((state) => {
+      const nodeData = new Map(state.nodeData);
+      const data = nodeData.get(nodeId);
+      if (!data || data.role !== 'user') return state;
+
+      const userData = data as UserNodeData;
+      const updated: UserNodeData = {
+        ...userData,
+        images: [...(userData.images || []), image],
+      };
+      nodeData.set(nodeId, updated);
+
+      // Update the flow node data too
+      const nodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            nodeData: updated,
+          } as ThoughtTreeFlowNodeData,
+        };
+      }) as ThoughtTreeNode[];
+
+      return { nodes, nodeData, isDirty: true };
+    });
+  },
+
+  removeNodeImage: (nodeId, index) => {
+    set((state) => {
+      const nodeData = new Map(state.nodeData);
+      const data = nodeData.get(nodeId);
+      if (!data || data.role !== 'user') return state;
+
+      const userData = data as UserNodeData;
+      if (!userData.images || index >= userData.images.length) return state;
+
+      const updated: UserNodeData = {
+        ...userData,
+        images: userData.images.filter((_, i) => i !== index),
+      };
+      nodeData.set(nodeId, updated);
+
+      // Update the flow node data too
+      const nodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) return node;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            nodeData: updated,
+          } as ThoughtTreeFlowNodeData,
+        };
+      }) as ThoughtTreeNode[];
+
+      return { nodes, nodeData, isDirty: true };
+    });
+  },
+
   buildConversationContext: (nodeId) => {
     const { edges, nodeData } = get();
 
@@ -486,7 +555,7 @@ export const useGraphStore = create<GraphState>()(
     });
 
     // Traverse up the parent chain
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages: Array<{ role: string; content: string; images?: ImageAttachment[] }> = [];
     const visited = new Set<string>();
     let currentId: string | undefined = nodeId;
 
@@ -494,7 +563,18 @@ export const useGraphStore = create<GraphState>()(
       visited.add(currentId);
       const data = nodeData.get(currentId);
       if (data && data.content.trim()) {
-        messages.unshift({ role: data.role, content: data.content });
+        const message: { role: string; content: string; images?: ImageAttachment[] } = {
+          role: data.role,
+          content: data.content,
+        };
+        // Include images for user nodes
+        if (data.role === 'user') {
+          const userData = data as UserNodeData;
+          if (userData.images && userData.images.length > 0) {
+            message.images = userData.images;
+          }
+        }
+        messages.unshift(message);
       }
       currentId = parentMap.get(currentId);
     }

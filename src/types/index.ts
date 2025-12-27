@@ -45,6 +45,12 @@ export interface ProviderPaths {
 // Node data types - discriminated union for user vs agent nodes
 // ============================================================================
 
+export interface ImageAttachment {
+  data: string;      // Base64-encoded image data (no data: prefix)
+  mimeType: string;  // e.g., "image/png", "image/jpeg"
+  name?: string;     // Optional filename for display
+}
+
 export interface UserNodeData {
   id: string;
   role: 'user';
@@ -52,6 +58,7 @@ export interface UserNodeData {
   timestamp: number;
   summary?: string;           // Generated summary for collapsed view
   summaryTimestamp?: number;  // When summary was last generated
+  images?: ImageAttachment[]; // Optional array of attached images
 }
 
 export interface AgentNodeData {

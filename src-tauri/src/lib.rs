@@ -106,10 +106,11 @@ impl ProviderPaths {
 }
 
 use agent_client_protocol::{
-    Agent, Client, ClientSideConnection, ContentBlock, Implementation, InitializeRequest,
-    NewSessionRequest, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
-    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionNotification, SessionUpdate, SetSessionModelRequest, TextContent,
+    Agent, Client, ClientSideConnection, ContentBlock, ImageContent, Implementation,
+    InitializeRequest, NewSessionRequest, PromptRequest, ProtocolVersion,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionNotification, SessionUpdate, SetSessionModelRequest,
+    TextContent,
 };
 use async_trait::async_trait;
 use chrono::Local;
@@ -142,6 +143,20 @@ struct PermissionPayload {
 struct PermissionOption {
     id: String,
     label: String,
+}
+
+// Message types from frontend (with optional images)
+#[derive(Clone, serde::Deserialize)]
+struct MessageImage {
+    data: String,
+    mime_type: String,
+}
+
+#[derive(Clone, serde::Deserialize)]
+struct Message {
+    role: String,
+    content: String,
+    images: Option<Vec<MessageImage>>,
 }
 
 // App state for managing permission responses
@@ -761,7 +776,7 @@ async fn spawn_agent_subprocess(
 async fn run_prompt_session(
     app_handle: AppHandle,
     node_id: String,
-    messages: Vec<(String, String)>,
+    messages: Vec<Message>,
     pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
     notes_directory: PathBuf,
     provider: AgentProvider,
@@ -858,27 +873,52 @@ async fn run_prompt_session(
     let date_prefix = format!("Current date: {}\n\n", current_date);
 
     // Build prompt from conversation messages
-    // Only include the last user message as the prompt, context comes from session
     let prompt_text = messages
         .iter()
-        .map(|(role, content)| format!("{}: {}", role, content))
+        .map(|msg| format!("{}: {}", msg.role, msg.content))
         .collect::<Vec<_>>()
         .join("\n\n");
 
     // Prepend current date to the prompt
     let prompt_text = format!("{}{}", date_prefix, prompt_text);
 
-    // Validate prompt is not empty
-    if prompt_text.trim().is_empty() {
+    // Build content blocks: images first, then text
+    // Claude processes images before text for better understanding
+    let mut content_blocks: Vec<ContentBlock> = Vec::new();
+
+    // Add all images from all messages
+    for msg in &messages {
+        if let Some(images) = &msg.images {
+            for img in images {
+                info!("Adding image: mime_type={}", img.mime_type);
+                content_blocks.push(ContentBlock::Image(ImageContent::new(
+                    img.data.clone(),
+                    img.mime_type.clone(),
+                )));
+            }
+        }
+    }
+
+    // Validate we have content to send
+    if prompt_text.trim().is_empty() && content_blocks.is_empty() {
         return Err(anyhow::anyhow!("Cannot send empty prompt"));
     }
 
+    // Add text content if present
+    if !prompt_text.trim().is_empty() {
+        content_blocks.push(ContentBlock::Text(TextContent::new(prompt_text)));
+    }
+
     // Send prompt
-    info!("Sending prompt...");
+    info!(
+        "Sending prompt with {} content blocks ({} images)...",
+        content_blocks.len(),
+        content_blocks.iter().filter(|b| matches!(b, ContentBlock::Image(_))).count()
+    );
     let prompt_response = connection
         .prompt(PromptRequest::new(
             session_response.session_id,
-            vec![ContentBlock::Text(TextContent::new(prompt_text))],
+            content_blocks,
         ))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to send prompt: {:?}", e))?;
@@ -897,7 +937,7 @@ async fn send_prompt(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     node_id: String,
-    messages: Vec<(String, String)>,
+    messages: Vec<Message>,
     provider: Option<AgentProvider>,
     model_id: Option<String>,
 ) -> Result<String, String> {

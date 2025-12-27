@@ -1,7 +1,26 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useGraphStore } from '../store/useGraphStore';
-import type { AgentProvider, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus } from '../types';
+import type { AgentProvider, ImageAttachment, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus } from '../types';
+
+// Message format with optional images for IPC
+interface MessageWithImages {
+  role: string;
+  content: string;
+  images?: ImageAttachment[];
+}
+
+// Backend-compatible message image format (snake_case)
+interface BackendMessageImage {
+  data: string;
+  mime_type: string;
+}
+
+interface BackendMessage {
+  role: string;
+  content: string;
+  images: BackendMessageImage[] | null;
+}
 
 interface ChunkPayload {
   node_id: string;
@@ -38,7 +57,7 @@ export async function initializeListeners(): Promise<void> {
 
 export async function sendPrompt(
   nodeId: string,
-  messages: { role: string; content: string }[],
+  messages: MessageWithImages[],
   onChunk: (chunk: string) => void,
   provider?: AgentProvider,
   modelId?: string
@@ -51,20 +70,27 @@ export async function sendPrompt(
   });
 
   try {
-    // Convert messages to tuple format expected by backend
+    // Convert messages to backend format with images
     // Filter out empty messages (e.g., placeholder assistant messages before streaming)
-    const messageTuples: [string, string][] = messages
-      .filter((m) => m.content.trim().length > 0)
-      .map((m) => [m.role, m.content]);
+    const backendMessages: BackendMessage[] = messages
+      .filter((m) => m.content.trim().length > 0 || (m.images && m.images.length > 0))
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+        images: m.images?.map((img) => ({
+          data: img.data,
+          mime_type: img.mimeType,
+        })) || null,
+      }));
 
     // Validate we have messages to send
-    if (messageTuples.length === 0) {
+    if (backendMessages.length === 0) {
       throw new Error('No valid messages to send');
     }
 
     const result = await invoke<string>('send_prompt', {
       nodeId,
-      messages: messageTuples,
+      messages: backendMessages,
       provider: provider || null,
       modelId: modelId || null,
     });
