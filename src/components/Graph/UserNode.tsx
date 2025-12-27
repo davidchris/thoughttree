@@ -3,7 +3,6 @@ import {
   Handle,
   Position,
   NodeProps,
-  NodeResizer,
 } from "@xyflow/react";
 import { UserFlowNodeData, ImageAttachment } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
@@ -308,12 +307,6 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <NodeResizer
-        minWidth={isEditing ? 220 : 120}
-        minHeight={isEditing ? 100 : 120}
-        isVisible={selected}
-        handleClassName="node-resize-handle"
-      />
       <Handle type="target" position={Position.Top} />
 
       <div className="node-header">

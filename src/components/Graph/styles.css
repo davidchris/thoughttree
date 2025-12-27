@@ -297,23 +297,6 @@
     background: #22c55e;
 }
 
-/* NodeResizer handle styling */
-.node-resize-handle {
-    width: 10px !important;
-    height: 10px !important;
-    border-radius: 2px;
-}
-
-.user-node .node-resize-handle {
-    background: #3b82f6 !important;
-    border: 1px solid #60a5fa !important;
-}
-
-.agent-node .node-resize-handle {
-    background: #22c55e !important;
-    border: 1px solid #4ade80 !important;
-}
-
 /* Markdown Content Styles */
 .markdown-content {
     font-size: 13px;
