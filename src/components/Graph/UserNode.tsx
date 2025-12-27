@@ -301,7 +301,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   return (
     <div
       ref={nodeRef}
-      className={`thought-node user-node ${selected ? "selected" : ""} ${isEditing ? "editing" : ""} ${!isEditing ? "collapsed" : ""} ${isDragOver ? "drag-over" : ""}`}
+      className={`thought-node user-node ${selected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
       onDoubleClick={handleDoubleClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

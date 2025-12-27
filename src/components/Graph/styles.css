@@ -40,19 +40,22 @@
     border-color: #555;
 }
 
-/* Base node styles */
+/* Base node styles - always 120x120, content viewed in side panel */
 .thought-node {
     background: #1a1a2e;
     border: 2px solid #333;
     border-radius: 8px;
-    padding: 12px;
-    min-width: 220px;
+    padding: 8px;
+    width: 120px;
+    height: 120px;
+    max-width: 120px;
     cursor: pointer;
     transition: all 0.2s ease;
     position: relative;
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    overflow: hidden;
 
     /* Improve text rendering under CSS transforms (zoom) */
     transform: translateZ(0);
@@ -85,10 +88,6 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
-.user-node.editing {
-    border-color: #93c5fd;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
-}
 
 /* Agent node - green accent */
 .agent-node {
@@ -124,7 +123,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
+    overflow: hidden;
 }
 
 .node-role {
@@ -143,9 +143,12 @@
 }
 
 .streaming-badge {
-    font-size: 10px;
+    font-size: 9px;
     color: #4ade80;
     animation: pulse 1s infinite;
+    position: absolute;
+    top: 4px;
+    right: 4px;
 }
 
 @keyframes pulse {
@@ -160,14 +163,18 @@
 
 /* Node content */
 .node-content {
-    font-size: 13px;
+    font-size: 11px;
     color: #ccc;
-    line-height: 1.5;
+    line-height: 1.4;
     flex: 1;
-    min-height: 40px;
-    overflow: auto;
-    white-space: pre-wrap;
+    min-height: auto;
+    overflow: hidden;
+    white-space: normal;
     word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    max-width: 100%;
 }
 
 /* Enhanced text rendering for all text elements */
@@ -474,42 +481,9 @@
     border-radius: 4px;
 }
 
-/* Sticky note collapsed mode - square aspect ratio */
-.thought-node.collapsed {
-    padding: 8px;
-    width: 120px;
-    height: 120px;
-    min-width: unset;
-    min-height: unset;
-}
-
-.thought-node.collapsed .node-header {
-    margin-bottom: 4px;
-    overflow: hidden;
-}
-
-/* Streaming badge visible in collapsed mode - positioned to fit small space */
-.thought-node.collapsed .streaming-badge {
-    font-size: 9px;
-    position: absolute;
-    top: 4px;
-    right: 4px;
-}
-
-.thought-node.collapsed .node-content {
-    min-height: auto;
-    font-size: 11px;
-    white-space: normal;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
-    max-width: 100%;
-}
-
-/* Hide action buttons when collapsed */
-.thought-node.collapsed .generate-button,
-.thought-node.collapsed .continue-button {
+/* Hide action buttons on small nodes */
+.thought-node .generate-button,
+.thought-node .continue-button {
     display: none;
 }
 
@@ -725,12 +699,7 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
 }
 
-/* Collapsed node with images - show image count but hide thumbnails */
-.thought-node.collapsed .image-thumbnails {
+/* Hide image thumbnails on small nodes - show image count badge instead */
+.thought-node .image-thumbnails {
     display: none;
-}
-
-/* Slightly larger collapsed nodes when they have images */
-.thought-node.collapsed.has-images {
-    min-height: 130px;
 }

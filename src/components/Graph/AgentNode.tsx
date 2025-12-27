@@ -52,7 +52,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
 
   return (
     <div
-      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} collapsed`}
+      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""}`}
     >
       <Handle type="target" position={Position.Top} />
 
