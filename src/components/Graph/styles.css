@@ -59,6 +59,12 @@
     backface-visibility: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+
+    /* Enhanced text rendering for transforms */
+    text-rendering: geometricPrecision;
+    will-change: transform;
+    -webkit-transform-style: preserve-3d;
+    transform-style: preserve-3d;
 }
 
 .thought-node:hover {
@@ -162,6 +168,14 @@
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+/* Enhanced text rendering for all text elements */
+.node-content,
+.node-role,
+.node-header,
+.markdown-content {
+    text-rendering: geometricPrecision;
 }
 
 .node-placeholder {
