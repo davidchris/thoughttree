@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Image Support - Paste or drag-drop images into conversations, with automatic resizing for API limits
+- Side Panel File Mentions - @ autocomplete for file references now available in side panel
+- Fixed Node Sizing - Nodes are always 120x120 with corrected hit-boxes for panning
+- Side Panel Editing - Double-click on nodes opens side panel instead of inline editing
+- CI/CD Pipelines - GitHub Actions workflows for multi-platform release builds and PR tests
+- Build Optimizations - Cargo release profile with LTO, symbol stripping, and cross-platform sidecar builds
+
 ## 0.2.2
 
 - Parallel Streaming - Multiple simultaneous generations with lineage-based blocking
