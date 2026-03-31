@@ -263,16 +263,25 @@ export function Graph() {
         return;
       }
 
-      // "E" to enter edit mode on side panel (when previewing a user node)
-      if (e.key.toLowerCase() === 'e' && previewNodeId && !editingNodeId && !isNodeBlocked(previewNodeId)) {
+      // "E" to open side panel or enter edit mode (user nodes)
+      if (e.key.toLowerCase() === 'e' && !editingNodeId) {
         const target = e.target as HTMLElement;
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
           return; // Let the input handle the keystroke
         }
-        const previewData = nodeData.get(previewNodeId);
-        if (previewData?.role === 'user') {
+        // If panel is already open on a user node, enter edit mode
+        if (previewNodeId && !isNodeBlocked(previewNodeId)) {
+          const previewData = nodeData.get(previewNodeId);
+          if (previewData?.role === 'user') {
+            e.preventDefault();
+            triggerSidePanelEditMode();
+            return;
+          }
+        }
+        // If panel is not open but a node is selected, open the panel
+        if (!previewNodeId && selectedNodeId) {
           e.preventDefault();
-          triggerSidePanelEditMode();
+          setPreviewNode(selectedNodeId);
           return;
         }
       }
@@ -297,7 +306,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, isNodeBlocked, editingNodeId, togglePreviewNode, previewNodeId, triggerSidePanelEditMode]);
+  }, [selectedNodeId, nodeData, createUserNodeDownstream, isNodeBlocked, editingNodeId, togglePreviewNode, previewNodeId, triggerSidePanelEditMode, setPreviewNode]);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {

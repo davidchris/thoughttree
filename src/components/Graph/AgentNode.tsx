@@ -25,6 +25,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
     (state) => state.createUserNodeDownstream,
   );
   const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
+  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
 
   const isStreaming = streamingNodeIds.has(id);
   const isBlocked = isNodeBlocked(id);
@@ -45,6 +46,11 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
     createUserNodeDownstream(id);
   };
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPreviewNode(id);
+  };
+
   const handleToggleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
     togglePreviewNode(id);
@@ -53,6 +59,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
   return (
     <div
       className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""}`}
+      onDoubleClick={handleDoubleClick}
     >
       <Handle type="target" position={Position.Top} />
 
