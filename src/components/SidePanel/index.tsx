@@ -5,6 +5,7 @@ import { sendPrompt, getAvailableModels } from '../../lib/tauri';
 import { ProviderSelector } from '../ProviderSelector';
 import { ModelSelector } from '../ModelSelector';
 import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
+import { getCaretCoordinates } from '../../lib/caretCoordinates';
 import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData, type UserNodeData, type ImageAttachment } from '../../types';
 import { resizeIfNeeded, fileToBase64 } from '../../lib/imageUtils';
 import './styles.css';
@@ -172,8 +173,8 @@ export function SidePanel() {
         // Only show if query doesn't contain whitespace (still typing the mention)
         if (!/\s/.test(query)) {
           const textarea = e.target;
-          const rect = textarea.getBoundingClientRect();
-          const position = { top: rect.bottom + 4, left: rect.left };
+          const caret = getCaretCoordinates(textarea, textarea.selectionStart);
+          const position = { top: caret.top + caret.height + 4, left: caret.left };
           setAutocomplete({
             isOpen: true,
             query,

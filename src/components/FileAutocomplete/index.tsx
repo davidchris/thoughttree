@@ -21,6 +21,8 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
     const listRef = useRef<HTMLDivElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const [adjustedPosition, setAdjustedPosition] = useState(position);
 
     // Debounced search
     useEffect(() => {
@@ -56,6 +58,36 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
         selected?.scrollIntoView({ block: 'nearest' });
       }
     }, [selectedIndex, files.length]);
+
+    // Adjust position to stay within viewport
+    useEffect(() => {
+      if (!isOpen || !dropdownRef.current) {
+        setAdjustedPosition(position);
+        return;
+      }
+
+      const dropdown = dropdownRef.current;
+      const dropdownHeight = dropdown.offsetHeight;
+      const dropdownWidth = dropdown.offsetWidth;
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      const PADDING = 8;
+
+      let { top, left } = position;
+
+      // Flip above cursor if it would overflow the bottom
+      if (top + dropdownHeight + PADDING > viewportHeight) {
+        // position.top is already caret.top + caret.height + 4, so go back above the caret line
+        top = position.top - dropdownHeight - 8;
+      }
+
+      // Clamp left edge
+      if (left + dropdownWidth > viewportWidth - PADDING) {
+        left = viewportWidth - dropdownWidth - PADDING;
+      }
+
+      setAdjustedPosition({ top, left });
+    }, [isOpen, position, files.length]);
 
     // Keyboard navigation handler exposed via ref
     const handleKeyDown = useCallback(
@@ -99,7 +131,7 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
 
     // Use portal to escape ReactFlow's transform context
     return createPortal(
-      <div className="file-autocomplete" style={{ top: position.top, left: position.left }}>
+      <div ref={dropdownRef} className="file-autocomplete" style={{ top: adjustedPosition.top, left: adjustedPosition.left }}>
         <div className="file-autocomplete-list" ref={listRef}>
           {isLoading && <div className="file-autocomplete-loading">Searching...</div>}
           {!isLoading && files.length === 0 && (

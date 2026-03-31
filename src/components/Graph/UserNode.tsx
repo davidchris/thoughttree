@@ -9,6 +9,7 @@ import { useGraphStore } from "../../store/useGraphStore";
 import { sendPrompt } from "../../lib/tauri";
 import { resizeIfNeeded, fileToBase64 } from "../../lib/imageUtils";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
+import { getCaretCoordinates } from "../../lib/caretCoordinates";
 import "./styles.css";
 
 const SUMMARY_THRESHOLD = 100;
@@ -108,8 +109,8 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
         // Only show if query doesn't contain whitespace (still typing the mention)
         if (!/\s/.test(query)) {
           const textarea = e.target;
-          const rect = textarea.getBoundingClientRect();
-          const position = { top: rect.bottom + 4, left: rect.left };
+          const caret = getCaretCoordinates(textarea, textarea.selectionStart);
+          const position = { top: caret.top + caret.height + 4, left: caret.left };
           console.log(
             "[Autocomplete] Setting autocomplete state, position:",
             position,
