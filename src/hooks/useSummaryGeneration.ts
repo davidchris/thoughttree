@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useGraphStore } from '../store/useGraphStore';
+import type { MessageNodeData } from '../types';
+import { logger } from '../lib/logger';
 
 const SUMMARY_THRESHOLD = 100; // Characters - content shorter than this uses content directly
 const DEBOUNCE_MS = 1500;      // Wait for content to stabilize before generating
@@ -8,6 +10,15 @@ const DEBOUNCE_MS = 1500;      // Wait for content to stabilize before generatin
 interface SummaryResult {
   node_id: string;
   summary: string;
+}
+
+export function getContentVersionTimestamp(data: Pick<MessageNodeData, 'timestamp' | 'contentUpdatedAt'>): number {
+  return data.contentUpdatedAt ?? data.timestamp;
+}
+
+export function hasFreshSummary(data: Pick<MessageNodeData, 'timestamp' | 'contentUpdatedAt' | 'summary' | 'summaryTimestamp'>): boolean {
+  if (!data.summary || !data.summaryTimestamp) return false;
+  return data.summaryTimestamp >= getContentVersionTimestamp(data);
 }
 
 // Global queue for serializing summary generation (only one ACP subprocess at a time)
@@ -79,7 +90,7 @@ export function useSummaryGeneration() {
 
       // Skip if already has valid summary for this content
       // (summaryTimestamp should be >= when content was last changed)
-      if (data.summary && data.summaryTimestamp && data.summaryTimestamp >= data.timestamp) {
+      if (hasFreshSummary(data)) {
         continue;
       }
 
@@ -105,17 +116,17 @@ export function useSummaryGeneration() {
         pendingRef.current.add(nodeId);
 
         try {
-          console.log(`[Summary] Queueing summary generation for node ${nodeId}`);
+          logger.debug(`[Summary] Queueing summary generation for node ${nodeId}`);
           const result = await queueSummaryGeneration(nodeId, currentData.content);
 
           // Verify node still exists and needs summary
           const finalData = useGraphStore.getState().nodeData.get(nodeId);
           if (finalData && finalData.content.length > SUMMARY_THRESHOLD) {
             setSummary(result.node_id, result.summary);
-            console.log(`[Summary] Set summary for ${nodeId}: ${result.summary}`);
+            logger.debug(`[Summary] Set summary for ${nodeId}: ${result.summary}`);
           }
         } catch (error) {
-          console.error(`[Summary] Failed to generate summary for ${nodeId}:`, error);
+          logger.error(`[Summary] Failed to generate summary for ${nodeId}:`, error);
           // Use truncated content as fallback
           const fallback = currentData.content.slice(0, 50) + '...';
           setSummary(nodeId, fallback);

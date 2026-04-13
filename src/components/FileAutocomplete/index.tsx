@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { createPortal } from 'react-dom';
 import { searchFiles } from '../../lib/tauri';
+import { logger } from '../../lib/logger';
 import './styles.css';
 
 export interface FileAutocompleteProps {
@@ -26,7 +27,6 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
 
     // Debounced search
     useEffect(() => {
-      console.log('[FileAutocomplete] useEffect triggered, isOpen:', isOpen, 'query:', query);
       if (!isOpen) {
         setFiles([]);
         return;
@@ -35,13 +35,11 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
       setIsLoading(true);
       const timeoutId = setTimeout(async () => {
         try {
-          console.log('[FileAutocomplete] Calling searchFiles with query:', query);
           const results = await searchFiles(query, 15);
-          console.log('[FileAutocomplete] Search results:', results);
           setFiles(results);
           setSelectedIndex(0);
         } catch (error) {
-          console.error('[FileAutocomplete] File search failed:', error);
+          logger.error('[FileAutocomplete] File search failed:', error);
           setFiles([]);
         } finally {
           setIsLoading(false);
@@ -124,8 +122,6 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
     );
 
     useImperativeHandle(ref, () => ({ handleKeyDown }), [handleKeyDown]);
-
-    console.log('[FileAutocomplete] Rendering, isOpen:', isOpen, 'files:', files.length, 'position:', position);
 
     if (!isOpen) return null;
 

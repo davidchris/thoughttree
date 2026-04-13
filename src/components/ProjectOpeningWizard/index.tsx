@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { logger } from '../../lib/logger';
 import './ProjectOpeningWizard.css';
 
 interface ProjectOpeningWizardProps {
@@ -55,7 +56,7 @@ export function ProjectOpeningWizard({
       await invoke('add_recent_project', { path });
       onProjectSelected(path);
     } catch (e) {
-      console.error('Failed to update recent projects:', e);
+      logger.error('Failed to update recent projects:', e);
       // Still try to open the project
       onProjectSelected(path);
     }
@@ -67,7 +68,7 @@ export function ProjectOpeningWizard({
       await invoke('remove_recent_project', { path });
       setRecentProjects((prev) => prev.filter((p) => p !== path));
     } catch (e) {
-      console.error('Failed to remove project from recent:', e);
+      logger.error('Failed to remove project from recent:', e);
     }
   };
 
@@ -143,4 +144,3 @@ export function ProjectOpeningWizard({
     </div>
   );
 }
-

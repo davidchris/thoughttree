@@ -1,13 +1,15 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
-import { sendPrompt, getAvailableModels } from '../../lib/tauri';
+import { getAvailableModels } from '../../lib/tauri';
 import { ProviderSelector } from '../ProviderSelector';
 import { ModelSelector } from '../ModelSelector';
 import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
 import { getCaretCoordinates } from '../../lib/caretCoordinates';
 import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData, type UserNodeData, type ImageAttachment } from '../../types';
 import { resizeIfNeeded, fileToBase64 } from '../../lib/imageUtils';
+import { useNodeGeneration } from '../../hooks/useNodeGeneration';
+import { logger } from '../../lib/logger';
 import './styles.css';
 
 interface AutocompleteState {
@@ -29,10 +31,6 @@ export function SidePanel() {
   const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
   const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
-  const createAgentNodeDownstream = useGraphStore((state) => state.createAgentNodeDownstream);
-  const buildConversationContext = useGraphStore((state) => state.buildConversationContext);
-  const appendToNode = useGraphStore((state) => state.appendToNode);
-  const stopStreaming = useGraphStore((state) => state.stopStreaming);
   const isNodeBlockedFn = useGraphStore((state) => state.isNodeBlocked);
   const defaultProvider = useGraphStore((state) => state.defaultProvider);
   const availableProviders = useGraphStore((state) => state.availableProviders);
@@ -56,6 +54,7 @@ export function SidePanel() {
   const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
+  const generateNode = useNodeGeneration();
 
   const isUserNode = data?.role === 'user';
   const images = isUserNode ? (data as UserNodeData).images || [] : [];
@@ -72,7 +71,7 @@ export function SidePanel() {
       const models = await getAvailableModels(provider);
       setAvailableModels(provider, models);
     } catch (error) {
-      console.error('Failed to fetch models:', error);
+      logger.error('Failed to fetch models:', error);
     } finally {
       setLoadingModels(false);
     }
@@ -232,7 +231,7 @@ export function SidePanel() {
       };
       addNodeImage(previewNodeId, image);
     } catch (error) {
-      console.error('Failed to process image:', error);
+      logger.error('Failed to process image:', error);
     }
   }, [previewNodeId, addNodeImage]);
 
@@ -327,7 +326,7 @@ export function SidePanel() {
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (error) {
-      console.error('Failed to copy content:', error);
+      logger.error('Failed to copy content:', error);
       // Fallback for older browsers
       const textarea = document.createElement('textarea');
       textarea.value = data.content;
@@ -340,7 +339,7 @@ export function SidePanel() {
         setCopySuccess(true);
         setTimeout(() => setCopySuccess(false), 2000);
       } catch (err) {
-        console.error('Fallback copy failed:', err);
+        logger.error('Fallback copy failed:', err);
       }
       document.body.removeChild(textarea);
     }
@@ -352,30 +351,14 @@ export function SidePanel() {
     // Exit edit mode
     setIsEditing(false);
 
-    // Use selected model or fall back to empty string for default
+    // Use selected model or provider default.
     const modelToUse = selectedModel || undefined;
-
-    // Create downstream agent node with selected provider and model
-    const agentNodeId = createAgentNodeDownstream(previewNodeId, selectedProvider, modelToUse);
-
-    // Switch preview to the new agent node to show streaming response
-    setPreviewNode(agentNodeId);
-
-    // Build context by traversing parents (including the edited user node)
-    const context = buildConversationContext(previewNodeId);
-
-    try {
-      await sendPrompt(agentNodeId, context, (chunk) =>
-        appendToNode(agentNodeId, chunk),
-        selectedProvider,
-        modelToUse
-      );
-    } catch (error) {
-      console.error('Generation failed:', error);
-      appendToNode(agentNodeId, `\n\n[Error: ${error}]`);
-    } finally {
-      stopStreaming(agentNodeId);
-    }
+    await generateNode({
+      userNodeId: previewNodeId,
+      provider: selectedProvider,
+      modelId: modelToUse,
+      onAgentNodeCreated: (agentNodeId) => setPreviewNode(agentNodeId),
+    });
   };
 
   // Handle resize drag

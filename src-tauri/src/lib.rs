@@ -1878,24 +1878,39 @@ impl SummaryClient {
     }
 }
 
+/// Summary generation is background work, so keep tool access extremely strict.
+/// Deny-by-default and only allow explicit read-only discovery tools.
+fn is_allowed_summary_tool(tool_name: &str) -> bool {
+    const ALLOWED_PATTERNS: [&str; 3] = ["Read", "Grep", "Glob"];
+    ALLOWED_PATTERNS.iter().any(|pattern| tool_name.contains(pattern))
+}
+
 #[async_trait(?Send)]
 impl Client for SummaryClient {
     async fn request_permission(
         &self,
         args: RequestPermissionRequest,
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
-        // Auto-approve first option for summarization (it only uses read-only tools if any)
+        let tool_name = args.tool_call.fields.title.as_deref().unwrap_or("Unknown");
+        if !is_allowed_summary_tool(tool_name) {
+            warn!("[summary] denying tool request: {}", tool_name);
+            return Ok(RequestPermissionResponse::new(
+                RequestPermissionOutcome::Cancelled,
+            ));
+        }
+
+        // For explicitly allowed read-only tools, select the first option (typically Allow).
         if let Some(first_opt) = args.options.first() {
-            Ok(RequestPermissionResponse::new(
+            return Ok(RequestPermissionResponse::new(
                 RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
                     first_opt.option_id.clone(),
                 )),
-            ))
-        } else {
-            Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ))
+            ));
         }
+
+        Ok(RequestPermissionResponse::new(
+            RequestPermissionOutcome::Cancelled,
+        ))
     }
 
     async fn session_notification(
@@ -2015,7 +2030,7 @@ async fn run_summary_session(
     // Build summarization prompt
     let prompt_text = format!(
         "Write a 3-5 word heading that describes what this text is about. \
-         Be specific and concise. Return ONLY the heading, nothing else:\n\n{}",
+         Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{}",
         truncated_content
     );
 
@@ -2215,6 +2230,16 @@ mod tests {
         fn test_provider_short_names() {
             assert_eq!(AgentProvider::ClaudeCode.short_name(), "Claude");
             assert_eq!(AgentProvider::GeminiCli.short_name(), "Gemini");
+        }
+
+        #[test]
+        fn test_summary_tool_allowlist_only_allows_read_tools() {
+            assert!(is_allowed_summary_tool("Read"));
+            assert!(is_allowed_summary_tool("Grep"));
+            assert!(is_allowed_summary_tool("Glob"));
+            assert!(!is_allowed_summary_tool("Bash"));
+            assert!(!is_allowed_summary_tool("Write"));
+            assert!(!is_allowed_summary_tool("WebFetch"));
         }
     }
 }

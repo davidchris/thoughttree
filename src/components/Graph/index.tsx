@@ -30,25 +30,23 @@ const nodeTypes: NodeTypes = {
 };
 
 export function Graph() {
-  const {
-    nodes,
-    edges,
-    onNodesChange,
-    onEdgesChange,
-    onConnect,
-    selectNode,
-    createUserNode,
-    setEditing,
-    selectedNodeId,
-    nodeData,
-    createUserNodeDownstream,
-    isNodeBlocked,
-    editingNodeId,
-    togglePreviewNode,
-    setPreviewNode,
-    previewNodeId,
-    triggerSidePanelEditMode,
-  } = useGraphStore();
+  const nodes = useGraphStore((state) => state.nodes);
+  const edges = useGraphStore((state) => state.edges);
+  const onNodesChange = useGraphStore((state) => state.onNodesChange);
+  const onEdgesChange = useGraphStore((state) => state.onEdgesChange);
+  const onConnect = useGraphStore((state) => state.onConnect);
+  const selectNode = useGraphStore((state) => state.selectNode);
+  const createUserNode = useGraphStore((state) => state.createUserNode);
+  const setEditing = useGraphStore((state) => state.setEditing);
+  const selectedNodeId = useGraphStore((state) => state.selectedNodeId);
+  const nodeData = useGraphStore((state) => state.nodeData);
+  const createUserNodeDownstream = useGraphStore((state) => state.createUserNodeDownstream);
+  const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
+  const editingNodeId = useGraphStore((state) => state.editingNodeId);
+  const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
+  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
+  const previewNodeId = useGraphStore((state) => state.previewNodeId);
+  const triggerSidePanelEditMode = useGraphStore((state) => state.triggerSidePanelEditMode);
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
 

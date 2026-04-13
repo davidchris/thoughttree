@@ -14,6 +14,7 @@ import {
 } from './lib/tauri';
 import { useSummaryGeneration } from './hooks/useSummaryGeneration';
 import { useGraphStore } from './store/useGraphStore';
+import { logger } from './lib/logger';
 import './App.css';
 
 function App() {
@@ -45,10 +46,10 @@ function App() {
           useGraphStore.getState().setAvailableProviders(providers);
           useGraphStore.getState().setDefaultProvider(defaultProv);
         } catch (error) {
-          console.warn('Failed to load provider config:', error);
+          logger.warn('Failed to load provider config:', error);
         }
       } catch (error) {
-        console.error('Failed to initialize:', error);
+        logger.error('Failed to initialize:', error);
       } finally {
         setIsLoading(false);
       }
@@ -64,7 +65,7 @@ function App() {
         await loadProject(path);
       }
     } catch (error) {
-      console.error('Failed to open project:', error);
+      logger.error('Failed to open project:', error);
     }
   }, [loadProject]);
 
@@ -97,7 +98,7 @@ function App() {
         await loadProject(path);
         // Track in recent projects (handled by ProjectOpeningWizard)
       } catch (error) {
-        console.error('Failed to load project:', error);
+        logger.error('Failed to load project:', error);
       }
     },
     [loadProject]
@@ -110,7 +111,7 @@ function App() {
         await handleProjectSelected(path);
       }
     } catch (error) {
-      console.error('Failed to open project:', error);
+      logger.error('Failed to open project:', error);
     }
   }, [handleProjectSelected]);
 
@@ -125,11 +126,11 @@ function App() {
         try {
           await invoke('add_recent_project', { path });
         } catch (error) {
-          console.warn('Failed to track new project:', error);
+          logger.warn('Failed to track new project:', error);
         }
       }
     } catch (error) {
-      console.error('Failed to create new project:', error);
+      logger.error('Failed to create new project:', error);
     }
   }, [newProject, setProjectPath, saveProject]);
 

@@ -70,7 +70,10 @@ describe("SidePanel", () => {
           { provider: "claude-code", available: true, error_message: null },
           { provider: "gemini-cli", available: true, error_message: null },
         ],
-        availableModels: {},
+        availableModels: {
+          "claude-code": [{ model_id: "claude-sonnet", display_name: "Sonnet" }],
+          "gemini-cli": [{ model_id: "gemini-3", display_name: "Gemini 3" }],
+        },
         getEffectiveModel: mockGetEffectiveModel,
         setAvailableModels: mockSetAvailableModels,
         ...overrides,

@@ -6,10 +6,11 @@ import {
 } from "@xyflow/react";
 import { UserFlowNodeData, ImageAttachment } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
-import { sendPrompt } from "../../lib/tauri";
 import { resizeIfNeeded, fileToBase64 } from "../../lib/imageUtils";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
 import { getCaretCoordinates } from "../../lib/caretCoordinates";
+import { useNodeGeneration } from "../../hooks/useNodeGeneration";
+import { logger } from "../../lib/logger";
 import "./styles.css";
 
 const SUMMARY_THRESHOLD = 100;
@@ -37,21 +38,16 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
 
-  const {
-    editingNodeId,
-    updateNodeContent,
-    setEditing,
-    createAgentNodeDownstream,
-    buildConversationContext,
-    appendToNode,
-    stopStreaming,
-    isNodeBlocked,
-    togglePreviewNode,
-    setPreviewNode,
-    triggerSidePanelEditMode,
-    addNodeImage,
-    removeNodeImage,
-  } = useGraphStore();
+  const editingNodeId = useGraphStore((state) => state.editingNodeId);
+  const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
+  const setEditing = useGraphStore((state) => state.setEditing);
+  const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
+  const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
+  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
+  const triggerSidePanelEditMode = useGraphStore((state) => state.triggerSidePanelEditMode);
+  const addNodeImage = useGraphStore((state) => state.addNodeImage);
+  const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
+  const generateNode = useNodeGeneration();
 
   const isEditing = editingNodeId === id;
   const isBlocked = isNodeBlocked(id);
@@ -91,30 +87,17 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
     const textBeforeCursor = newValue.slice(0, cursorPos);
     const atIndex = textBeforeCursor.lastIndexOf("@");
 
-    console.log(
-      "[Autocomplete] textBeforeCursor:",
-      textBeforeCursor,
-      "atIndex:",
-      atIndex,
-    );
-
     if (atIndex !== -1) {
       // Check if @ is at start or preceded by whitespace
       const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : " ";
       if (/\s/.test(charBefore) || atIndex === 0) {
         const query = textBeforeCursor.slice(atIndex + 1);
 
-        console.log("[Autocomplete] Valid @ found, query:", query);
-
         // Only show if query doesn't contain whitespace (still typing the mention)
         if (!/\s/.test(query)) {
           const textarea = e.target;
           const caret = getCaretCoordinates(textarea, textarea.selectionStart);
           const position = { top: caret.top + caret.height + 4, left: caret.left };
-          console.log(
-            "[Autocomplete] Setting autocomplete state, position:",
-            position,
-          );
           setAutocomplete({
             isOpen: true,
             query,
@@ -172,33 +155,9 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const handleGenerate = async () => {
     if (!content.trim() || isBlocked) return;
 
-    console.log("[Generate] Starting generation...");
-
     // Exit edit mode first
     setEditing(null);
-
-    // Create downstream agent node
-    const agentNodeId = createAgentNodeDownstream(id);
-    console.log("[Generate] Created agent node:", agentNodeId);
-
-    // Build context by traversing parents (including this node)
-    const context = buildConversationContext(id);
-    console.log("[Generate] Context:", context);
-
-    try {
-      console.log("[Generate] Calling sendPrompt...");
-      await sendPrompt(agentNodeId, context, (chunk) =>
-        appendToNode(agentNodeId, chunk),
-      );
-      console.log("[Generate] sendPrompt completed successfully");
-    } catch (error) {
-      console.error("[Generate] Generation failed:", error);
-      appendToNode(agentNodeId, `\n\n[Error: ${error}]`);
-    } finally {
-      console.log("[Generate] Finally block - calling stopStreaming");
-      stopStreaming(agentNodeId);
-      console.log("[Generate] stopStreaming called");
-    }
+    await generateNode({ userNodeId: id });
   };
 
   const handleToggleExpand = (e: React.MouseEvent) => {
@@ -243,7 +202,7 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
       };
       addNodeImage(id, image);
     } catch (error) {
-      console.error('Failed to process image:', error);
+      logger.error('Failed to process image:', error);
     }
   }, [id, addNodeImage]);
 
@@ -361,7 +320,6 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
             onPaste={handlePaste}
             placeholder="Enter your message... (@ to mention files, paste or drop images)"
           />
-          {console.log("[UserNode] autocomplete state:", autocomplete)}
           {autocomplete?.isOpen && (
             <FileAutocomplete
               ref={autocompleteRef}

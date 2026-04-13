@@ -17,6 +17,7 @@ import {
   DEFAULT_PROVIDER,
 } from '../types';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
+import { logger } from '../lib/logger';
 
 type ThoughtTreeNode = Node<ThoughtTreeFlowNodeData>;
 
@@ -87,6 +88,7 @@ interface ProjectFile {
   nodes: ThoughtTreeNode[];
   edges: Edge[];
   nodeData: Record<string, MessageNodeData>;
+  projectModelPreferences?: ModelPreferences | null;
 }
 
 interface GraphState {
@@ -149,6 +151,7 @@ interface GraphState {
     content: string;
     images?: ImageAttachment[];
   }>;
+  getConversationPathNodeIds: (nodeId: string) => string[];
 
   // Summary actions
   setSummary: (nodeId: string, summary: string) => void;
@@ -190,6 +193,61 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: numbe
   }) as T;
 }
 
+function getConversationPathNodeIds(nodeId: string, edges: Edge[]): string[] {
+  const parentMap = new Map<string, string>();
+  edges.forEach((edge) => {
+    parentMap.set(edge.target, edge.source);
+  });
+
+  const ordered: string[] = [];
+  const visited = new Set<string>();
+  let currentId: string | undefined = nodeId;
+
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    ordered.unshift(currentId);
+    currentId = parentMap.get(currentId);
+  }
+
+  return ordered;
+}
+
+function updateNodeDataAndFlow(
+  state: Pick<GraphState, 'nodes' | 'nodeData'>,
+  nodeId: string,
+  updater: (data: MessageNodeData) => MessageNodeData | null,
+  options: { markDirty?: boolean } = {}
+): Pick<GraphState, 'nodes' | 'nodeData'> & Partial<Pick<GraphState, 'isDirty'>> | null {
+  const current = state.nodeData.get(nodeId);
+  if (!current) return null;
+
+  const updated = updater(current);
+  if (!updated) return null;
+
+  const nodeData = new Map(state.nodeData);
+  nodeData.set(nodeId, updated);
+
+  const nodes = state.nodes.map((node) => {
+    if (node.id !== nodeId) return node;
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        nodeData: updated,
+      } as ThoughtTreeFlowNodeData,
+    };
+  }) as ThoughtTreeNode[];
+
+  const nextState: Pick<GraphState, 'nodes' | 'nodeData'> & Partial<Pick<GraphState, 'isDirty'>> = {
+    nodes,
+    nodeData,
+  };
+  if (options.markDirty) {
+    nextState.isDirty = true;
+  }
+  return nextState;
+}
+
 export const useGraphStore = create<GraphState>()(
   (set, get) => ({
   nodes: [],
@@ -211,11 +269,19 @@ export const useGraphStore = create<GraphState>()(
   triggerSidePanelEdit: false,
 
   onNodesChange: (changes) => {
-    set({ nodes: applyNodeChanges(changes, get().nodes) as ThoughtTreeNode[], isDirty: true });
+    const shouldMarkDirty = changes.some((change) => change.type !== 'select' && change.type !== 'dimensions');
+    set({
+      nodes: applyNodeChanges(changes, get().nodes) as ThoughtTreeNode[],
+      ...(shouldMarkDirty ? { isDirty: true } : {}),
+    });
   },
 
   onEdgesChange: (changes) => {
-    set({ edges: applyEdgeChanges(changes, get().edges), isDirty: true });
+    const shouldMarkDirty = changes.some((change) => change.type !== 'select');
+    set({
+      edges: applyEdgeChanges(changes, get().edges),
+      ...(shouldMarkDirty ? { isDirty: true } : {}),
+    });
   },
 
   onConnect: (connection) => {
@@ -233,6 +299,7 @@ export const useGraphStore = create<GraphState>()(
       role: 'user',
       content: '',
       timestamp: Date.now(),
+      contentUpdatedAt: Date.now(),
     };
 
     const flowNodeData: UserFlowNodeData = {
@@ -256,6 +323,7 @@ export const useGraphStore = create<GraphState>()(
         nodeData,
         selectedNodeId: id,
         editingNodeId: id,
+        isDirty: true,
       };
     });
 
@@ -271,6 +339,7 @@ export const useGraphStore = create<GraphState>()(
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
+      contentUpdatedAt: Date.now(),
       provider: activeProvider,
       model: activeModel,
     };
@@ -311,6 +380,7 @@ export const useGraphStore = create<GraphState>()(
         nodeData,
         selectedNodeId: id,
         streamingNodeIds: newStreamingIds,
+        isDirty: true,
       };
     });
 
@@ -324,6 +394,7 @@ export const useGraphStore = create<GraphState>()(
       role: 'user',
       content: '',
       timestamp: Date.now(),
+      contentUpdatedAt: Date.now(),
     };
 
     const COLLAPSED_NODE_HEIGHT = 120;
@@ -360,6 +431,7 @@ export const useGraphStore = create<GraphState>()(
         nodeData,
         selectedNodeId: id,
         editingNodeId: id,
+        isDirty: true,
       };
     });
 
@@ -368,56 +440,34 @@ export const useGraphStore = create<GraphState>()(
 
   updateNodeContent: (nodeId, content) => {
     set((state) => {
-      const nodeData = new Map(state.nodeData);
-      const data = nodeData.get(nodeId);
-      if (!data) return state;
-
-      const updated = { ...data, content } as MessageNodeData;
-      nodeData.set(nodeId, updated);
-
-      // Update the flow node data too
-      const nodes = state.nodes.map((node) => {
-        if (node.id !== nodeId) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            nodeData: updated,
-          } as ThoughtTreeFlowNodeData,
-        };
-      }) as ThoughtTreeNode[];
-
-      return { nodes, nodeData };
+      const now = Date.now();
+      return (
+        updateNodeDataAndFlow(
+          state,
+          nodeId,
+          (data) => ({ ...data, content, contentUpdatedAt: now }),
+          { markDirty: true }
+        ) ?? state
+      );
     });
   },
 
   appendToNode: (nodeId, chunk) => {
     set((state) => {
-      const nodeData = new Map(state.nodeData);
-      const data = nodeData.get(nodeId);
-      if (!data) return state;
-
-      const updated = { ...data, content: data.content + chunk } as MessageNodeData;
-      nodeData.set(nodeId, updated);
-
-      // Update the flow node data too
-      const nodes = state.nodes.map((node) => {
-        if (node.id !== nodeId) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            nodeData: updated,
-          } as ThoughtTreeFlowNodeData,
-        };
-      }) as ThoughtTreeNode[];
-
-      return { nodes, nodeData };
+      const now = Date.now();
+      return (
+        updateNodeDataAndFlow(
+          state,
+          nodeId,
+          (data) => ({ ...data, content: data.content + chunk, contentUpdatedAt: now }),
+          { markDirty: true }
+        ) ?? state
+      );
     });
   },
 
   startStreaming: (nodeId) => {
-    console.log('[Store] startStreaming called with:', nodeId);
+    logger.debug('[Store] startStreaming called with:', nodeId);
     set((state) => {
       const newSet = new Set(state.streamingNodeIds);
       newSet.add(nodeId);
@@ -426,7 +476,7 @@ export const useGraphStore = create<GraphState>()(
   },
 
   stopStreaming: (nodeId) => {
-    console.log('[Store] stopStreaming called with:', nodeId);
+    logger.debug('[Store] stopStreaming called with:', nodeId);
     set((state) => {
       const newSet = new Set(state.streamingNodeIds);
       newSet.delete(nodeId);
@@ -473,6 +523,7 @@ export const useGraphStore = create<GraphState>()(
         selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
         editingNodeId: state.editingNodeId === nodeId ? null : state.editingNodeId,
         previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
+        isDirty: true,
       };
     });
   },
@@ -487,80 +538,51 @@ export const useGraphStore = create<GraphState>()(
 
   addNodeImage: (nodeId, image) => {
     set((state) => {
-      const nodeData = new Map(state.nodeData);
-      const data = nodeData.get(nodeId);
-      if (!data || data.role !== 'user') return state;
-
-      const userData = data as UserNodeData;
-      const updated: UserNodeData = {
-        ...userData,
-        images: [...(userData.images || []), image],
-      };
-      nodeData.set(nodeId, updated);
-
-      // Update the flow node data too
-      const nodes = state.nodes.map((node) => {
-        if (node.id !== nodeId) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            nodeData: updated,
-          } as ThoughtTreeFlowNodeData,
-        };
-      }) as ThoughtTreeNode[];
-
-      return { nodes, nodeData, isDirty: true };
+      return (
+        updateNodeDataAndFlow(
+          state,
+          nodeId,
+          (data) => {
+            if (data.role !== 'user') return null;
+            const userData = data as UserNodeData;
+            return {
+              ...userData,
+              images: [...(userData.images || []), image],
+            };
+          },
+          { markDirty: true }
+        ) ?? state
+      );
     });
   },
 
   removeNodeImage: (nodeId, index) => {
     set((state) => {
-      const nodeData = new Map(state.nodeData);
-      const data = nodeData.get(nodeId);
-      if (!data || data.role !== 'user') return state;
-
-      const userData = data as UserNodeData;
-      if (!userData.images || index >= userData.images.length) return state;
-
-      const updated: UserNodeData = {
-        ...userData,
-        images: userData.images.filter((_, i) => i !== index),
-      };
-      nodeData.set(nodeId, updated);
-
-      // Update the flow node data too
-      const nodes = state.nodes.map((node) => {
-        if (node.id !== nodeId) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            nodeData: updated,
-          } as ThoughtTreeFlowNodeData,
-        };
-      }) as ThoughtTreeNode[];
-
-      return { nodes, nodeData, isDirty: true };
+      return (
+        updateNodeDataAndFlow(
+          state,
+          nodeId,
+          (data) => {
+            if (data.role !== 'user') return null;
+            const userData = data as UserNodeData;
+            if (!userData.images || index >= userData.images.length) return null;
+            return {
+              ...userData,
+              images: userData.images.filter((_, i) => i !== index),
+            };
+          },
+          { markDirty: true }
+        ) ?? state
+      );
     });
   },
 
   buildConversationContext: (nodeId) => {
     const { edges, nodeData } = get();
-
-    // Build parent lookup (target -> source)
-    const parentMap = new Map<string, string>();
-    edges.forEach((edge) => {
-      parentMap.set(edge.target, edge.source);
-    });
-
-    // Traverse up the parent chain
     const messages: Array<{ role: string; content: string; images?: ImageAttachment[] }> = [];
-    const visited = new Set<string>();
-    let currentId: string | undefined = nodeId;
+    const orderedNodeIds = getConversationPathNodeIds(nodeId, edges);
 
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId);
+    for (const currentId of orderedNodeIds) {
       const data = nodeData.get(currentId);
       if (data && data.content.trim()) {
         const message: { role: string; content: string; images?: ImageAttachment[] } = {
@@ -574,40 +596,26 @@ export const useGraphStore = create<GraphState>()(
             message.images = userData.images;
           }
         }
-        messages.unshift(message);
+        messages.push(message);
       }
-      currentId = parentMap.get(currentId);
     }
 
     return messages;
   },
 
+  getConversationPathNodeIds: (nodeId) => {
+    return getConversationPathNodeIds(nodeId, get().edges);
+  },
+
   setSummary: (nodeId, summary) => {
     set((state) => {
-      const nodeData = new Map(state.nodeData);
-      const data = nodeData.get(nodeId);
-      if (!data) return state;
-
-      const updated = {
-        ...data,
-        summary,
-        summaryTimestamp: Date.now(),
-      } as MessageNodeData;
-      nodeData.set(nodeId, updated);
-
-      // Update the flow node data too
-      const nodes = state.nodes.map((node) => {
-        if (node.id !== nodeId) return node;
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            nodeData: updated,
-          } as ThoughtTreeFlowNodeData,
-        };
-      }) as ThoughtTreeNode[];
-
-      return { nodes, nodeData };
+      return (
+        updateNodeDataAndFlow(state, nodeId, (data) => ({
+          ...data,
+          summary,
+          summaryTimestamp: Date.now(),
+        })) ?? state
+      );
     });
   },
 
@@ -640,7 +648,7 @@ export const useGraphStore = create<GraphState>()(
   },
 
   setProjectModelPreferences: (preferences) => {
-    set({ projectModelPreferences: preferences, isDirty: preferences !== null });
+    set({ projectModelPreferences: preferences });
   },
 
   setProjectModelPreference: (provider, modelId) => {
@@ -679,17 +687,18 @@ export const useGraphStore = create<GraphState>()(
   },
 
   saveProject: async () => {
-    const { projectPath, nodes, edges, nodeData } = get();
+    const { projectPath, nodes, edges, nodeData, projectModelPreferences } = get();
     if (!projectPath) {
-      console.warn('No project path set, cannot save');
+      logger.warn('No project path set, cannot save');
       return;
     }
 
     const projectFile: ProjectFile = {
-      version: 1,
+      version: 2,
       nodes,
       edges,
       nodeData: Object.fromEntries(nodeData),
+      projectModelPreferences,
     };
 
     try {
@@ -698,9 +707,9 @@ export const useGraphStore = create<GraphState>()(
         data: JSON.stringify(projectFile, null, 2),
       });
       set({ lastSavedAt: Date.now(), isDirty: false });
-      console.log('Project saved to:', projectPath);
+      logger.info('Project saved to:', projectPath);
     } catch (error) {
-      console.error('Failed to save project:', error);
+      logger.error('Failed to save project:', error);
       throw error;
     }
   },
@@ -713,13 +722,18 @@ export const useGraphStore = create<GraphState>()(
       // Migrate nodeData: agent nodes without provider default to 'claude-code'
       const migratedNodeData: Record<string, MessageNodeData> = {};
       for (const [id, node] of Object.entries(projectFile.nodeData)) {
+        const contentUpdatedAt = node.contentUpdatedAt ?? node.timestamp;
         if (node.role === 'assistant' && !('provider' in node)) {
           migratedNodeData[id] = {
             ...node,
+            contentUpdatedAt,
             provider: DEFAULT_PROVIDER,
           } as AgentNodeData;
         } else {
-          migratedNodeData[id] = node;
+          migratedNodeData[id] = {
+            ...node,
+            contentUpdatedAt,
+          };
         }
       }
 
@@ -736,6 +750,7 @@ export const useGraphStore = create<GraphState>()(
         nodes: migratedNodes,
         edges: projectFile.edges,
         nodeData: nodeDataMap,
+        projectModelPreferences: projectFile.projectModelPreferences ?? null,
         projectPath: path,
         lastSavedAt: Date.now(),
         isDirty: false,
@@ -749,12 +764,12 @@ export const useGraphStore = create<GraphState>()(
       try {
         await invoke('add_recent_project', { path });
       } catch (error) {
-        console.warn('Failed to update recent projects:', error);
+        logger.warn('Failed to update recent projects:', error);
       }
 
-      console.log('Project loaded from:', path);
+      logger.info('Project loaded from:', path);
     } catch (error) {
-      console.error('Failed to load project:', error);
+      logger.error('Failed to load project:', error);
       throw error;
     }
   },
@@ -764,6 +779,7 @@ export const useGraphStore = create<GraphState>()(
       nodes: [],
       edges: [],
       nodeData: new Map(),
+      projectModelPreferences: null,
       projectPath: null,
       lastSavedAt: null,
       isDirty: false,
@@ -789,7 +805,7 @@ export const useGraphStore = create<GraphState>()(
       }
     });
 
-    let startNode = nodeIds.find((id) => !hasIncoming.has(id)) || nodeIds[0];
+    const startNode = nodeIds.find((id) => !hasIncoming.has(id)) || nodeIds[0];
 
     // Build ordered list by following edges
     const ordered: string[] = [];
@@ -841,7 +857,7 @@ const debouncedSave = debounce(async () => {
     try {
       await state.saveProject();
     } catch (error) {
-      console.error('Auto-save failed:', error);
+      logger.error('Auto-save failed:', error);
     }
   }
 }, 2000);

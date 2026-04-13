@@ -12,6 +12,7 @@ import {
 } from '../../lib/tauri';
 import { ModelSelector } from '../ModelSelector';
 import { PROVIDER_DISPLAY_NAMES, type AgentProvider, type ProviderPaths } from '../../types';
+import { logger } from '../../lib/logger';
 import './styles.css';
 
 interface SettingsDialogProps {
@@ -54,7 +55,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   // Load global preferences and provider paths on mount
   useEffect(() => {
     if (isOpen) {
-      getModelPreferences().then(setGlobalModelPreferences).catch(console.error);
+      getModelPreferences().then(setGlobalModelPreferences).catch((error) => {
+        logger.error('Failed to load model preferences:', error);
+      });
       getProviderPaths().then((paths) => {
         setProviderPathsState(paths);
         setPathInputs(paths);
@@ -72,7 +75,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             },
           }));
         });
-      }).catch(console.error);
+      }).catch((error) => {
+        logger.error('Failed to load provider paths:', error);
+      });
     }
   }, [isOpen, setGlobalModelPreferences, availableProviders]);
 
@@ -85,7 +90,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
       const models = await getAvailableModels(provider);
       setAvailableModels(provider, models);
     } catch (error) {
-      console.error(`Failed to fetch models for ${provider}:`, error);
+      logger.error(`Failed to fetch models for ${provider}:`, error);
     } finally {
       setLoadingModels((prev) => ({ ...prev, [provider]: false }));
     }
@@ -111,7 +116,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     try {
       await setModelPreference(provider, newModelId);
     } catch (error) {
-      console.error('Failed to save model preference:', error);
+      logger.error('Failed to save model preference:', error);
     }
   };
 
@@ -188,7 +193,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         }
       }
     } catch (error) {
-      console.error('Failed to pick executable:', error);
+      logger.error('Failed to pick executable:', error);
     }
   };
 
@@ -210,7 +215,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
       const providers = await getAvailableProviders();
       setAvailableProviders(providers);
     } catch (error) {
-      console.error('Failed to reset path:', error);
+      logger.error('Failed to reset path:', error);
     }
   };
 

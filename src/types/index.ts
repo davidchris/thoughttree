@@ -56,6 +56,7 @@ export interface UserNodeData {
   role: 'user';
   content: string;
   timestamp: number;
+  contentUpdatedAt?: number;  // When content was last edited/streamed
   summary?: string;           // Generated summary for collapsed view
   summaryTimestamp?: number;  // When summary was last generated
   images?: ImageAttachment[]; // Optional array of attached images
@@ -66,6 +67,7 @@ export interface AgentNodeData {
   role: 'assistant';
   content: string;
   timestamp: number;
+  contentUpdatedAt?: number;  // When content was last edited/streamed
   summary?: string;           // Generated summary for collapsed view
   summaryTimestamp?: number;  // When summary was last generated
   provider?: AgentProvider;   // Which provider generated this response

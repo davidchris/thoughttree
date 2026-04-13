@@ -1,9 +1,11 @@
 import { useGraphStore } from '../../store/useGraphStore';
 import { respondToPermission } from '../../lib/tauri';
+import { logger } from '../../lib/logger';
 import './styles.css';
 
 export function PermissionDialog() {
-  const { pendingPermission, setPendingPermission } = useGraphStore();
+  const pendingPermission = useGraphStore((state) => state.pendingPermission);
+  const setPendingPermission = useGraphStore((state) => state.setPendingPermission);
 
   if (!pendingPermission) {
     return null;
@@ -13,7 +15,7 @@ export function PermissionDialog() {
     try {
       await respondToPermission(pendingPermission.id, optionId);
     } catch (error) {
-      console.error('Failed to respond to permission:', error);
+      logger.error('Failed to respond to permission:', error);
     } finally {
       setPendingPermission(null);
     }

@@ -10,7 +10,10 @@ interface ContextMenuProps {
 }
 
 export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
-  const { createUserNodeDownstream, deleteNode, nodeData, isNodeBlocked } = useGraphStore();
+  const createUserNodeDownstream = useGraphStore((state) => state.createUserNodeDownstream);
+  const deleteNode = useGraphStore((state) => state.deleteNode);
+  const nodeData = useGraphStore((state) => state.nodeData);
+  const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const data = nodeData.get(nodeId);
   const isAgent = data?.role === 'assistant';
   const canReply = isAgent && !isNodeBlocked(nodeId);

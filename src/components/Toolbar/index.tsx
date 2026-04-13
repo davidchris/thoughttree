@@ -2,26 +2,25 @@ import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useGraphStore } from '../../store/useGraphStore';
 import { SettingsDialog } from '../SettingsDialog';
+import { logger } from '../../lib/logger';
 import './Toolbar.css';
 
 export function Toolbar() {
-  const {
-    projectPath,
-    isDirty,
-    lastSavedAt,
-    nodes,
-    selectedNodeId,
-    setProjectPath,
-    saveProject,
-    loadProject,
-    newProject,
-    exportSubgraph,
-    buildConversationContext,
-    nodeData,
-    createUserNodeDownstream,
-    isNodeBlocked,
-    autoLayout,
-  } = useGraphStore();
+  const projectPath = useGraphStore((state) => state.projectPath);
+  const isDirty = useGraphStore((state) => state.isDirty);
+  const lastSavedAt = useGraphStore((state) => state.lastSavedAt);
+  const nodes = useGraphStore((state) => state.nodes);
+  const selectedNodeId = useGraphStore((state) => state.selectedNodeId);
+  const setProjectPath = useGraphStore((state) => state.setProjectPath);
+  const saveProject = useGraphStore((state) => state.saveProject);
+  const loadProject = useGraphStore((state) => state.loadProject);
+  const newProject = useGraphStore((state) => state.newProject);
+  const exportSubgraph = useGraphStore((state) => state.exportSubgraph);
+  const nodeData = useGraphStore((state) => state.nodeData);
+  const createUserNodeDownstream = useGraphStore((state) => state.createUserNodeDownstream);
+  const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
+  const autoLayout = useGraphStore((state) => state.autoLayout);
+  const getConversationPathNodeIds = useGraphStore((state) => state.getConversationPathNodeIds);
 
   const [isSaving, setIsSaving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -56,11 +55,11 @@ export function Toolbar() {
         try {
           await invoke('add_recent_project', { path });
         } catch (error) {
-          console.warn('Failed to track new project:', error);
+          logger.warn('Failed to track new project:', error);
         }
       }
     } catch (error) {
-      console.error('Failed to create new project:', error);
+      logger.error('Failed to create new project:', error);
     }
   };
 
@@ -71,7 +70,7 @@ export function Toolbar() {
         await loadProject(path);
       }
     } catch (error) {
-      console.error('Failed to open project:', error);
+      logger.error('Failed to open project:', error);
     }
   };
 
@@ -86,7 +85,7 @@ export function Toolbar() {
     try {
       await saveProject();
     } catch (error) {
-      console.error('Failed to save project:', error);
+      logger.error('Failed to save project:', error);
     } finally {
       setIsSaving(false);
     }
@@ -100,21 +99,15 @@ export function Toolbar() {
         await saveProject();
       }
     } catch (error) {
-      console.error('Failed to save project:', error);
+      logger.error('Failed to save project:', error);
     }
   };
 
   const handleExportSelected = async () => {
     if (!selectedNodeId) return;
 
-    // Export the conversation path leading to the selected node
-    const context = buildConversationContext(selectedNodeId);
-    const nodeIds = nodes
-      .filter((n) => context.some((c) => {
-        const data = useGraphStore.getState().nodeData.get(n.id);
-        return data?.content === c.content && data?.role === c.role;
-      }))
-      .map((n) => n.id);
+    // Export exact lineage IDs to avoid content-based collisions.
+    const nodeIds = getConversationPathNodeIds(selectedNodeId);
 
     if (nodeIds.length === 0) {
       // Just export the selected node
@@ -141,10 +134,10 @@ export function Toolbar() {
         defaultName,
       });
       if (path) {
-        console.log('Exported to:', path);
+        logger.info('Exported to:', path);
       }
     } catch (error) {
-      console.error('Failed to export:', error);
+      logger.error('Failed to export:', error);
     }
   };
 
