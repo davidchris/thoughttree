@@ -4,7 +4,7 @@ import {
   Position,
   NodeProps,
 } from "@xyflow/react";
-import { UserFlowNodeData, ImageAttachment } from "../../types";
+import { ImageAttachment, UserNodeData } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import { resizeIfNeeded, fileToBase64 } from "../../lib/imageUtils";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
@@ -22,14 +22,10 @@ interface AutocompleteState {
   triggerIndex: number;
 }
 
-type UserNodeProps = NodeProps & {
-  data: UserFlowNodeData;
-};
-
-export function UserNode({ id, data, selected }: UserNodeProps) {
-  const { nodeData } = data;
-  const content = nodeData.content;
-  const images = nodeData.images || [];
+export function UserNode({ id, selected }: NodeProps) {
+  const nodeData = useGraphStore((state) => state.nodeData.get(id) as UserNodeData | undefined);
+  const content = nodeData?.content ?? '';
+  const images = nodeData?.images ?? [];
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(
     null,
   );
@@ -53,15 +49,16 @@ export function UserNode({ id, data, selected }: UserNodeProps) {
   const isBlocked = isNodeBlocked(id);
 
   // Compute collapsed text: short content shown directly, long content uses AI summary
+  const summary = nodeData?.summary;
   const collapsedText = useMemo(() => {
     if (!content) return '';
     if (content.length <= SUMMARY_THRESHOLD) return content;
-    if (nodeData.summary) return nodeData.summary;
+    if (summary) return summary;
     return content.slice(0, 30) + '...'; // Fallback while loading
-  }, [content, nodeData.summary]);
+  }, [content, summary]);
 
   const hasMore = content.length > SUMMARY_THRESHOLD || content.length > 30;
-  const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !nodeData.summary;
+  const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !summary;
 
   // Auto-focus textarea when entering edit mode
   useEffect(() => {

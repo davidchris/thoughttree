@@ -1,101 +1,66 @@
 import { create } from 'zustand';
-import { Node, Edge, applyNodeChanges, applyEdgeChanges, addEdge, NodeChange, EdgeChange, Connection } from '@xyflow/react';
+import {
+  applyEdgeChanges,
+  applyNodeChanges,
+  type Connection,
+  type Edge,
+  type EdgeChange,
+  type NodeChange,
+} from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
 import {
-  MessageNodeData,
-  UserNodeData,
   AgentNodeData,
-  UserFlowNodeData,
-  AgentFlowNodeData,
-  ThoughtTreeFlowNodeData,
-  PermissionRequest,
   AgentProvider,
-  ProviderStatus,
+  DEFAULT_PROVIDER,
+  ImageAttachment,
+  MessageNodeData,
   ModelInfo,
   ModelPreferences,
-  ImageAttachment,
-  DEFAULT_PROVIDER,
+  PermissionRequest,
+  ProviderStatus,
+  UserNodeData,
 } from '../types';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 import { logger } from '../lib/logger';
+import {
+  GRAPH_JSON_VERSION,
+  GraphModel,
+  GraphMutations,
+  GraphSerialize,
+  graphToFlowEdges,
+  graphToFlowNodes,
+  type FlowNode,
+  type Graph,
+  type GraphJSON,
+  type NodeId,
+} from '../lib/graph';
 
-type ThoughtTreeNode = Node<ThoughtTreeFlowNodeData>;
+const COLLAPSED_NODE_HEIGHT = 120;
 
-// Helper: Get all ancestors of a node (walk edges backward)
-function getAncestors(nodeId: string, edges: Edge[]): Set<string> {
-  const parentMap = new Map<string, string>();
-  edges.forEach((edge) => parentMap.set(edge.target, edge.source));
-
-  const ancestors = new Set<string>();
-  let current = parentMap.get(nodeId);
-  while (current) {
-    ancestors.add(current);
-    current = parentMap.get(current);
-  }
-  return ancestors;
+interface ProjectFileV3 {
+  version: 3;
+  graph: GraphJSON;
+  projectModelPreferences?: ModelPreferences | null;
 }
 
-// Helper: Get all descendants of a node (walk edges forward)
-function getDescendants(nodeId: string, edges: Edge[]): Set<string> {
-  const childrenMap = new Map<string, string[]>();
-  edges.forEach((edge) => {
-    const children = childrenMap.get(edge.source) || [];
-    children.push(edge.target);
-    childrenMap.set(edge.source, children);
-  });
-
-  const descendants = new Set<string>();
-  const queue = childrenMap.get(nodeId) || [];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    if (!descendants.has(current)) {
-      descendants.add(current);
-      const children = childrenMap.get(current) || [];
-      queue.push(...children);
-    }
-  }
-  return descendants;
-}
-
-// Helper: Check if node is blocked by any streaming node in its lineage
-function isNodeBlockedByStreaming(
-  nodeId: string,
-  streamingNodeIds: Set<string>,
-  edges: Edge[]
-): boolean {
-  if (streamingNodeIds.size === 0) return false;
-
-  // If this node is streaming, it's blocked
-  if (streamingNodeIds.has(nodeId)) return true;
-
-  // Get lineage of the target node
-  const nodeAncestors = getAncestors(nodeId, edges);
-  const nodeDescendants = getDescendants(nodeId, edges);
-
-  // Check if any streaming node is in the target node's lineage
-  for (const streamingId of streamingNodeIds) {
-    if (nodeAncestors.has(streamingId) || nodeDescendants.has(streamingId)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-// Project file format
-interface ProjectFile {
+interface ProjectFileLegacyV2 {
   version: number;
-  nodes: ThoughtTreeNode[];
-  edges: Edge[];
+  nodes: Array<{ id: string; position: { x: number; y: number }; [key: string]: unknown }>;
+  edges: Array<{ id: string; source: string; target: string; [key: string]: unknown }>;
   nodeData: Record<string, MessageNodeData>;
   projectModelPreferences?: ModelPreferences | null;
 }
 
+type ProjectFile = ProjectFileV3 | ProjectFileLegacyV2;
+
 interface GraphState {
-  // Graph data
-  nodes: ThoughtTreeNode[];
+  // Source of truth
+  graph: Graph;
+
+  // Derived from graph (kept in sync via projectGraph helper)
+  nodes: FlowNode[];
   edges: Edge[];
-  nodeData: Map<string, MessageNodeData>;
+  nodeData: Map<NodeId, MessageNodeData>;
 
   // Project state
   projectPath: string | null;
@@ -184,7 +149,6 @@ interface GraphState {
 
 const generateId = () => crypto.randomUUID();
 
-// Debounce helper
 function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: number): T {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   return ((...args: unknown[]) => {
@@ -193,63 +157,51 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: numbe
   }) as T;
 }
 
-function getConversationPathNodeIds(nodeId: string, edges: Edge[]): string[] {
-  const parentMap = new Map<string, string>();
-  edges.forEach((edge) => {
-    parentMap.set(edge.target, edge.source);
+interface ProjectionResult {
+  nodes: FlowNode[];
+  edges: Edge[];
+  nodeData: Map<NodeId, MessageNodeData>;
+}
+
+// Recompute the ReactFlow-facing arrays from the canonical Graph value, while
+// preserving each node's `measured` dimensions from the prior projection so
+// ReactFlow doesn't have to remeasure on every store update.
+function projectGraph(
+  graph: Graph,
+  prevNodes: FlowNode[],
+  selectedNodeId: NodeId | null,
+): ProjectionResult {
+  const projected = graphToFlowNodes(graph, { selectedNodeId });
+  const prevById = new Map(prevNodes.map((n) => [n.id, n]));
+  const nodes = projected.map((n) => {
+    const prev = prevById.get(n.id);
+    if (!prev) return n;
+    return { ...n, measured: prev.measured, width: prev.width, height: prev.height } as FlowNode;
   });
-
-  const ordered: string[] = [];
-  const visited = new Set<string>();
-  let currentId: string | undefined = nodeId;
-
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-    ordered.unshift(currentId);
-    currentId = parentMap.get(currentId);
-  }
-
-  return ordered;
-}
-
-function updateNodeDataAndFlow(
-  state: Pick<GraphState, 'nodes' | 'nodeData'>,
-  nodeId: string,
-  updater: (data: MessageNodeData) => MessageNodeData | null,
-  options: { markDirty?: boolean } = {}
-): Pick<GraphState, 'nodes' | 'nodeData'> & Partial<Pick<GraphState, 'isDirty'>> | null {
-  const current = state.nodeData.get(nodeId);
-  if (!current) return null;
-
-  const updated = updater(current);
-  if (!updated) return null;
-
-  const nodeData = new Map(state.nodeData);
-  nodeData.set(nodeId, updated);
-
-  const nodes = state.nodes.map((node) => {
-    if (node.id !== nodeId) return node;
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        nodeData: updated,
-      } as ThoughtTreeFlowNodeData,
-    };
-  }) as ThoughtTreeNode[];
-
-  const nextState: Pick<GraphState, 'nodes' | 'nodeData'> & Partial<Pick<GraphState, 'isDirty'>> = {
+  return {
     nodes,
-    nodeData,
+    edges: graphToFlowEdges(graph),
+    nodeData: graph.nodes,
   };
-  if (options.markDirty) {
-    nextState.isDirty = true;
-  }
-  return nextState;
 }
 
-export const useGraphStore = create<GraphState>()(
-  (set, get) => ({
+function migrateLegacyV2NodeData(
+  raw: Record<string, MessageNodeData>,
+): Record<string, MessageNodeData> {
+  const migrated: Record<string, MessageNodeData> = {};
+  for (const [id, node] of Object.entries(raw)) {
+    const contentUpdatedAt = node.contentUpdatedAt ?? node.timestamp;
+    if (node.role === 'assistant' && !('provider' in node)) {
+      migrated[id] = { ...node, contentUpdatedAt, provider: DEFAULT_PROVIDER } as AgentNodeData;
+    } else {
+      migrated[id] = { ...node, contentUpdatedAt };
+    }
+  }
+  return migrated;
+}
+
+export const useGraphStore = create<GraphState>()((set, get) => ({
+  graph: GraphMutations.empty(),
   nodes: [],
   edges: [],
   nodeData: new Map(),
@@ -269,27 +221,74 @@ export const useGraphStore = create<GraphState>()(
   triggerSidePanelEdit: false,
 
   onNodesChange: (changes) => {
-    const shouldMarkDirty = changes.some((change) => change.type !== 'select' && change.type !== 'dimensions');
+    const state = get();
+    const newNodes = applyNodeChanges(changes, state.nodes) as FlowNode[];
+    let graph = state.graph;
+    let dirty = state.isDirty;
+
+    for (const change of changes) {
+      if (change.type === 'position' && change.position && change.dragging === false) {
+        graph = GraphMutations.setPosition(graph, change.id, change.position);
+        dirty = true;
+      } else if (change.type === 'remove') {
+        graph = GraphMutations.removeNode(graph, change.id);
+        dirty = true;
+      } else if (change.type !== 'select' && change.type !== 'dimensions') {
+        dirty = true;
+      }
+    }
+
     set({
-      nodes: applyNodeChanges(changes, get().nodes) as ThoughtTreeNode[],
-      ...(shouldMarkDirty ? { isDirty: true } : {}),
+      nodes: newNodes,
+      graph,
+      edges: graphToFlowEdges(graph),
+      nodeData: graph.nodes,
+      isDirty: dirty,
     });
   },
 
   onEdgesChange: (changes) => {
-    const shouldMarkDirty = changes.some((change) => change.type !== 'select');
+    const state = get();
+    const newEdges = applyEdgeChanges(changes, state.edges);
+    let graph = state.graph;
+    let dirty = state.isDirty;
+
+    for (const change of changes) {
+      if (change.type === 'remove') {
+        graph = { ...graph, edges: graph.edges.filter((e) => e.id !== change.id) };
+        dirty = true;
+      } else if (change.type !== 'select') {
+        dirty = true;
+      }
+    }
+
     set({
-      edges: applyEdgeChanges(changes, get().edges),
-      ...(shouldMarkDirty ? { isDirty: true } : {}),
+      edges: newEdges,
+      graph,
+      nodeData: graph.nodes,
+      isDirty: dirty,
     });
   },
 
   onConnect: (connection) => {
-    set({ edges: addEdge(connection, get().edges), isDirty: true });
+    if (!connection.source || !connection.target) return;
+    const state = get();
+    const graph = GraphMutations.addEdge(state.graph, connection.source, connection.target);
+    set({
+      graph,
+      nodes: state.nodes,
+      edges: graphToFlowEdges(graph),
+      nodeData: graph.nodes,
+      isDirty: true,
+    });
   },
 
   selectNode: (id) => {
-    set({ selectedNodeId: id });
+    const state = get();
+    set({
+      selectedNodeId: id,
+      ...projectGraph(state.graph, state.nodes, id),
+    });
   },
 
   createUserNode: (position = { x: 100, y: 100 }) => {
@@ -301,39 +300,23 @@ export const useGraphStore = create<GraphState>()(
       timestamp: Date.now(),
       contentUpdatedAt: Date.now(),
     };
-
-    const flowNodeData: UserFlowNodeData = {
-      nodeData: data,
-      isSelected: false,
-    };
-
-    const node: ThoughtTreeNode = {
-      id,
-      type: 'user',
-      position,
-      data: flowNodeData,
-      dragHandle: '.thought-node',
-    };
-
-    set((state) => {
-      const nodeData = new Map(state.nodeData);
-      nodeData.set(id, data);
-      return {
-        nodes: [...state.nodes, node],
-        nodeData,
-        selectedNodeId: id,
-        editingNodeId: id,
-        isDirty: true,
-      };
+    const state = get();
+    const graph = GraphMutations.addNode(state.graph, data, position);
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, id),
+      selectedNodeId: id,
+      editingNodeId: id,
+      isDirty: true,
     });
-
     return id;
   },
 
   createAgentNodeDownstream: (parentId, provider, model) => {
     const id = generateId();
-    const activeProvider = provider ?? get().defaultProvider;
-    const activeModel = model ?? get().getEffectiveModel(activeProvider);
+    const state = get();
+    const activeProvider = provider ?? state.defaultProvider;
+    const activeModel = model ?? state.getEffectiveModel(activeProvider);
     const data: AgentNodeData = {
       id,
       role: 'assistant',
@@ -343,52 +326,30 @@ export const useGraphStore = create<GraphState>()(
       provider: activeProvider,
       model: activeModel,
     };
-
-    const COLLAPSED_NODE_HEIGHT = 120;
-    const parentNode = get().nodes.find((n) => n.id === parentId);
-    const position = parentNode
-      ? { x: parentNode.position.x, y: parentNode.position.y + COLLAPSED_NODE_HEIGHT }
+    const parentPos = state.graph.layout.get(parentId);
+    const position = parentPos
+      ? { x: parentPos.x, y: parentPos.y + COLLAPSED_NODE_HEIGHT }
       : { x: 100, y: 100 };
 
-    const flowNodeData: AgentFlowNodeData = {
-      nodeData: data,
-      isSelected: false,
-    };
+    let graph = GraphMutations.addNode(state.graph, data, position);
+    graph = GraphMutations.addEdge(graph, parentId, id);
 
-    const node: ThoughtTreeNode = {
-      id,
-      type: 'agent',
-      position,
-      data: flowNodeData,
-      dragHandle: '.thought-node',
-    };
+    const streamingNodeIds = new Set(state.streamingNodeIds);
+    streamingNodeIds.add(id);
 
-    const edge: Edge = {
-      id: `${parentId}-${id}`,
-      source: parentId,
-      target: id,
-    };
-
-    set((state) => {
-      const nodeData = new Map(state.nodeData);
-      nodeData.set(id, data);
-      const newStreamingIds = new Set(state.streamingNodeIds);
-      newStreamingIds.add(id);
-      return {
-        nodes: [...state.nodes, node],
-        edges: [...state.edges, edge],
-        nodeData,
-        selectedNodeId: id,
-        streamingNodeIds: newStreamingIds,
-        isDirty: true,
-      };
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, id),
+      selectedNodeId: id,
+      streamingNodeIds,
+      isDirty: true,
     });
-
     return id;
   },
 
   createUserNodeDownstream: (parentId) => {
     const id = generateId();
+    const state = get();
     const data: UserNodeData = {
       id,
       role: 'user',
@@ -396,308 +357,207 @@ export const useGraphStore = create<GraphState>()(
       timestamp: Date.now(),
       contentUpdatedAt: Date.now(),
     };
-
-    const COLLAPSED_NODE_HEIGHT = 120;
-    const parentNode = get().nodes.find((n) => n.id === parentId);
-    const position = parentNode
-      ? { x: parentNode.position.x, y: parentNode.position.y + COLLAPSED_NODE_HEIGHT }
+    const parentPos = state.graph.layout.get(parentId);
+    const position = parentPos
+      ? { x: parentPos.x, y: parentPos.y + COLLAPSED_NODE_HEIGHT }
       : { x: 100, y: 100 };
 
-    const flowNodeData: UserFlowNodeData = {
-      nodeData: data,
-      isSelected: false,
-    };
+    let graph = GraphMutations.addNode(state.graph, data, position);
+    graph = GraphMutations.addEdge(graph, parentId, id);
 
-    const node: ThoughtTreeNode = {
-      id,
-      type: 'user',
-      position,
-      data: flowNodeData,
-      dragHandle: '.thought-node',
-    };
-
-    const edge: Edge = {
-      id: `${parentId}-${id}`,
-      source: parentId,
-      target: id,
-    };
-
-    set((state) => {
-      const nodeData = new Map(state.nodeData);
-      nodeData.set(id, data);
-      return {
-        nodes: [...state.nodes, node],
-        edges: [...state.edges, edge],
-        nodeData,
-        selectedNodeId: id,
-        editingNodeId: id,
-        isDirty: true,
-      };
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, id),
+      selectedNodeId: id,
+      editingNodeId: id,
+      isDirty: true,
     });
-
     return id;
   },
 
   updateNodeContent: (nodeId, content) => {
-    set((state) => {
-      const now = Date.now();
-      return (
-        updateNodeDataAndFlow(
-          state,
-          nodeId,
-          (data) => ({ ...data, content, contentUpdatedAt: now }),
-          { markDirty: true }
-        ) ?? state
-      );
+    const state = get();
+    const graph = GraphMutations.updateNode(state.graph, nodeId, {
+      content,
+      contentUpdatedAt: Date.now(),
+    });
+    if (graph === state.graph) return;
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
+      isDirty: true,
     });
   },
 
   appendToNode: (nodeId, chunk) => {
-    set((state) => {
-      const now = Date.now();
-      return (
-        updateNodeDataAndFlow(
-          state,
-          nodeId,
-          (data) => ({ ...data, content: data.content + chunk, contentUpdatedAt: now }),
-          { markDirty: true }
-        ) ?? state
-      );
+    const state = get();
+    const graph = GraphMutations.appendContent(state.graph, nodeId, chunk, Date.now());
+    if (graph === state.graph) return;
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
+      isDirty: true,
     });
   },
 
   startStreaming: (nodeId) => {
     logger.debug('[Store] startStreaming called with:', nodeId);
     set((state) => {
-      const newSet = new Set(state.streamingNodeIds);
-      newSet.add(nodeId);
-      return { streamingNodeIds: newSet };
+      const next = new Set(state.streamingNodeIds);
+      next.add(nodeId);
+      return { streamingNodeIds: next };
     });
   },
 
   stopStreaming: (nodeId) => {
     logger.debug('[Store] stopStreaming called with:', nodeId);
     set((state) => {
-      const newSet = new Set(state.streamingNodeIds);
-      newSet.delete(nodeId);
-      return { streamingNodeIds: newSet };
+      const next = new Set(state.streamingNodeIds);
+      next.delete(nodeId);
+      return { streamingNodeIds: next };
     });
   },
 
   isNodeBlocked: (nodeId) => {
-    const { streamingNodeIds, edges } = get();
-    return isNodeBlockedByStreaming(nodeId, streamingNodeIds, edges);
+    const { graph, streamingNodeIds } = get();
+    if (streamingNodeIds.size === 0) return false;
+    if (streamingNodeIds.has(nodeId)) return true;
+    const ancs = GraphModel.ancestors(graph, nodeId);
+    const desc = GraphModel.descendants(graph, nodeId);
+    for (const id of streamingNodeIds) {
+      if (ancs.has(id) || desc.has(id)) return true;
+    }
+    return false;
   },
 
-  setEditing: (nodeId) => {
-    set({ editingNodeId: nodeId });
-  },
-
-  setPreviewNode: (nodeId) => {
-    set({ previewNodeId: nodeId });
-  },
-
-  togglePreviewNode: (nodeId) => {
-    set((state) => ({
-      previewNodeId: state.previewNodeId === nodeId ? null : nodeId,
-    }));
-  },
+  setEditing: (nodeId) => set({ editingNodeId: nodeId }),
+  setPreviewNode: (nodeId) => set({ previewNodeId: nodeId }),
+  togglePreviewNode: (nodeId) =>
+    set((state) => ({ previewNodeId: state.previewNodeId === nodeId ? null : nodeId })),
 
   deleteNode: (nodeId) => {
-    set((state) => {
-      const nodeData = new Map(state.nodeData);
-      nodeData.delete(nodeId);
+    const state = get();
+    const graph = GraphMutations.removeNode(state.graph, nodeId);
+    if (graph === state.graph) return;
 
-      const nodes = state.nodes.filter((n) => n.id !== nodeId);
-      const edges = state.edges.filter((e) => e.source !== nodeId && e.target !== nodeId);
+    const streamingNodeIds = new Set(state.streamingNodeIds);
+    streamingNodeIds.delete(nodeId);
 
-      // Also remove from streaming if present
-      const streamingNodeIds = new Set(state.streamingNodeIds);
-      streamingNodeIds.delete(nodeId);
+    const selectedNodeId = state.selectedNodeId === nodeId ? null : state.selectedNodeId;
 
-      return {
-        nodes,
-        edges,
-        nodeData,
-        streamingNodeIds,
-        selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
-        editingNodeId: state.editingNodeId === nodeId ? null : state.editingNodeId,
-        previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
-        isDirty: true,
-      };
-    });
-  },
-
-  triggerSidePanelEditMode: () => {
-    set({ triggerSidePanelEdit: true });
-  },
-
-  clearSidePanelEditTrigger: () => {
-    set({ triggerSidePanelEdit: false });
-  },
-
-  addNodeImage: (nodeId, image) => {
-    set((state) => {
-      return (
-        updateNodeDataAndFlow(
-          state,
-          nodeId,
-          (data) => {
-            if (data.role !== 'user') return null;
-            const userData = data as UserNodeData;
-            return {
-              ...userData,
-              images: [...(userData.images || []), image],
-            };
-          },
-          { markDirty: true }
-        ) ?? state
-      );
-    });
-  },
-
-  removeNodeImage: (nodeId, index) => {
-    set((state) => {
-      return (
-        updateNodeDataAndFlow(
-          state,
-          nodeId,
-          (data) => {
-            if (data.role !== 'user') return null;
-            const userData = data as UserNodeData;
-            if (!userData.images || index >= userData.images.length) return null;
-            return {
-              ...userData,
-              images: userData.images.filter((_, i) => i !== index),
-            };
-          },
-          { markDirty: true }
-        ) ?? state
-      );
-    });
-  },
-
-  buildConversationContext: (nodeId) => {
-    const { edges, nodeData } = get();
-    const messages: Array<{ role: string; content: string; images?: ImageAttachment[] }> = [];
-    const orderedNodeIds = getConversationPathNodeIds(nodeId, edges);
-
-    for (const currentId of orderedNodeIds) {
-      const data = nodeData.get(currentId);
-      if (data && data.content.trim()) {
-        const message: { role: string; content: string; images?: ImageAttachment[] } = {
-          role: data.role,
-          content: data.content,
-        };
-        // Include images for user nodes
-        if (data.role === 'user') {
-          const userData = data as UserNodeData;
-          if (userData.images && userData.images.length > 0) {
-            message.images = userData.images;
-          }
-        }
-        messages.push(message);
-      }
-    }
-
-    return messages;
-  },
-
-  getConversationPathNodeIds: (nodeId) => {
-    return getConversationPathNodeIds(nodeId, get().edges);
-  },
-
-  setSummary: (nodeId, summary) => {
-    set((state) => {
-      return (
-        updateNodeDataAndFlow(state, nodeId, (data) => ({
-          ...data,
-          summary,
-          summaryTimestamp: Date.now(),
-        })) ?? state
-      );
-    });
-  },
-
-  setPendingPermission: (permission) => {
-    set({ pendingPermission: permission });
-  },
-
-  // Provider actions
-  setDefaultProvider: (provider) => {
-    set({ defaultProvider: provider });
-  },
-
-  setAvailableProviders: (providers) => {
-    set({ availableProviders: providers });
-  },
-
-  // Model actions
-  setGlobalModelPreferences: (preferences) => {
-    set({ globalModelPreferences: preferences });
-  },
-
-  setGlobalModelPreference: (provider, modelId) => {
-    const current = get().globalModelPreferences;
     set({
-      globalModelPreferences: {
-        ...current,
-        [provider]: modelId ?? undefined,
-      },
-    });
-  },
-
-  setProjectModelPreferences: (preferences) => {
-    set({ projectModelPreferences: preferences });
-  },
-
-  setProjectModelPreference: (provider, modelId) => {
-    const current = get().projectModelPreferences ?? {};
-    set({
-      projectModelPreferences: {
-        ...current,
-        [provider]: modelId ?? undefined,
-      },
+      graph,
+      ...projectGraph(graph, state.nodes, selectedNodeId),
+      streamingNodeIds,
+      selectedNodeId,
+      editingNodeId: state.editingNodeId === nodeId ? null : state.editingNodeId,
+      previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
       isDirty: true,
     });
   },
 
-  setAvailableModels: (provider, models) => {
-    const current = get().availableModels;
+  triggerSidePanelEditMode: () => set({ triggerSidePanelEdit: true }),
+  clearSidePanelEditTrigger: () => set({ triggerSidePanelEdit: false }),
+
+  addNodeImage: (nodeId, image) => {
+    const state = get();
+    const node = state.graph.nodes.get(nodeId);
+    if (!node || node.role !== 'user') return;
+    const userNode = node as UserNodeData;
+    const updated: UserNodeData = {
+      ...userNode,
+      images: [...(userNode.images ?? []), image],
+    };
+    const graph = GraphMutations.updateNode(state.graph, nodeId, updated);
     set({
-      availableModels: {
-        ...current,
-        [provider]: models,
-      },
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
+      isDirty: true,
     });
+  },
+
+  removeNodeImage: (nodeId, index) => {
+    const state = get();
+    const node = state.graph.nodes.get(nodeId);
+    if (!node || node.role !== 'user') return;
+    const userNode = node as UserNodeData;
+    if (!userNode.images || index >= userNode.images.length) return;
+    const updated: UserNodeData = {
+      ...userNode,
+      images: userNode.images.filter((_, i) => i !== index),
+    };
+    const graph = GraphMutations.updateNode(state.graph, nodeId, updated);
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
+      isDirty: true,
+    });
+  },
+
+  buildConversationContext: (nodeId) => GraphModel.conversationPath(get().graph, nodeId),
+  getConversationPathNodeIds: (nodeId) => GraphModel.conversationPathIds(get().graph, nodeId),
+
+  setSummary: (nodeId, summary) => {
+    const state = get();
+    const graph = GraphMutations.updateNode(state.graph, nodeId, {
+      summary,
+      summaryTimestamp: Date.now(),
+    });
+    if (graph === state.graph) return;
+    set({ graph, ...projectGraph(graph, state.nodes, state.selectedNodeId) });
+  },
+
+  setPendingPermission: (permission) => set({ pendingPermission: permission }),
+
+  setDefaultProvider: (provider) => set({ defaultProvider: provider }),
+  setAvailableProviders: (providers) => set({ availableProviders: providers }),
+
+  setGlobalModelPreferences: (preferences) => set({ globalModelPreferences: preferences }),
+
+  setGlobalModelPreference: (provider, modelId) => {
+    set((state) => ({
+      globalModelPreferences: {
+        ...state.globalModelPreferences,
+        [provider]: modelId ?? undefined,
+      },
+    }));
+  },
+
+  setProjectModelPreferences: (preferences) => set({ projectModelPreferences: preferences }),
+
+  setProjectModelPreference: (provider, modelId) => {
+    set((state) => ({
+      projectModelPreferences: {
+        ...(state.projectModelPreferences ?? {}),
+        [provider]: modelId ?? undefined,
+      },
+      isDirty: true,
+    }));
+  },
+
+  setAvailableModels: (provider, models) => {
+    set((state) => ({
+      availableModels: { ...state.availableModels, [provider]: models },
+    }));
   },
 
   getEffectiveModel: (provider) => {
     const { projectModelPreferences, globalModelPreferences } = get();
-    // Project-level overrides global
-    const projectModel = projectModelPreferences?.[provider];
-    if (projectModel) return projectModel;
-    // Fall back to global
-    return globalModelPreferences[provider];
+    return projectModelPreferences?.[provider] ?? globalModelPreferences[provider];
   },
 
-  // Project actions
-  setProjectPath: (path) => {
-    set({ projectPath: path });
-  },
+  setProjectPath: (path) => set({ projectPath: path }),
 
   saveProject: async () => {
-    const { projectPath, nodes, edges, nodeData, projectModelPreferences } = get();
+    const { projectPath, graph, projectModelPreferences } = get();
     if (!projectPath) {
       logger.warn('No project path set, cannot save');
       return;
     }
 
-    const projectFile: ProjectFile = {
-      version: 2,
-      nodes,
-      edges,
-      nodeData: Object.fromEntries(nodeData),
+    const projectFile: ProjectFileV3 = {
+      version: GRAPH_JSON_VERSION,
+      graph: GraphSerialize.toJSON(graph),
       projectModelPreferences,
     };
 
@@ -717,40 +577,30 @@ export const useGraphStore = create<GraphState>()(
   loadProject: async (path) => {
     try {
       const data = await invoke<string>('load_project', { path });
-      const projectFile: ProjectFile = JSON.parse(data);
+      const parsed = JSON.parse(data) as ProjectFile;
 
-      // Migrate nodeData: agent nodes without provider default to 'claude-code'
-      const migratedNodeData: Record<string, MessageNodeData> = {};
-      for (const [id, node] of Object.entries(projectFile.nodeData)) {
-        const contentUpdatedAt = node.contentUpdatedAt ?? node.timestamp;
-        if (node.role === 'assistant' && !('provider' in node)) {
-          migratedNodeData[id] = {
-            ...node,
-            contentUpdatedAt,
-            provider: DEFAULT_PROVIDER,
-          } as AgentNodeData;
-        } else {
-          migratedNodeData[id] = {
-            ...node,
-            contentUpdatedAt,
-          };
-        }
+      let graph: Graph;
+      let projectModelPreferences: ModelPreferences | null = null;
+
+      if (parsed.version === GRAPH_JSON_VERSION && 'graph' in parsed) {
+        graph = GraphSerialize.fromJSON(parsed.graph);
+        projectModelPreferences = parsed.projectModelPreferences ?? null;
+      } else {
+        const legacy = parsed as ProjectFileLegacyV2;
+        const migratedNodeData = migrateLegacyV2NodeData(legacy.nodeData);
+        graph = GraphSerialize.fromLegacyV2({
+          version: legacy.version,
+          nodes: legacy.nodes,
+          edges: legacy.edges,
+          nodeData: migratedNodeData,
+        });
+        projectModelPreferences = legacy.projectModelPreferences ?? null;
       }
 
-      // Convert nodeData from object back to Map
-      const nodeDataMap = new Map(Object.entries(migratedNodeData));
-
-      // Migrate nodes to include dragHandle if missing (for existing saved projects)
-      const migratedNodes = projectFile.nodes.map(node => ({
-        ...node,
-        dragHandle: node.dragHandle ?? '.thought-node',
-      }));
-
       set({
-        nodes: migratedNodes,
-        edges: projectFile.edges,
-        nodeData: nodeDataMap,
-        projectModelPreferences: projectFile.projectModelPreferences ?? null,
+        graph,
+        ...projectGraph(graph, [], null),
+        projectModelPreferences,
         projectPath: path,
         lastSavedAt: Date.now(),
         isDirty: false,
@@ -760,7 +610,6 @@ export const useGraphStore = create<GraphState>()(
         previewNodeId: null,
       });
 
-      // Track in recently opened projects
       try {
         await invoke('add_recent_project', { path });
       } catch (error) {
@@ -775,10 +624,12 @@ export const useGraphStore = create<GraphState>()(
   },
 
   newProject: () => {
+    const graph = GraphMutations.empty();
     set({
+      graph,
       nodes: [],
       edges: [],
-      nodeData: new Map(),
+      nodeData: graph.nodes,
       projectModelPreferences: null,
       projectPath: null,
       lastSavedAt: null,
@@ -791,66 +642,58 @@ export const useGraphStore = create<GraphState>()(
   },
 
   exportSubgraph: (nodeIds) => {
-    const { nodeData, edges } = get();
-
-    // Build an ordered list from the node IDs following edges
-    // For a linear path, we need to order them correctly
+    const { graph } = get();
     const nodeSet = new Set(nodeIds);
 
-    // Find starting node (has no incoming edge from selected nodes)
-    const hasIncoming = new Set<string>();
-    edges.forEach((edge) => {
-      if (nodeSet.has(edge.source) && nodeSet.has(edge.target)) {
-        hasIncoming.add(edge.target);
+    const hasIncoming = new Set<NodeId>();
+    for (const e of graph.edges) {
+      if (nodeSet.has(e.source) && nodeSet.has(e.target)) {
+        hasIncoming.add(e.target);
       }
-    });
+    }
 
-    const startNode = nodeIds.find((id) => !hasIncoming.has(id)) || nodeIds[0];
+    const startNode = nodeIds.find((id) => !hasIncoming.has(id)) ?? nodeIds[0];
 
-    // Build ordered list by following edges
-    const ordered: string[] = [];
-    const visited = new Set<string>();
-    let current: string | undefined = startNode;
-
+    const ordered: NodeId[] = [];
+    const visited = new Set<NodeId>();
+    let current: NodeId | undefined = startNode;
     while (current && !visited.has(current) && nodeSet.has(current)) {
       visited.add(current);
       ordered.push(current);
-      // Find next node
-      const nextEdge = edges.find(
-        (e) => e.source === current && nodeSet.has(e.target)
-      );
+      const nextEdge = graph.edges.find((e) => e.source === current && nodeSet.has(e.target));
       current = nextEdge?.target;
     }
 
-    // Generate markdown
     return ordered
       .map((id) => {
-        const data = nodeData.get(id);
-        if (!data) return '';
-        const roleHeader = data.role === 'user' ? '## User' : '## Assistant';
-        return `${roleHeader}\n\n${data.content}`;
+        const node = graph.nodes.get(id);
+        if (!node) return '';
+        const header = node.role === 'user' ? '## User' : '## Assistant';
+        return `${header}\n\n${node.content}`;
       })
       .filter(Boolean)
       .join('\n\n---\n\n');
   },
 
   autoLayout: (options) => {
-    const { nodes, edges } = get();
-    if (nodes.length === 0) return;
+    const state = get();
+    if (state.graph.nodes.size === 0) return;
 
-    const pos = computeAutoLayout(nodes, edges, options);
+    const positions = computeAutoLayout(state.nodes, state.edges, options);
+    let graph = state.graph;
+    for (const [id, p] of positions) {
+      graph = GraphMutations.setPosition(graph, id, p);
+    }
+
     set({
-      nodes: nodes.map((n) => {
-        const p = pos.get(n.id);
-        if (!p) return n;
-        return { ...n, position: p };
-      }) as ThoughtTreeNode[],
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
       isDirty: true,
     });
   },
 }));
 
-// Auto-save subscription
+// Auto-save subscription: graph reference changes whenever domain content mutates.
 const debouncedSave = debounce(async () => {
   const state = useGraphStore.getState();
   if (state.projectPath && state.isDirty) {
@@ -862,13 +705,8 @@ const debouncedSave = debounce(async () => {
   }
 }, 2000);
 
-// Subscribe to changes that should trigger auto-save
 useGraphStore.subscribe((state, prevState) => {
-  if (
-    state.nodes !== prevState.nodes ||
-    state.edges !== prevState.edges ||
-    state.nodeData !== prevState.nodeData
-  ) {
+  if (state.graph !== prevState.graph) {
     debouncedSave();
   }
 });

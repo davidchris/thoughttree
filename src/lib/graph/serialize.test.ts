@@ -44,8 +44,8 @@ describe('GraphSerialize.fromLegacyV2', () => {
       ],
       edges: [{ id: 'a-b', source: 'a', target: 'b' }],
       nodeData: {
-        a: { id: 'a', role: 'user', content: 'q', timestamp: 1 },
-        b: { id: 'b', role: 'assistant', content: 'r', timestamp: 2 },
+        a: { id: 'a', role: 'user' as const, content: 'q', timestamp: 1 },
+        b: { id: 'b', role: 'assistant' as const, content: 'r', timestamp: 2 },
       },
     };
 
@@ -69,8 +69,8 @@ describe('GraphSerialize.fromLegacyV2', () => {
       nodes: [{ id: 'a', type: 'user', position: { x: 0, y: 0 }, data: {} }],
       edges: [],
       nodeData: {
-        a: { id: 'a', role: 'user', content: '', timestamp: 1 },
-        orphan: { id: 'orphan', role: 'user', content: '', timestamp: 1 },
+        a: { id: 'a', role: 'user' as const, content: '', timestamp: 1 },
+        orphan: { id: 'orphan', role: 'user' as const, content: '', timestamp: 1 },
       },
     };
     const g = GraphSerialize.fromLegacyV2(legacy);

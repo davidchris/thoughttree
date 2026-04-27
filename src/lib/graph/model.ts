@@ -1,5 +1,5 @@
 import type { ImageAttachment } from '../../types';
-import type { Graph, GraphEdge, GraphNode, NodeId } from './types';
+import type { Graph, GraphEdge, NodeId } from './types';
 
 interface Adjacency {
   parents: Map<NodeId, NodeId[]>;
