@@ -16,9 +16,6 @@ jobs:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             sidecar_target: 'darwin-arm64'
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-            sidecar_target: 'darwin-x64'
           - platform: ubuntu-22.04
             args: ''
             sidecar_target: 'linux-x64'
