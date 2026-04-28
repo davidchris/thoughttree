@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2
+
+- Multi-Parent Context Fix - Synthesizer nodes (multiple parents) now include all parent threads in conversation context; previously extra parent edges were silently dropped
+- Agent Node Side Panel - Double-click and `E` shortcut on agent nodes now open the side panel
+- @-Mention Positioning - File autocomplete now appears at the cursor instead of the bottom of the textarea
+- Summary Hardening - More robust summary generation and graph state/generation flows
+- Project File Format v3 - Save format bumped to v3; existing v2 files migrate automatically on load
+- Internal Refactor - Graph state rewritten on a functional GraphModel + ReactFlow projection layer (no user-visible change)
+- Security - Patched cargo `time` advisory, cleared bun audit findings, added 7-day release-age gate on dependency bumps
+- Build - Synced `@tauri-apps/api` and `@tauri-apps/cli` to 2.10 to match Rust `tauri` crate (fixes release CI mismatch)
+
 ## 0.3.0
 
 - Image Support - Paste or drag-drop images into conversations, with automatic resizing for API limits
