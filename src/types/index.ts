@@ -77,19 +77,6 @@ export interface AgentNodeData {
 
 export type MessageNodeData = UserNodeData | AgentNodeData;
 
-// ReactFlow node data wrappers
-export interface UserFlowNodeData extends Record<string, unknown> {
-  nodeData: UserNodeData;
-  isSelected: boolean;
-}
-
-export interface AgentFlowNodeData extends Record<string, unknown> {
-  nodeData: AgentNodeData;
-  isSelected: boolean;
-}
-
-export type ThoughtTreeFlowNodeData = UserFlowNodeData | AgentFlowNodeData;
-
 // Permission system
 export interface PermissionOption {
   id: string;
