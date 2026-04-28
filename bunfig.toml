@@ -1,0 +1,3 @@
+[install]
+# 7 days, in seconds. Avoid resolving very fresh package releases by default.
+minimumReleaseAge = 604800
