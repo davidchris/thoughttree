@@ -31,3 +31,5 @@ learnings/
 
 # Sidecar build temp directory
 .sidecar-build/
+
+.playwright-mcp/
