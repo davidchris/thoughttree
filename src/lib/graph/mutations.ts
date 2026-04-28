@@ -21,8 +21,10 @@ export const GraphMutations = {
   },
 
   addEdge(g: Graph, source: NodeId, target: NodeId): Graph {
+    const id = `${source}->${target}`;
+    if (g.edges.some((e) => e.id === id)) return g;
     const next = cloneGraph(g);
-    next.edges = [...next.edges, { id: `${source}->${target}`, source, target }];
+    next.edges = [...next.edges, { id, source, target }];
     return next;
   },
 

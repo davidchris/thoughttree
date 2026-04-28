@@ -38,6 +38,18 @@ describe('GraphMutations.addEdge', () => {
     g = GraphMutations.addEdge(g, 'a', 'b');
     expect(g.edges).toEqual([{ id: 'a->b', source: 'a', target: 'b' }]);
   });
+
+  it('is a no-op when an edge with the same id already exists', () => {
+    const a = userNode('a', '', 1);
+    const b = userNode('b', '', 2);
+    let g = GraphMutations.empty();
+    g = GraphMutations.addNode(g, a, { x: 0, y: 0 });
+    g = GraphMutations.addNode(g, b, { x: 0, y: 100 });
+    g = GraphMutations.addEdge(g, 'a', 'b');
+    const same = GraphMutations.addEdge(g, 'a', 'b');
+    expect(same).toBe(g);
+    expect(same.edges).toEqual([{ id: 'a->b', source: 'a', target: 'b' }]);
+  });
 });
 
 describe('GraphMutations.removeNode', () => {

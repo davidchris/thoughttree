@@ -119,6 +119,14 @@ describe('GraphModel.conversationPathIds', () => {
     expect(GraphModel.conversationPathIds(g, 'c')).toEqual(['a', 'b', 'c']);
   });
 
+  it('falls back to timestamp order when ancestor subgraph contains a cycle', () => {
+    // a → b, b → a — cycle. Target b: ancestors include both a and b.
+    const a = userNode('a', '', 1);
+    const b = userNode('b', '', 2);
+    const g = graphOf([a, b], [edge('a', 'b'), edge('b', 'a')]);
+    expect(GraphModel.conversationPathIds(g, 'b')).toEqual(['a', 'b']);
+  });
+
   it('topo-sorts synthesizer ancestors by timestamp, dedupes shared ancestors', () => {
     // root → a, root → b, a → synth, b → synth   (timestamps in creation order)
     const root = userNode('root', '', 1);

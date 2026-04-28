@@ -83,18 +83,30 @@ export const GraphModel = {
     }
 
     const result: NodeId[] = [];
+    const emitted = new Set<NodeId>();
     const tsOf = (id: NodeId) => g.nodes.get(id)?.timestamp ?? 0;
 
     while (ready.length > 0) {
       ready.sort((a, b) => tsOf(a) - tsOf(b));
       const next = ready.shift()!;
       result.push(next);
+      emitted.add(next);
       for (const child of adj.children.get(next) ?? []) {
         if (!include.has(child)) continue;
         const remaining = (inDegree.get(child) ?? 0) - 1;
         inDegree.set(child, remaining);
         if (remaining === 0) ready.push(child);
       }
+    }
+
+    // Cycle fallback: any include nodes left unemitted belong to a cycle.
+    // Topological order is undefined for them; fall back to timestamp order
+    // so the conversation path is non-empty rather than silently dropped.
+    if (emitted.size < include.size) {
+      const leftover: NodeId[] = [];
+      for (const id of include) if (!emitted.has(id)) leftover.push(id);
+      leftover.sort((a, b) => tsOf(a) - tsOf(b));
+      result.push(...leftover);
     }
 
     return result;
