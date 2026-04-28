@@ -47,6 +47,8 @@ describe('graphToFlowNodes', () => {
     const b = nodes.find((n) => n.id === 'b')!;
     expect(a.data.isSelected).toBe(false);
     expect(b.data.isSelected).toBe(true);
+    expect(a.selected).toBe(false);
+    expect(b.selected).toBe(true);
   });
 
   it('falls back to origin when layout entry is missing', () => {

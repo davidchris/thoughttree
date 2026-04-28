@@ -225,6 +225,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     const newNodes = applyNodeChanges(changes, state.nodes) as FlowNode[];
     let graph = state.graph;
     let dirty = state.isDirty;
+    let selectedNodeId = state.selectedNodeId;
+    let editingNodeId = state.editingNodeId;
+    let previewNodeId = state.previewNodeId;
+    let streamingNodeIds = state.streamingNodeIds;
+    let streamingMutated = false;
 
     for (const change of changes) {
       if (change.type === 'position' && change.position && change.dragging === false) {
@@ -233,6 +238,16 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       } else if (change.type === 'remove') {
         graph = GraphMutations.removeNode(graph, change.id);
         dirty = true;
+        if (selectedNodeId === change.id) selectedNodeId = null;
+        if (editingNodeId === change.id) editingNodeId = null;
+        if (previewNodeId === change.id) previewNodeId = null;
+        if (streamingNodeIds.has(change.id)) {
+          if (!streamingMutated) {
+            streamingNodeIds = new Set(streamingNodeIds);
+            streamingMutated = true;
+          }
+          streamingNodeIds.delete(change.id);
+        }
       } else if (change.type !== 'select' && change.type !== 'dimensions') {
         dirty = true;
       }
@@ -244,6 +259,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       edges: graphToFlowEdges(graph),
       nodeData: graph.nodes,
       isDirty: dirty,
+      selectedNodeId,
+      editingNodeId,
+      previewNodeId,
+      streamingNodeIds,
     });
   },
 

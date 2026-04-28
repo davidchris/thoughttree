@@ -18,11 +18,13 @@ export function graphToFlowNodes(g: Graph, ui: UiState): FlowNode[] {
   const result: FlowNode[] = [];
   for (const node of g.nodes.values()) {
     const position = g.layout.get(node.id) ?? DEFAULT_POSITION;
+    const isSelected = ui.selectedNodeId === node.id;
     result.push({
       id: node.id,
       type: node.role === 'user' ? 'user' : 'agent',
       position,
-      data: { id: node.id, isSelected: ui.selectedNodeId === node.id },
+      selected: isSelected,
+      data: { id: node.id, isSelected },
       dragHandle: '.thought-node',
     });
   }
