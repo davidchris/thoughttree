@@ -4,19 +4,17 @@ import {
   Position,
   NodeProps,
 } from "@xyflow/react";
-import { AgentFlowNodeData, PROVIDER_SHORT_NAMES } from "../../types";
+import { AgentNodeData, PROVIDER_SHORT_NAMES } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import "./styles.css";
 
 const SUMMARY_THRESHOLD = 100;
 
-type AgentNodeProps = NodeProps & {
-  data: AgentFlowNodeData;
-};
-
-export function AgentNode({ id, data, selected }: AgentNodeProps) {
-  const { nodeData } = data;
-  const content = nodeData.content;
+export function AgentNode({ id, selected }: NodeProps) {
+  const nodeData = useGraphStore((state) => state.nodeData.get(id) as AgentNodeData | undefined);
+  const content = nodeData?.content ?? '';
+  const summary = nodeData?.summary;
+  const provider = nodeData?.provider;
 
   // Subscribe directly to store for streaming state (fixes reactivity issue)
   const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
@@ -34,12 +32,12 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
   const collapsedText = useMemo(() => {
     if (!content) return '';
     if (content.length <= SUMMARY_THRESHOLD) return content;
-    if (nodeData.summary) return nodeData.summary;
+    if (summary) return summary;
     return content.slice(0, 30) + '...'; // Fallback while loading
-  }, [content, nodeData.summary]);
+  }, [content, summary]);
 
   const hasMore = content.length > SUMMARY_THRESHOLD || content.length > 30;
-  const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !nodeData.summary && !isStreaming;
+  const isGeneratingSummary = content.length > SUMMARY_THRESHOLD && !summary && !isStreaming;
 
   const handleContinue = () => {
     if (isBlocked) return;
@@ -65,9 +63,7 @@ export function AgentNode({ id, data, selected }: AgentNodeProps) {
 
       <div className="node-header">
         <span className="node-role">
-          {nodeData.provider
-            ? PROVIDER_SHORT_NAMES[nodeData.provider]
-            : 'Assistant'}
+          {provider ? PROVIDER_SHORT_NAMES[provider] : 'Assistant'}
         </span>
         {(hasMore || isStreaming) && (
           <button

@@ -6,7 +6,6 @@ import {
   MiniMap,
   NodeTypes,
   useReactFlow,
-  addEdge,
   type OnConnectEnd,
   type Connection,
   type NodeChange,
@@ -351,22 +350,13 @@ export function Graph() {
         // Create new user node at drop position
         const newNodeId = createUserNode(position);
 
-        // Create edge from source to new node
-        useGraphStore.setState((state) => ({
-          edges: addEdge(
-            {
-              id: `${connectingNodeId.current}-${newNodeId}`,
-              source: connectingNodeId.current!,
-              target: newNodeId,
-            },
-            state.edges
-          ),
-        }));
+        // Create edge from source to new node via store action
+        onConnect({ source: connectingNodeId.current, target: newNodeId, sourceHandle: null, targetHandle: null });
       }
 
       connectingNodeId.current = null;
     },
-    [screenToFlowPosition, createUserNode]
+    [screenToFlowPosition, createUserNode, onConnect]
   );
 
   // Wrap onConnect to handle edge direction when connecting to agent nodes
