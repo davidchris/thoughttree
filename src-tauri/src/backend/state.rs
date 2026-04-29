@@ -5,7 +5,7 @@ use futures::lock::Mutex;
 use tokio::sync::oneshot;
 
 /// App state for managing permission responses
-pub struct AppState {
+pub(crate) struct AppState {
     pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
 }
 

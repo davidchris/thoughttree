@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Supported agent providers for ACP connections
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
-pub enum AgentProvider {
+pub(crate) enum AgentProvider {
     #[default]
     ClaudeCode,
     GeminiCli,
@@ -11,26 +11,17 @@ pub enum AgentProvider {
 
 impl AgentProvider {
     /// Human-readable display name for UI
-    pub fn display_name(&self) -> &'static str {
+    pub(crate) fn display_name(&self) -> &'static str {
         match self {
             AgentProvider::ClaudeCode => "Claude Code",
             AgentProvider::GeminiCli => "Gemini CLI",
-        }
-    }
-
-    /// Short name for badges/labels
-    #[allow(dead_code)]
-    pub fn short_name(&self) -> &'static str {
-        match self {
-            AgentProvider::ClaudeCode => "Claude",
-            AgentProvider::GeminiCli => "Gemini",
         }
     }
 }
 
 /// Provider availability status for frontend
 #[derive(Clone, Debug, Serialize)]
-pub struct ProviderStatus {
+pub(crate) struct ProviderStatus {
     pub provider: AgentProvider,
     pub available: bool,
     pub error_message: Option<String>,
@@ -38,14 +29,14 @@ pub struct ProviderStatus {
 
 /// Model info discovered from ACP CreateSessionResponse.models.available_models
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ModelInfo {
+pub(crate) struct ModelInfo {
     pub model_id: String,
     pub display_name: String,
 }
 
 /// User's preferred model per provider (stores model_id strings)
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct ModelPreferences {
+pub(crate) struct ModelPreferences {
     #[serde(default, rename = "claude-code")]
     pub claude_code: Option<String>,
     #[serde(default, rename = "gemini-cli")]
@@ -53,17 +44,8 @@ pub struct ModelPreferences {
 }
 
 impl ModelPreferences {
-    /// Get the model preference for a given provider
-    #[allow(dead_code)]
-    pub fn get(&self, provider: &AgentProvider) -> Option<&String> {
-        match provider {
-            AgentProvider::ClaudeCode => self.claude_code.as_ref(),
-            AgentProvider::GeminiCli => self.gemini_cli.as_ref(),
-        }
-    }
-
     /// Set the model preference for a given provider
-    pub fn set(&mut self, provider: &AgentProvider, model_id: Option<String>) {
+    pub(crate) fn set(&mut self, provider: &AgentProvider, model_id: Option<String>) {
         match provider {
             AgentProvider::ClaudeCode => self.claude_code = model_id,
             AgentProvider::GeminiCli => self.gemini_cli = model_id,
@@ -73,7 +55,7 @@ impl ModelPreferences {
 
 /// Custom executable paths for providers (user-configured overrides)
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct ProviderPaths {
+pub(crate) struct ProviderPaths {
     #[serde(default, rename = "claude-code")]
     pub claude_code: Option<String>,
     #[serde(default, rename = "gemini-cli")]
@@ -81,17 +63,8 @@ pub struct ProviderPaths {
 }
 
 impl ProviderPaths {
-    /// Get the custom path for a given provider
-    #[allow(dead_code)]
-    pub fn get(&self, provider: &AgentProvider) -> Option<&String> {
-        match provider {
-            AgentProvider::ClaudeCode => self.claude_code.as_ref(),
-            AgentProvider::GeminiCli => self.gemini_cli.as_ref(),
-        }
-    }
-
     /// Set the custom path for a given provider
-    pub fn set(&mut self, provider: &AgentProvider, path: Option<String>) {
+    pub(crate) fn set(&mut self, provider: &AgentProvider, path: Option<String>) {
         match provider {
             AgentProvider::ClaudeCode => self.claude_code = path,
             AgentProvider::GeminiCli => self.gemini_cli = path,
@@ -176,11 +149,5 @@ mod tests {
     fn test_provider_display_names() {
         assert_eq!(AgentProvider::ClaudeCode.display_name(), "Claude Code");
         assert_eq!(AgentProvider::GeminiCli.display_name(), "Gemini CLI");
-    }
-
-    #[test]
-    fn test_provider_short_names() {
-        assert_eq!(AgentProvider::ClaudeCode.short_name(), "Claude");
-        assert_eq!(AgentProvider::GeminiCli.short_name(), "Gemini");
     }
 }

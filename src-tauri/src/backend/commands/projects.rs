@@ -32,19 +32,19 @@ fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, 
 }
 
 #[tauri::command]
-pub async fn get_notes_directory(app: AppHandle) -> Result<Option<String>, String> {
+pub(crate) async fn get_notes_directory(app: AppHandle) -> Result<Option<String>, String> {
     config::get_notes_directory_optional(&app)
 }
 
 #[tauri::command]
-pub async fn set_notes_directory(app: AppHandle, path: String) -> Result<(), String> {
+pub(crate) async fn set_notes_directory(app: AppHandle, path: String) -> Result<(), String> {
     config::set_notes_directory(&app, &path)?;
     tracing::info!("Notes directory set to: {}", path);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn pick_notes_directory(app: AppHandle) -> Result<Option<String>, String> {
+pub(crate) async fn pick_notes_directory(app: AppHandle) -> Result<Option<String>, String> {
     let path = app
         .dialog()
         .file()
@@ -55,7 +55,7 @@ pub async fn pick_notes_directory(app: AppHandle) -> Result<Option<String>, Stri
 }
 
 #[tauri::command]
-pub async fn save_project(app: AppHandle, path: String, data: String) -> Result<(), String> {
+pub(crate) async fn save_project(app: AppHandle, path: String, data: String) -> Result<(), String> {
     let notes_directory = config::get_notes_directory_required(&app)?;
     let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
 
@@ -65,7 +65,7 @@ pub async fn save_project(app: AppHandle, path: String, data: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn load_project(app: AppHandle, path: String) -> Result<String, String> {
+pub(crate) async fn load_project(app: AppHandle, path: String) -> Result<String, String> {
     let notes_directory = config::get_notes_directory_required(&app)?;
     let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
 
@@ -76,7 +76,7 @@ pub async fn load_project(app: AppHandle, path: String) -> Result<String, String
 }
 
 #[tauri::command]
-pub async fn new_project_dialog(app: AppHandle) -> Result<Option<String>, String> {
+pub(crate) async fn new_project_dialog(app: AppHandle) -> Result<Option<String>, String> {
     let default_dir = config::get_notes_directory_optional(&app)?.map(PathBuf::from);
 
     let mut dialog = app
@@ -94,7 +94,7 @@ pub async fn new_project_dialog(app: AppHandle) -> Result<Option<String>, String
 }
 
 #[tauri::command]
-pub async fn open_project_dialog(app: AppHandle) -> Result<Option<String>, String> {
+pub(crate) async fn open_project_dialog(app: AppHandle) -> Result<Option<String>, String> {
     let default_dir = config::get_notes_directory_optional(&app)?.map(PathBuf::from);
 
     let mut dialog = app
@@ -111,12 +111,12 @@ pub async fn open_project_dialog(app: AppHandle) -> Result<Option<String>, Strin
 }
 
 #[tauri::command]
-pub async fn get_recent_projects(app: AppHandle) -> Result<Vec<String>, String> {
+pub(crate) async fn get_recent_projects(app: AppHandle) -> Result<Vec<String>, String> {
     config::get_recent_projects(&app)
 }
 
 #[tauri::command]
-pub async fn add_recent_project(app: AppHandle, path: String) -> Result<(), String> {
+pub(crate) async fn add_recent_project(app: AppHandle, path: String) -> Result<(), String> {
     let mut recent_projects = config::get_recent_projects(&app)?;
 
     recent_projects.retain(|project_path| project_path != &path);
@@ -127,7 +127,7 @@ pub async fn add_recent_project(app: AppHandle, path: String) -> Result<(), Stri
 }
 
 #[tauri::command]
-pub async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), String> {
+pub(crate) async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), String> {
     let mut recent_projects = config::get_recent_projects(&app)?;
     recent_projects.retain(|project_path| project_path != &path);
 
@@ -135,7 +135,7 @@ pub async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), S
 }
 
 #[tauri::command]
-pub async fn export_markdown(
+pub(crate) async fn export_markdown(
     app: AppHandle,
     content: String,
     default_name: String,
@@ -163,7 +163,7 @@ pub async fn export_markdown(
 }
 
 #[tauri::command]
-pub async fn search_files(
+pub(crate) async fn search_files(
     app: AppHandle,
     query: String,
     limit: Option<usize>,

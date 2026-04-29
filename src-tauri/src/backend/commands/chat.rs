@@ -8,7 +8,7 @@ use crate::backend::state::AppState;
 use crate::backend::types::{AgentProvider, Message};
 
 #[tauri::command]
-pub async fn send_prompt(
+pub(crate) async fn send_prompt(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     node_id: String,
@@ -48,7 +48,7 @@ pub async fn send_prompt(
 }
 
 #[tauri::command]
-pub async fn respond_to_permission(
+pub(crate) async fn respond_to_permission(
     state: State<'_, AppState>,
     request_id: String,
     option_id: String,
@@ -69,6 +69,6 @@ pub async fn respond_to_permission(
 }
 
 #[tauri::command]
-pub async fn check_acp_available() -> Result<bool, String> {
+pub(crate) async fn check_acp_available() -> Result<bool, String> {
     Ok(find_sidecar_path().is_some())
 }

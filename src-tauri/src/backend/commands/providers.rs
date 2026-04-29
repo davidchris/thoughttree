@@ -98,7 +98,7 @@ async fn validate_executable(path: &Path, provider: &AgentProvider) -> Result<St
 }
 
 #[tauri::command]
-pub async fn get_available_providers(app: AppHandle) -> Result<Vec<ProviderStatus>, String> {
+pub(crate) async fn get_available_providers(app: AppHandle) -> Result<Vec<ProviderStatus>, String> {
     let paths = config::get_provider_paths(&app)?;
 
     Ok(vec![
@@ -108,24 +108,24 @@ pub async fn get_available_providers(app: AppHandle) -> Result<Vec<ProviderStatu
 }
 
 #[tauri::command]
-pub async fn get_default_provider(app: AppHandle) -> Result<AgentProvider, String> {
+pub(crate) async fn get_default_provider(app: AppHandle) -> Result<AgentProvider, String> {
     config::get_default_provider(&app)
 }
 
 #[tauri::command]
-pub async fn set_default_provider(app: AppHandle, provider: AgentProvider) -> Result<(), String> {
+pub(crate) async fn set_default_provider(app: AppHandle, provider: AgentProvider) -> Result<(), String> {
     config::set_default_provider(&app, &provider)?;
     tracing::info!("Default provider set to: {:?}", provider);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_model_preferences(app: AppHandle) -> Result<ModelPreferences, String> {
+pub(crate) async fn get_model_preferences(app: AppHandle) -> Result<ModelPreferences, String> {
     config::get_model_preferences(&app)
 }
 
 #[tauri::command]
-pub async fn set_model_preference(
+pub(crate) async fn set_model_preference(
     app: AppHandle,
     provider: AgentProvider,
     model_id: Option<String>,
@@ -139,12 +139,12 @@ pub async fn set_model_preference(
 }
 
 #[tauri::command]
-pub async fn get_provider_paths(app: AppHandle) -> Result<ProviderPaths, String> {
+pub(crate) async fn get_provider_paths(app: AppHandle) -> Result<ProviderPaths, String> {
     config::get_provider_paths(&app)
 }
 
 #[tauri::command]
-pub async fn set_provider_path(
+pub(crate) async fn set_provider_path(
     app: AppHandle,
     provider: AgentProvider,
     path: Option<String>,
@@ -162,7 +162,7 @@ pub async fn set_provider_path(
 }
 
 #[tauri::command]
-pub async fn validate_provider_path(
+pub(crate) async fn validate_provider_path(
     provider: AgentProvider,
     path: String,
 ) -> Result<String, String> {
@@ -170,7 +170,7 @@ pub async fn validate_provider_path(
 }
 
 #[tauri::command]
-pub async fn pick_provider_executable(
+pub(crate) async fn pick_provider_executable(
     app: AppHandle,
     provider: AgentProvider,
 ) -> Result<Option<String>, String> {
@@ -182,7 +182,7 @@ pub async fn pick_provider_executable(
 }
 
 #[tauri::command]
-pub async fn get_available_models(
+pub(crate) async fn get_available_models(
     app: AppHandle,
     provider: AgentProvider,
 ) -> Result<Vec<ModelInfo>, String> {

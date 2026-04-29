@@ -6,7 +6,7 @@ use crate::backend::runtime::run_localset_blocking;
 use crate::backend::types::SummaryResult;
 
 #[tauri::command]
-pub async fn generate_summary(
+pub(crate) async fn generate_summary(
     app: AppHandle,
     node_id: String,
     content: String,
