@@ -25,7 +25,9 @@ pub const TEXT_DIM: Rgba = hex(0x808080);
 pub const ACCENT: Rgba = hex(0x5b9bd5);
 
 pub const NODE_WIDTH: f32 = 240.0;
-pub const NODE_MIN_HEIGHT: f32 = 80.0;
+// Fixed (not minimum) — edges anchor at `pos.y + NODE_HEIGHT`, so a card
+// growing past it would visually disconnect from its outgoing edge.
+pub const NODE_HEIGHT: f32 = 120.0;
 pub const SIDE_PANEL_WIDTH: f32 = 380.0;
 pub const TOOLBAR_HEIGHT: f32 = 44.0;
 

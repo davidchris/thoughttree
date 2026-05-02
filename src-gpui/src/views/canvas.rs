@@ -64,7 +64,8 @@ impl CanvasView {
             .left(px(position.x) + self.pan.x)
             .top(px(position.y) + self.pan.y)
             .w(px(theme::NODE_WIDTH))
-            .min_h(px(theme::NODE_MIN_HEIGHT))
+            .h(px(theme::NODE_HEIGHT))
+            .overflow_hidden()
             .p(px(10.0))
             .bg(bg)
             .border_1()
@@ -132,8 +133,14 @@ impl CanvasView {
 }
 
 /// Marker entity passed through GPUI's drag system to identify which node is
-/// being moved. GPUI's drag API needs an `Entity<T>` payload.
+/// being moved. GPUI's drag API needs an `Entity<T>` payload where `T: Render`.
 struct DragHandle(NodeId);
+
+impl Render for DragHandle {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        gpui::Empty
+    }
+}
 
 fn preview_text(s: &str, max: usize) -> String {
     let trimmed = s.trim();
@@ -166,13 +173,17 @@ impl Render for CanvasView {
 
         let edge_layer = canvas(
             |_bounds, _window, _cx| (),
-            move |_bounds, _prepaint, window, _cx| {
+            move |bounds, _prepaint, window, _cx| {
+                // canvas paint is in window coords; cards are positioned
+                // relative to this container, so add bounds.origin to align.
+                let ox = bounds.origin.x;
+                let oy = bounds.origin.y;
                 for (s, t) in &edges {
                     // Anchor at bottom-center of source, top-center of target.
-                    let sx = px(s.x + theme::NODE_WIDTH / 2.0) + pan.x;
-                    let sy = px(s.y + theme::NODE_MIN_HEIGHT) + pan.y;
-                    let tx = px(t.x + theme::NODE_WIDTH / 2.0) + pan.x;
-                    let ty = px(t.y) + pan.y;
+                    let sx = ox + px(s.x + theme::NODE_WIDTH / 2.0) + pan.x;
+                    let sy = oy + px(s.y + theme::NODE_HEIGHT) + pan.y;
+                    let tx = ox + px(t.x + theme::NODE_WIDTH / 2.0) + pan.x;
+                    let ty = oy + px(t.y) + pan.y;
                     let mid_y = (sy + ty) / 2.0;
 
                     let mut path = PathBuilder::stroke(px(1.5));
