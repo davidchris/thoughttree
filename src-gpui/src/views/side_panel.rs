@@ -172,6 +172,7 @@ impl Render for SidePanelView {
             )
             .child(
                 div()
+                    .id("conversation-path")
                     .flex_grow()
                     .overflow_y_scroll()
                     .p(px(12.0))

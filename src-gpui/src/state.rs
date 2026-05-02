@@ -162,18 +162,18 @@ impl AppState {
     pub fn simulate_stream(&mut self, id: &NodeId, full_text: String, cx: &mut Context<Self>) {
         self.streaming.insert(id.clone());
         let id = id.clone();
-        cx.spawn(|this, mut cx| async move {
+        cx.spawn(async move |this, cx| {
             for ch in full_text.chars() {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(15))
                     .await;
-                this.update(&mut cx, |state, cx| {
+                this.update(cx, |state, cx| {
                     GraphMutations::append_content(&mut state.graph, &id, &ch.to_string());
                     cx.notify();
                 })
                 .ok();
             }
-            this.update(&mut cx, |state, cx| {
+            this.update(cx, |state, cx| {
                 state.streaming.remove(&id);
                 cx.notify();
             })

@@ -10,10 +10,11 @@ mod theme;
 mod views;
 
 use app::AppView;
-use gpui::{px, size, App, Application, Bounds, WindowBounds, WindowOptions};
+use gpui::{prelude::*, px, size, App, Bounds, WindowBounds, WindowOptions};
+use gpui_platform::application;
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    application().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, size(px(1280.0), px(800.0)), cx);
         cx.open_window(
             WindowOptions {

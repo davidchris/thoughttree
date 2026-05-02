@@ -32,7 +32,7 @@ impl CanvasView {
         }
     }
 
-    fn render_node(&self, node: &GraphNode, position: Position, cx: &Context<Self>) -> Div {
+    fn render_node(&self, node: &GraphNode, position: Position, cx: &Context<Self>) -> impl IntoElement {
         let app = self.state.read(cx);
         let selected = app.selected.as_ref() == Some(&node.id);
         let streaming = app.streaming.contains(&node.id);
@@ -59,6 +59,7 @@ impl CanvasView {
         let node_id_for_click = node.id.clone();
 
         div()
+            .id(node.id.clone())
             .absolute()
             .left(px(position.x) + self.pan.x)
             .top(px(position.y) + self.pan.y)
