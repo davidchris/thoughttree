@@ -1,7 +1,7 @@
 [package]
 name = "thoughttree-gpui"
 version = "0.0.1"
-edition = "2021"
+edition = "2024"
 description = "ThoughtTree front-end prototype using Zed's GPUI framework"
 publish = false
 
@@ -19,6 +19,7 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 smol = "2"
+unicode-segmentation = "1"
 
 [profile.dev]
 opt-level = 0
