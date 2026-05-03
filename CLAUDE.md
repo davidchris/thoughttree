@@ -22,6 +22,10 @@ bun test:run          # Run tests once
 cd src-tauri/acp
 cargo build
 RUST_LOG=info cargo run
+
+# GPUI front-end prototype (exploratory, unverified — see src-gpui/README.md)
+cd src-gpui
+cargo run --release
 ```
 
 ## Architecture Summary
