@@ -4,7 +4,7 @@
 //! Provides actions to branch a user reply or send the path to a (stubbed)
 //! agent that streams a response into a new assistant node.
 
-use crate::graph::{model::ConversationMessage, types::NodeRole, GraphModel};
+use crate::graph::{types::NodeRole, GraphModel};
 use crate::state::AppState;
 use crate::theme;
 use crate::views::text_input::TextInput;
@@ -52,13 +52,8 @@ impl SidePanelView {
             let Some(parent) = state.selected.clone() else {
                 return;
             };
-            let id = state.create_assistant_downstream(&parent);
-            state.selected = Some(id.clone());
-            // Build a fake reply that references the conversation path so the
-            // simulated stream looks plausible without an ACP subprocess.
-            let path = GraphModel::conversation_path(&state.graph, &parent);
-            let reply = mock_reply_for(&path);
-            state.simulate_stream(&id, reply, cx);
+            let id = state.start_agent_reply(&parent, cx);
+            state.selected = Some(id);
             cx.notify();
         });
     }
@@ -107,26 +102,6 @@ impl SidePanelView {
             state.editing = None;
             cx.notify();
         });
-    }
-}
-
-fn mock_reply_for(path: &[ConversationMessage]) -> String {
-    if path.is_empty() {
-        return "(no context — try writing something in the parent node)".into();
-    }
-    let last = path.last().unwrap();
-    format!(
-        "Stubbed reply ({} turns of context). Last user said: \"{}\". The real build would route this through the existing ACP backend at src-tauri/src/backend/acp/.",
-        path.len(),
-        truncate(&last.content, 80)
-    )
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        s.chars().take(n).collect::<String>() + "…"
     }
 }
 
@@ -204,6 +179,7 @@ impl Render for SidePanelView {
             .border_color(theme::BORDER)
             .child(
                 div()
+                    .flex_none()
                     .px(px(16.0))
                     .py(px(12.0))
                     .border_b_1()
@@ -216,11 +192,17 @@ impl Render for SidePanelView {
                     )
                     .child(if editing {
                         div()
+                            .id("selected-editor")
                             .pt(px(6.0))
+                            .max_h(px(240.0))
+                            .overflow_y_scroll()
                             .child(editor_entity.clone().unwrap())
                     } else {
                         div()
+                            .id("selected-content")
                             .pt(px(2.0))
+                            .max_h(px(240.0))
+                            .overflow_y_scroll()
                             .text_size(px(13.0))
                             .text_color(theme::TEXT)
                             .child(
@@ -240,7 +222,7 @@ impl Render for SidePanelView {
             .child(
                 div()
                     .id("conversation-path")
-                    .flex_grow()
+                    .flex_1()
                     .overflow_y_scroll()
                     .p(px(12.0))
                     .child(
@@ -254,6 +236,7 @@ impl Render for SidePanelView {
             )
             .child(if editing {
                 div()
+                    .flex_none()
                     .flex()
                     .flex_row()
                     .gap(px(8.0))
@@ -292,6 +275,7 @@ impl Render for SidePanelView {
                     )
             } else {
                 div()
+                    .flex_none()
                     .flex()
                     .flex_row()
                     .gap(px(8.0))

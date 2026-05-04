@@ -21,6 +21,16 @@ anyhow = "1"
 smol = "2"
 unicode-segmentation = "1"
 
+# ACP client — same stack as the standalone harness in `src-tauri/acp/`.
+# tokio runs on its own thread; GPUI keeps using smol on the main thread.
+agent-client-protocol = { version = "0.9", features = ["unstable"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "process", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+async-trait = "0.1"
+async-channel = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
 [profile.dev]
 opt-level = 0
 

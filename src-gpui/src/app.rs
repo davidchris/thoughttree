@@ -14,7 +14,7 @@ use crate::state::AppState;
 use crate::theme;
 use crate::views::{CanvasView, SidePanelView, ToolbarView};
 use gpui::{
-    div, prelude::*, Context, Entity, ParentElement, Render, Styled, Window,
+    div, prelude::*, px, Context, Entity, ParentElement, Render, Styled, Window,
 };
 
 pub struct AppView {
@@ -26,6 +26,7 @@ pub struct AppView {
 impl AppView {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         let state = cx.new(|_| AppState::new());
+        state.update(cx, |s, cx| s.start_event_drain(cx));
         let toolbar = cx.new(|cx| ToolbarView::new(state.clone(), cx));
         let canvas = cx.new(|cx| CanvasView::new(state.clone(), cx));
         let side_panel = cx.new(|cx| SidePanelView::new(state.clone(), cx));
@@ -43,6 +44,7 @@ impl Render for AppView {
             .flex()
             .flex_col()
             .size_full()
+            .overflow_hidden()
             .bg(theme::BG_APP)
             .text_color(theme::TEXT)
             .child(self.toolbar.clone())
@@ -50,8 +52,9 @@ impl Render for AppView {
                 div()
                     .flex()
                     .flex_row()
-                    .flex_grow()
-                    .child(div().flex_grow().child(self.canvas.clone()))
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .child(div().flex_1().min_w(px(0.0)).child(self.canvas.clone()))
                     .child(self.side_panel.clone()),
             )
     }
