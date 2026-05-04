@@ -757,7 +757,7 @@ impl Element for TextElement {
                                     bounds.top() + line_top + s_pt.y + line_height,
                                 ),
                             ),
-                            rgba(0x3311ff30),
+                            rgba(0x6688ff80),
                         ));
                     } else {
                         // First visual row of this logical line: from s_pt.x
@@ -770,7 +770,7 @@ impl Element for TextElement {
                                     bounds.top() + line_top + s_pt.y + line_height,
                                 ),
                             ),
-                            rgba(0x3311ff30),
+                            rgba(0x6688ff80),
                         ));
                         // Middle visual rows of this logical line.
                         let mut y = s_pt.y + line_height;
@@ -783,7 +783,7 @@ impl Element for TextElement {
                                         bounds.top() + line_top + y + line_height,
                                     ),
                                 ),
-                                rgba(0x3311ff30),
+                                rgba(0x6688ff80),
                             ));
                             y += line_height;
                         }
@@ -796,7 +796,7 @@ impl Element for TextElement {
                                     bounds.top() + line_top + e_pt.y + line_height,
                                 ),
                             ),
-                            rgba(0x3311ff30),
+                            rgba(0x6688ff80),
                         ));
                     }
                 }
