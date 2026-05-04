@@ -6,6 +6,7 @@
 mod acp;
 mod app;
 mod graph;
+mod markdown;
 mod state;
 mod theme;
 mod views;

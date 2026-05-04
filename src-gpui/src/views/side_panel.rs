@@ -7,6 +7,7 @@
 use crate::graph::{types::NodeRole, GraphModel};
 use crate::state::AppState;
 use crate::theme;
+use crate::views::markdown_view::markdown_view;
 use crate::views::text_input::TextInput;
 use gpui::{
     div, prelude::*, px, Context, Entity, MouseButton, ParentElement, Render, Styled, Window,
@@ -159,13 +160,7 @@ impl Render for SidePanelView {
                             .text_color(theme::TEXT_DIM)
                             .child(role),
                     )
-                    .child(
-                        div()
-                            .pt(px(4.0))
-                            .text_size(px(13.0))
-                            .text_color(theme::TEXT)
-                            .child(msg.content),
-                    ),
+                    .child(div().pt(px(4.0)).child(markdown_view(&msg.content))),
             );
         }
 
@@ -198,25 +193,25 @@ impl Render for SidePanelView {
                             .overflow_y_scroll()
                             .child(editor_entity.clone().unwrap())
                     } else {
+                        let content = selected_node
+                            .as_ref()
+                            .map(|n| n.content.clone())
+                            .unwrap_or_default();
+                        let body = if content.trim().is_empty() {
+                            div()
+                                .text_size(px(13.0))
+                                .text_color(theme::TEXT_DIM)
+                                .child("(empty — click Edit to start typing)")
+                                .into_any_element()
+                        } else {
+                            markdown_view(&content)
+                        };
                         div()
                             .id("selected-content")
                             .pt(px(2.0))
                             .max_h(px(240.0))
                             .overflow_y_scroll()
-                            .text_size(px(13.0))
-                            .text_color(theme::TEXT)
-                            .child(
-                                selected_node
-                                    .as_ref()
-                                    .map(|n| {
-                                        if n.content.trim().is_empty() {
-                                            "(empty — click Edit to start typing)".to_string()
-                                        } else {
-                                            n.content.clone()
-                                        }
-                                    })
-                                    .unwrap_or_default(),
-                            )
+                            .child(body)
                     }),
             )
             .child(

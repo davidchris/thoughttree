@@ -31,6 +31,11 @@ async-channel = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Markdown — CommonMark parser. Render layer is hand-rolled in `markdown.rs`
+# on top of pulldown-cmark events. See PR #7 README for why GPUI doesn't get
+# Markdown for free.
+pulldown-cmark = { version = "0.12", default-features = false }
+
 [profile.dev]
 opt-level = 0
 
