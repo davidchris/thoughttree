@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
+import { useUIStore } from './useUIStore';
 import { hasFreshSummary } from '../hooks/useSummaryGeneration';
 
 function resetStore() {
@@ -8,13 +9,10 @@ function resetStore() {
   state.newProject();
   useGraphStore.setState({
     selectedNodeId: null,
-    editingNodeId: null,
-    previewNodeId: null,
     streamingNodeIds: new Set<string>(),
-    pendingPermission: null,
-    triggerSidePanelEdit: false,
     isDirty: false,
   });
+  useUIStore.getState().reset();
 }
 
 describe('useGraphStore', () => {

@@ -14,6 +14,7 @@ import {
 } from './lib/tauri';
 import { useSummaryGeneration } from './hooks/useSummaryGeneration';
 import { useGraphStore } from './store/useGraphStore';
+import { useProviderStore } from './store/useProviderStore';
 import { logger } from './lib/logger';
 import './App.css';
 
@@ -43,8 +44,8 @@ function App() {
         try {
           const providers = await getAvailableProviders();
           const defaultProv = await getDefaultProvider();
-          useGraphStore.getState().setAvailableProviders(providers);
-          useGraphStore.getState().setDefaultProvider(defaultProv);
+          useProviderStore.getState().setAvailableProviders(providers);
+          useProviderStore.getState().setDefaultProvider(defaultProv);
         } catch (error) {
           logger.warn('Failed to load provider config:', error);
         }

@@ -14,12 +14,11 @@ import {
   DEFAULT_PROVIDER,
   ImageAttachment,
   MessageNodeData,
-  ModelInfo,
   ModelPreferences,
-  PermissionRequest,
-  ProviderStatus,
   UserNodeData,
 } from '../types';
+import { useProviderStore } from './useProviderStore';
+import { useUIStore } from './useUIStore';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 import { logger } from '../lib/logger';
 import {
@@ -82,22 +81,14 @@ interface GraphState {
   lastSavedAt: number | null;
   isDirty: boolean;
 
-  // Provider state
-  defaultProvider: AgentProvider;
-  availableProviders: ProviderStatus[];
-
-  // Model state
-  globalModelPreferences: ModelPreferences;
+  // Persisted with the project file, unlike global preferences
+  // (see useProviderStore)
   projectModelPreferences: ModelPreferences | null;
-  availableModels: Record<AgentProvider, ModelInfo[]>;
 
-  // UI state
+  // Selection and streaming feed the graph projection, so they live here
+  // rather than in useUIStore
   selectedNodeId: string | null;
   streamingNodeIds: Set<string>;
-  editingNodeId: string | null;
-  previewNodeId: string | null;
-  pendingPermission: PermissionRequest | null;
-  triggerSidePanelEdit: boolean;
 
   // ReactFlow actions
   onNodesChange: (changes: NodeChange[]) => void;
@@ -115,12 +106,7 @@ interface GraphState {
   startStreaming: (nodeId: string) => void;
   stopStreaming: (nodeId: string) => void;
   isNodeBlocked: (nodeId: string) => boolean;
-  setEditing: (nodeId: string | null) => void;
-  setPreviewNode: (nodeId: string | null) => void;
-  togglePreviewNode: (nodeId: string) => void;
   deleteNode: (nodeId: string) => void;
-  triggerSidePanelEditMode: () => void;
-  clearSidePanelEditTrigger: () => void;
 
   // Image actions
   addNodeImage: (nodeId: string, image: ImageAttachment) => void;
@@ -137,19 +123,9 @@ interface GraphState {
   // Summary actions
   setSummary: (nodeId: string, summary: string) => void;
 
-  // Permission actions
-  setPendingPermission: (permission: PermissionRequest | null) => void;
-
-  // Provider actions
-  setDefaultProvider: (provider: AgentProvider) => void;
-  setAvailableProviders: (providers: ProviderStatus[]) => void;
-
-  // Model actions
-  setGlobalModelPreferences: (preferences: ModelPreferences) => void;
-  setGlobalModelPreference: (provider: AgentProvider, modelId: string | null) => void;
+  // Model actions (project-scoped; global preferences live in useProviderStore)
   setProjectModelPreferences: (preferences: ModelPreferences | null) => void;
   setProjectModelPreference: (provider: AgentProvider, modelId: string | null) => void;
-  setAvailableModels: (provider: AgentProvider, models: ModelInfo[]) => void;
   getEffectiveModel: (provider: AgentProvider) => string | undefined;
 
   // Project actions
@@ -224,17 +200,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   projectPath: null,
   lastSavedAt: null,
   isDirty: false,
-  defaultProvider: DEFAULT_PROVIDER,
-  availableProviders: [],
-  globalModelPreferences: {},
   projectModelPreferences: null,
-  availableModels: {} as Record<AgentProvider, ModelInfo[]>,
   selectedNodeId: null,
   streamingNodeIds: new Set<string>(),
-  editingNodeId: null,
-  previewNodeId: null,
-  pendingPermission: null,
-  triggerSidePanelEdit: false,
 
   onNodesChange: (changes) => {
     const state = get();
@@ -242,8 +210,6 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     let graph = state.graph;
     let dirty = state.isDirty;
     let selectedNodeId = state.selectedNodeId;
-    let editingNodeId = state.editingNodeId;
-    let previewNodeId = state.previewNodeId;
     let streamingNodeIds = state.streamingNodeIds;
     let streamingMutated = false;
 
@@ -255,8 +221,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         graph = GraphMutations.removeNode(graph, change.id);
         dirty = true;
         if (selectedNodeId === change.id) selectedNodeId = null;
-        if (editingNodeId === change.id) editingNodeId = null;
-        if (previewNodeId === change.id) previewNodeId = null;
+        useUIStore.getState().clearNodeRefs(change.id);
         if (streamingNodeIds.has(change.id)) {
           if (!streamingMutated) {
             streamingNodeIds = new Set(streamingNodeIds);
@@ -276,8 +241,6 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       nodeData: graph.nodes,
       isDirty: dirty,
       selectedNodeId,
-      editingNodeId,
-      previewNodeId,
       streamingNodeIds,
     });
   },
@@ -341,16 +304,16 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       graph,
       ...projectGraph(graph, state.nodes, id),
       selectedNodeId: id,
-      editingNodeId: id,
       isDirty: true,
     });
+    useUIStore.getState().setEditing(id);
     return id;
   },
 
   createAgentNodeDownstream: (parentId, provider, model) => {
     const id = generateId();
     const state = get();
-    const activeProvider = provider ?? state.defaultProvider;
+    const activeProvider = provider ?? useProviderStore.getState().defaultProvider;
     const activeModel = model ?? state.getEffectiveModel(activeProvider);
     const data: AgentNodeData = {
       id,
@@ -404,9 +367,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       graph,
       ...projectGraph(graph, state.nodes, id),
       selectedNodeId: id,
-      editingNodeId: id,
       isDirty: true,
     });
+    useUIStore.getState().setEditing(id);
     return id;
   },
 
@@ -477,11 +440,6 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     return false;
   },
 
-  setEditing: (nodeId) => set({ editingNodeId: nodeId }),
-  setPreviewNode: (nodeId) => set({ previewNodeId: nodeId }),
-  togglePreviewNode: (nodeId) =>
-    set((state) => ({ previewNodeId: state.previewNodeId === nodeId ? null : nodeId })),
-
   deleteNode: (nodeId) => {
     pendingStreamChunks.delete(nodeId);
     const state = get();
@@ -498,14 +456,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       ...projectGraph(graph, state.nodes, selectedNodeId),
       streamingNodeIds,
       selectedNodeId,
-      editingNodeId: state.editingNodeId === nodeId ? null : state.editingNodeId,
-      previewNodeId: state.previewNodeId === nodeId ? null : state.previewNodeId,
       isDirty: true,
     });
+    useUIStore.getState().clearNodeRefs(nodeId);
   },
-
-  triggerSidePanelEditMode: () => set({ triggerSidePanelEdit: true }),
-  clearSidePanelEditTrigger: () => set({ triggerSidePanelEdit: false }),
 
   addNodeImage: (nodeId, image) => {
     const state = get();
@@ -558,22 +512,6 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     set({ graph, ...projectGraph(graph, state.nodes, state.selectedNodeId) });
   },
 
-  setPendingPermission: (permission) => set({ pendingPermission: permission }),
-
-  setDefaultProvider: (provider) => set({ defaultProvider: provider }),
-  setAvailableProviders: (providers) => set({ availableProviders: providers }),
-
-  setGlobalModelPreferences: (preferences) => set({ globalModelPreferences: preferences }),
-
-  setGlobalModelPreference: (provider, modelId) => {
-    set((state) => ({
-      globalModelPreferences: {
-        ...state.globalModelPreferences,
-        [provider]: modelId ?? undefined,
-      },
-    }));
-  },
-
   setProjectModelPreferences: (preferences) => set({ projectModelPreferences: preferences }),
 
   setProjectModelPreference: (provider, modelId) => {
@@ -586,14 +524,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     }));
   },
 
-  setAvailableModels: (provider, models) => {
-    set((state) => ({
-      availableModels: { ...state.availableModels, [provider]: models },
-    }));
-  },
-
   getEffectiveModel: (provider) => {
-    const { projectModelPreferences, globalModelPreferences } = get();
+    const { projectModelPreferences } = get();
+    const { globalModelPreferences } = useProviderStore.getState();
     return projectModelPreferences?.[provider] ?? globalModelPreferences[provider];
   },
 
@@ -657,10 +590,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         lastSavedAt: Date.now(),
         isDirty: false,
         selectedNodeId: null,
-        editingNodeId: null,
         streamingNodeIds: new Set<string>(),
-        previewNodeId: null,
       });
+      useUIStore.getState().reset();
 
       try {
         await invoke('add_recent_project', { path });
@@ -687,10 +619,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       lastSavedAt: null,
       isDirty: false,
       selectedNodeId: null,
-      editingNodeId: null,
       streamingNodeIds: new Set<string>(),
-      previewNodeId: null,
     });
+    useUIStore.getState().reset();
   },
 
   exportSubgraph: (nodeIds) => {

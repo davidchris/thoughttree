@@ -18,6 +18,7 @@ import { AgentNode } from './AgentNode';
 import { ContextMenu } from './ContextMenu';
 import { AlignmentGuides, type AlignmentGuide } from './AlignmentGuides';
 import { useGraphStore } from '../../store/useGraphStore';
+import { useUIStore } from '../../store/useUIStore';
 import './styles.css';
 
 const SNAP_THRESHOLD = 8;
@@ -36,8 +37,8 @@ export function Graph() {
   const onConnect = useGraphStore((state) => state.onConnect);
   const selectNode = useGraphStore((state) => state.selectNode);
   const createUserNode = useGraphStore((state) => state.createUserNode);
-  const setEditing = useGraphStore((state) => state.setEditing);
-  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
+  const setEditing = useUIStore((state) => state.setEditing);
+  const setPreviewNode = useUIStore((state) => state.setPreviewNode);
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
 
@@ -243,17 +244,15 @@ export function Graph() {
   // re-attaching on every node mutation (e.g. each streaming flush).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const { selectedNodeId, nodeData, isNodeBlocked, createUserNodeDownstream } =
+        useGraphStore.getState();
       const {
-        selectedNodeId,
         editingNodeId,
         previewNodeId,
-        nodeData,
         togglePreviewNode,
-        isNodeBlocked,
         triggerSidePanelEditMode,
         setPreviewNode,
-        createUserNodeDownstream,
-      } = useGraphStore.getState();
+      } = useUIStore.getState();
 
       // Spacebar to toggle preview panel (but not when typing in an input)
       if (e.key === ' ' && selectedNodeId && !editingNodeId) {

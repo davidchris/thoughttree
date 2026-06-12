@@ -6,6 +6,7 @@ import {
 } from "@xyflow/react";
 import { ImageAttachment, UserNodeData } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
+import { useUIStore } from "../../store/useUIStore";
 import { resizeIfNeeded, fileToBase64 } from "../../lib/imageUtils";
 import { FileAutocomplete, FileAutocompleteRef } from "../FileAutocomplete";
 import { getCaretCoordinates } from "../../lib/caretCoordinates";
@@ -34,13 +35,13 @@ export function UserNode({ id, selected }: NodeProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const autocompleteRef = useRef<FileAutocompleteRef>(null);
 
-  const editingNodeId = useGraphStore((state) => state.editingNodeId);
+  const editingNodeId = useUIStore((state) => state.editingNodeId);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
-  const setEditing = useGraphStore((state) => state.setEditing);
+  const setEditing = useUIStore((state) => state.setEditing);
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
-  const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
-  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
-  const triggerSidePanelEditMode = useGraphStore((state) => state.triggerSidePanelEditMode);
+  const togglePreviewNode = useUIStore((state) => state.togglePreviewNode);
+  const setPreviewNode = useUIStore((state) => state.setPreviewNode);
+  const triggerSidePanelEditMode = useUIStore((state) => state.triggerSidePanelEditMode);
   const addNodeImage = useGraphStore((state) => state.addNodeImage);
   const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
   const generateNode = useNodeGeneration();

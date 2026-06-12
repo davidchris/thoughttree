@@ -1,11 +1,11 @@
-import { useGraphStore } from '../../store/useGraphStore';
+import { useUIStore } from '../../store/useUIStore';
 import { respondToPermission } from '../../lib/tauri';
 import { logger } from '../../lib/logger';
 import './styles.css';
 
 export function PermissionDialog() {
-  const pendingPermission = useGraphStore((state) => state.pendingPermission);
-  const setPendingPermission = useGraphStore((state) => state.setPendingPermission);
+  const pendingPermission = useUIStore((state) => state.pendingPermission);
+  const setPendingPermission = useUIStore((state) => state.setPendingPermission);
 
   if (!pendingPermission) {
     return null;

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
+import { useProviderStore } from '../../store/useProviderStore';
 import {
   getAvailableModels,
   getAvailableProviders,
@@ -29,15 +30,15 @@ interface PathValidationState {
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const projectPath = useGraphStore((state) => state.projectPath);
-  const availableProviders = useGraphStore((state) => state.availableProviders);
-  const setAvailableProviders = useGraphStore((state) => state.setAvailableProviders);
-  const globalModelPreferences = useGraphStore((state) => state.globalModelPreferences);
   const projectModelPreferences = useGraphStore((state) => state.projectModelPreferences);
-  const setGlobalModelPreferences = useGraphStore((state) => state.setGlobalModelPreferences);
-  const setGlobalModelPreference = useGraphStore((state) => state.setGlobalModelPreference);
   const setProjectModelPreference = useGraphStore((state) => state.setProjectModelPreference);
-  const availableModels = useGraphStore((state) => state.availableModels);
-  const setAvailableModels = useGraphStore((state) => state.setAvailableModels);
+  const availableProviders = useProviderStore((state) => state.availableProviders);
+  const setAvailableProviders = useProviderStore((state) => state.setAvailableProviders);
+  const globalModelPreferences = useProviderStore((state) => state.globalModelPreferences);
+  const setGlobalModelPreferences = useProviderStore((state) => state.setGlobalModelPreferences);
+  const setGlobalModelPreference = useProviderStore((state) => state.setGlobalModelPreference);
+  const availableModels = useProviderStore((state) => state.availableModels);
+  const setAvailableModels = useProviderStore((state) => state.setAvailableModels);
 
   const [loadingModels, setLoadingModels] = useState<Record<AgentProvider, boolean>>({
     'claude-code': false,

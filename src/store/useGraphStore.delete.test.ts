@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { useGraphStore } from './useGraphStore';
+import { useUIStore } from './useUIStore';
 
 describe('useGraphStore delete flow', () => {
   beforeEach(() => {
@@ -35,7 +36,7 @@ describe('useGraphStore delete flow', () => {
     expect(s2.nodes.find((n) => n.id === a)).toBeUndefined();
     expect(s2.nodeData.has(a)).toBe(false);
     expect(s2.selectedNodeId).toBeNull();
-    expect(s2.editingNodeId).toBeNull();
+    expect(useUIStore.getState().editingNodeId).toBeNull();
   });
 
   it('projects selected:true on the selected node so ReactFlow keyboard delete works', () => {

@@ -3,9 +3,13 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SidePanel } from "./index";
 import { useGraphStore } from "../../store/useGraphStore";
+import { useUIStore } from "../../store/useUIStore";
+import { useProviderStore } from "../../store/useProviderStore";
 
-// Mock the store
+// Mock the stores
 vi.mock("../../store/useGraphStore");
+vi.mock("../../store/useUIStore");
+vi.mock("../../store/useProviderStore");
 
 // Mock tauri lib
 vi.mock("../../lib/tauri", () => ({
@@ -14,6 +18,8 @@ vi.mock("../../lib/tauri", () => ({
 }));
 
 const mockUseGraphStore = vi.mocked(useGraphStore);
+const mockUseUIStore = vi.mocked(useUIStore);
+const mockUseProviderStore = vi.mocked(useProviderStore);
 
 describe("SidePanel", () => {
   const mockSetPreviewNode = vi.fn();
@@ -53,33 +59,44 @@ describe("SidePanel", () => {
       ],
     ]);
 
-    mockUseGraphStore.mockImplementation((selector) => {
-      const state = {
-        previewNodeId: "user-node-1",
-        nodeData: overrides.nodeData ?? defaultNodeData,
-        streamingNodeIds: new Set<string>(),
-        setPreviewNode: mockSetPreviewNode,
-        updateNodeContent: mockUpdateNodeContent,
-        createAgentNodeDownstream: mockCreateAgentNodeDownstream,
-        buildConversationContext: mockBuildConversationContext,
-        appendToNode: mockAppendToNode,
-        stopStreaming: mockStopStreaming,
-        isNodeBlocked: overrides.isNodeBlocked ?? mockIsNodeBlocked,
-        defaultProvider: "claude-code",
-        availableProviders: [
-          { provider: "claude-code", available: true, error_message: null },
-          { provider: "gemini-cli", available: true, error_message: null },
-        ],
-        availableModels: {
-          "claude-code": [{ model_id: "claude-sonnet", display_name: "Sonnet" }],
-          "gemini-cli": [{ model_id: "gemini-3", display_name: "Gemini 3" }],
-        },
-        getEffectiveModel: mockGetEffectiveModel,
-        setAvailableModels: mockSetAvailableModels,
-        ...overrides,
-      };
-      return selector(state as unknown as Parameters<typeof selector>[0]);
-    });
+    // One combined state object serves all three mocked stores; each
+    // component selector picks only the fields its store actually owns.
+    const state = {
+      previewNodeId: "user-node-1",
+      nodeData: overrides.nodeData ?? defaultNodeData,
+      streamingNodeIds: new Set<string>(),
+      setPreviewNode: mockSetPreviewNode,
+      updateNodeContent: mockUpdateNodeContent,
+      createAgentNodeDownstream: mockCreateAgentNodeDownstream,
+      buildConversationContext: mockBuildConversationContext,
+      appendToNode: mockAppendToNode,
+      stopStreaming: mockStopStreaming,
+      isNodeBlocked: overrides.isNodeBlocked ?? mockIsNodeBlocked,
+      defaultProvider: "claude-code",
+      availableProviders: [
+        { provider: "claude-code", available: true, error_message: null },
+        { provider: "gemini-cli", available: true, error_message: null },
+      ],
+      availableModels: {
+        "claude-code": [{ model_id: "claude-sonnet", display_name: "Sonnet" }],
+        "gemini-cli": [{ model_id: "gemini-3", display_name: "Gemini 3" }],
+      },
+      getEffectiveModel: mockGetEffectiveModel,
+      setAvailableModels: mockSetAvailableModels,
+      triggerSidePanelEdit: false,
+      clearSidePanelEditTrigger: vi.fn(),
+      ...overrides,
+    };
+
+    mockUseGraphStore.mockImplementation((selector) =>
+      selector(state as unknown as Parameters<typeof selector>[0])
+    );
+    mockUseUIStore.mockImplementation((selector) =>
+      selector(state as unknown as Parameters<typeof selector>[0])
+    );
+    mockUseProviderStore.mockImplementation((selector) =>
+      selector(state as unknown as Parameters<typeof selector>[0])
+    );
   };
 
   describe("Copy button", () => {

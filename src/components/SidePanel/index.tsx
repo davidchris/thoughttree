@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
+import { useProviderStore } from '../../store/useProviderStore';
+import { useUIStore } from '../../store/useUIStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
 import { getAvailableModels } from '../../lib/tauri';
 import { ProviderSelector } from '../ProviderSelector';
@@ -24,21 +26,21 @@ const MIN_WIDTH = 200;
 const MAX_WIDTH_PERCENT = 0.8; // 80% of viewport
 
 export function SidePanel() {
-  const previewNodeId = useGraphStore((state) => state.previewNodeId);
+  const previewNodeId = useUIStore((state) => state.previewNodeId);
   const data = useGraphStore((state) =>
-    state.previewNodeId ? state.nodeData.get(state.previewNodeId) : null
+    previewNodeId ? state.nodeData.get(previewNodeId) : null
   );
-  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
+  const setPreviewNode = useUIStore((state) => state.setPreviewNode);
   const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
   const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
   const isNodeBlockedFn = useGraphStore((state) => state.isNodeBlocked);
-  const defaultProvider = useGraphStore((state) => state.defaultProvider);
-  const availableProviders = useGraphStore((state) => state.availableProviders);
-  const availableModels = useGraphStore((state) => state.availableModels);
-  const setAvailableModels = useGraphStore((state) => state.setAvailableModels);
+  const defaultProvider = useProviderStore((state) => state.defaultProvider);
+  const availableProviders = useProviderStore((state) => state.availableProviders);
+  const availableModels = useProviderStore((state) => state.availableModels);
+  const setAvailableModels = useProviderStore((state) => state.setAvailableModels);
   const getEffectiveModel = useGraphStore((state) => state.getEffectiveModel);
-  const triggerSidePanelEdit = useGraphStore((state) => state.triggerSidePanelEdit);
-  const clearSidePanelEditTrigger = useGraphStore((state) => state.clearSidePanelEditTrigger);
+  const triggerSidePanelEdit = useUIStore((state) => state.triggerSidePanelEdit);
+  const clearSidePanelEditTrigger = useUIStore((state) => state.clearSidePanelEditTrigger);
   const addNodeImage = useGraphStore((state) => state.addNodeImage);
   const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
 

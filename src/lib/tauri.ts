@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { useGraphStore } from '../store/useGraphStore';
+import { useUIStore } from '../store/useUIStore';
 import type { AgentProvider, ImageAttachment, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus } from '../types';
 
 // Message format with optional images for IPC
@@ -50,7 +50,7 @@ export async function initializeListeners(): Promise<void> {
         description: payload.description,
         options: payload.options,
       };
-      useGraphStore.getState().setPendingPermission(permission);
+      useUIStore.getState().setPendingPermission(permission);
     });
   }
 }
