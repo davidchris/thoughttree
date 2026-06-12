@@ -113,7 +113,10 @@ pub(crate) async fn get_default_provider(app: AppHandle) -> Result<AgentProvider
 }
 
 #[tauri::command]
-pub(crate) async fn set_default_provider(app: AppHandle, provider: AgentProvider) -> Result<(), String> {
+pub(crate) async fn set_default_provider(
+    app: AppHandle,
+    provider: AgentProvider,
+) -> Result<(), String> {
     config::set_default_provider(&app, &provider)?;
     tracing::info!("Default provider set to: {:?}", provider);
     Ok(())

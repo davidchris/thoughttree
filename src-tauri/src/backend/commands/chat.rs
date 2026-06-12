@@ -1,7 +1,7 @@
 use tauri::{AppHandle, State};
 
 use crate::backend::acp::process::find_sidecar_path;
-use crate::backend::acp::sessions::run_prompt_session;
+use crate::backend::acp::sessions::{run_prompt_session, PromptSessionParams};
 use crate::backend::config;
 use crate::backend::runtime::run_localset_blocking;
 use crate::backend::state::AppState;
@@ -31,16 +31,16 @@ pub(crate) async fn send_prompt(
     );
 
     run_localset_blocking(move || async move {
-        run_prompt_session(
+        run_prompt_session(PromptSessionParams {
             app_handle,
             node_id,
             messages,
             pending_permissions,
             notes_directory,
-            active_provider,
+            provider: active_provider,
             model_id,
             provider_paths,
-        )
+        })
         .await
         .map_err(|e| e.to_string())
     })

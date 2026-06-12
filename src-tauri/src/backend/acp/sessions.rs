@@ -16,17 +16,30 @@ use crate::backend::acp::clients::{ModelDiscoveryClient, StreamingClient, Summar
 use crate::backend::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
 use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths};
 
+/// Parameters for [`run_prompt_session`]
+pub(crate) struct PromptSessionParams {
+    pub app_handle: tauri::AppHandle,
+    pub node_id: String,
+    pub messages: Vec<Message>,
+    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    pub notes_directory: PathBuf,
+    pub provider: AgentProvider,
+    pub model_id: Option<String>,
+    pub provider_paths: ProviderPaths,
+}
+
 /// Run a prompt session with ACP
-pub(crate) async fn run_prompt_session(
-    app_handle: tauri::AppHandle,
-    node_id: String,
-    messages: Vec<Message>,
-    pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
-    notes_directory: PathBuf,
-    provider: AgentProvider,
-    model_id: Option<String>,
-    provider_paths: ProviderPaths,
-) -> anyhow::Result<String> {
+pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::Result<String> {
+    let PromptSessionParams {
+        app_handle,
+        node_id,
+        messages,
+        pending_permissions,
+        notes_directory,
+        provider,
+        model_id,
+        provider_paths,
+    } = params;
     // Spawn the ACP subprocess in the notes directory so skills are loaded
     // For Gemini, model_id is passed at spawn time via --model flag
     let mut child = spawn_agent_subprocess(
