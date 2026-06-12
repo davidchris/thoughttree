@@ -1,29 +1,15 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useProviderStore } from '../../store/useProviderStore';
 import { useUIStore } from '../../store/useUIStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
-import { getAvailableModels } from '../../lib/tauri';
-import { ProviderSelector } from '../ProviderSelector';
-import { ModelSelector } from '../ModelSelector';
-import { FileAutocomplete, FileAutocompleteRef } from '../FileAutocomplete';
-import { getCaretCoordinates } from '../../lib/caretCoordinates';
-import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData, type UserNodeData, type ImageAttachment } from '../../types';
-import { resizeIfNeeded, fileToBase64 } from '../../lib/imageUtils';
+import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData, type UserNodeData } from '../../types';
 import { useNodeGeneration } from '../../hooks/useNodeGeneration';
 import { logger } from '../../lib/logger';
+import { usePanelResize } from './usePanelResize';
+import { EditArea } from './EditArea';
+import { GenerationControls } from './GenerationControls';
 import './styles.css';
-
-interface AutocompleteState {
-  isOpen: boolean;
-  query: string;
-  position: { top: number; left: number };
-  triggerIndex: number;
-}
-
-const DEFAULT_WIDTH = 850; // ~100 character columns at 14px monospace
-const MIN_WIDTH = 200;
-const MAX_WIDTH_PERCENT = 0.8; // 80% of viewport
 
 export function SidePanel() {
   const previewNodeId = useUIStore((state) => state.previewNodeId);
@@ -31,60 +17,24 @@ export function SidePanel() {
     previewNodeId ? state.nodeData.get(previewNodeId) : null
   );
   const setPreviewNode = useUIStore((state) => state.setPreviewNode);
-  const updateNodeContent = useGraphStore((state) => state.updateNodeContent);
   const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
   const isNodeBlockedFn = useGraphStore((state) => state.isNodeBlocked);
   const defaultProvider = useProviderStore((state) => state.defaultProvider);
-  const availableProviders = useProviderStore((state) => state.availableProviders);
-  const availableModels = useProviderStore((state) => state.availableModels);
-  const setAvailableModels = useProviderStore((state) => state.setAvailableModels);
   const getEffectiveModel = useGraphStore((state) => state.getEffectiveModel);
   const triggerSidePanelEdit = useUIStore((state) => state.triggerSidePanelEdit);
   const clearSidePanelEditTrigger = useUIStore((state) => state.clearSidePanelEditTrigger);
-  const addNodeImage = useGraphStore((state) => state.addNodeImage);
-  const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
 
-  const [width, setWidth] = useState(DEFAULT_WIDTH);
-  const [isResizing, setIsResizing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState('');
   const [copySuccess, setCopySuccess] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<AgentProvider>(defaultProvider);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
-  const [loadingModels, setLoadingModels] = useState(false);
-  const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const autocompleteRef = useRef<FileAutocompleteRef>(null);
+  const { width, handleResizeStart } = usePanelResize();
   const generateNode = useNodeGeneration();
 
   const isUserNode = data?.role === 'user';
   const images = isUserNode ? (data as UserNodeData).images || [] : [];
   const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
   const isBlocked = previewNodeId ? isNodeBlockedFn(previewNodeId) : false;
-
-  // Fetch models when provider changes (lazy load)
-  const fetchModels = useCallback(async (provider: AgentProvider) => {
-    // Skip if already loaded
-    if (availableModels[provider]?.length > 0) return;
-
-    setLoadingModels(true);
-    try {
-      const models = await getAvailableModels(provider);
-      setAvailableModels(provider, models);
-    } catch (error) {
-      logger.error('Failed to fetch models:', error);
-    } finally {
-      setLoadingModels(false);
-    }
-  }, [availableModels, setAvailableModels]);
-
-  // Fetch models when user node is selected or provider changes
-  useEffect(() => {
-    if (isUserNode && selectedProvider) {
-      fetchModels(selectedProvider);
-    }
-  }, [isUserNode, selectedProvider, fetchModels]);
 
   // Initialize selectedModel from effective model when user node is selected
   useEffect(() => {
@@ -97,38 +47,24 @@ export function SidePanel() {
   // Reset edit state when node changes
   useEffect(() => {
     setIsEditing(false);
-    setAutocomplete(null);
-    if (data) {
-      setEditContent(data.content);
-    }
   }, [previewNodeId]);
-
-  // Focus textarea when entering edit mode
-  useEffect(() => {
-    if (isEditing && textareaRef.current) {
-      textareaRef.current.focus();
-      textareaRef.current.selectionStart = textareaRef.current.value.length;
-    }
-  }, [isEditing]);
 
   // React to keyboard shortcut trigger for edit mode
   useEffect(() => {
     if (triggerSidePanelEdit && isUserNode && data) {
-      setEditContent(data.content);
       setIsEditing(true);
       clearSidePanelEditTrigger();
     }
   }, [triggerSidePanelEdit, isUserNode, data, clearSidePanelEditTrigger]);
 
-  // Handle Escape key
+  // Escape exits edit mode, then closes the panel. EditArea stops propagation
+  // when Escape closes its autocomplete instead.
   useEffect(() => {
     if (!previewNodeId) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (autocomplete?.isOpen) {
-          setAutocomplete(null);
-        } else if (isEditing) {
+        if (isEditing) {
           setIsEditing(false);
         } else {
           setPreviewNode(null);
@@ -138,187 +74,7 @@ export function SidePanel() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [previewNodeId, setPreviewNode, isEditing, autocomplete]);
-
-  const handleEdit = () => {
-    if (data) {
-      setEditContent(data.content);
-      setIsEditing(true);
-    }
-  };
-
-  const handleDone = () => {
-    setIsEditing(false);
-    setAutocomplete(null);
-  };
-
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newValue = e.target.value;
-    const cursorPos = e.target.selectionStart;
-
-    setEditContent(newValue);
-    if (previewNodeId) {
-      updateNodeContent(previewNodeId, newValue);
-    }
-
-    // Check for @ trigger
-    const textBeforeCursor = newValue.slice(0, cursorPos);
-    const atIndex = textBeforeCursor.lastIndexOf('@');
-
-    if (atIndex !== -1) {
-      // Check if @ is at start or preceded by whitespace
-      const charBefore = atIndex > 0 ? textBeforeCursor[atIndex - 1] : ' ';
-      if (/\s/.test(charBefore) || atIndex === 0) {
-        const query = textBeforeCursor.slice(atIndex + 1);
-
-        // Only show if query doesn't contain whitespace (still typing the mention)
-        if (!/\s/.test(query)) {
-          const textarea = e.target;
-          const caret = getCaretCoordinates(textarea, textarea.selectionStart);
-          const position = { top: caret.top + caret.height + 4, left: caret.left };
-          setAutocomplete({
-            isOpen: true,
-            query,
-            position,
-            triggerIndex: atIndex,
-          });
-          return;
-        }
-      }
-    }
-
-    // Close autocomplete if no valid trigger
-    if (autocomplete?.isOpen) {
-      setAutocomplete(null);
-    }
-  };
-
-  const handleTextareaBlur = (e: React.FocusEvent) => {
-    // Check if focus is moving to autocomplete
-    const relatedTarget = e.relatedTarget as HTMLElement;
-    if (relatedTarget?.closest('.file-autocomplete')) {
-      return; // Don't close autocomplete
-    }
-    setAutocomplete(null);
-  };
-
-  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Let autocomplete handle keys first if open
-    if (autocomplete?.isOpen && autocompleteRef.current) {
-      const handled = autocompleteRef.current.handleKeyDown(e.nativeEvent);
-      if (handled) {
-        e.preventDefault();
-        return;
-      }
-    }
-
-    // Cmd/Ctrl + Enter to generate
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-      e.preventDefault();
-      handleGenerate();
-    }
-  };
-
-  // Process and add an image file
-  const processImageFile = useCallback(async (file: File) => {
-    if (!file.type.startsWith('image/') || !previewNodeId) return;
-
-    try {
-      const resized = await resizeIfNeeded(file);
-      const base64 = await fileToBase64(resized);
-      const image: ImageAttachment = {
-        data: base64,
-        mimeType: file.type,
-        name: file.name,
-      };
-      addNodeImage(previewNodeId, image);
-    } catch (error) {
-      logger.error('Failed to process image:', error);
-    }
-  }, [previewNodeId, addNodeImage]);
-
-  // Handle paste events (for Cmd+V with images)
-  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) {
-          await processImageFile(file);
-        }
-      }
-    }
-  }, [processImageFile]);
-
-  // Handle drag over
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDragOver(true);
-    }
-  }, []);
-
-  // Handle drag leave - only if actually leaving the container
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Check if we're leaving to a child element (don't reset in that case)
-    const relatedTarget = e.relatedTarget as Node | null;
-    if (relatedTarget && e.currentTarget.contains(relatedTarget)) {
-      return;
-    }
-    setIsDragOver(false);
-  }, []);
-
-  // Handle drop events
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-
-    const files = e.dataTransfer.files;
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        await processImageFile(file);
-      }
-    }
-  }, [processImageFile]);
-
-  // Handle image removal
-  const handleRemoveImage = useCallback((index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (previewNodeId) {
-      removeNodeImage(previewNodeId, index);
-    }
-  }, [previewNodeId, removeNodeImage]);
-
-  const handleFileSelect = (filePath: string) => {
-    if (!autocomplete || !textareaRef.current || !previewNodeId) return;
-
-    const textarea = textareaRef.current;
-    const beforeAt = editContent.slice(0, autocomplete.triggerIndex);
-    const afterCursor = editContent.slice(textarea.selectionStart);
-
-    // Format: @/relative/path/to/file.md
-    const mention = `@/${filePath}`;
-    const newContent = beforeAt + mention + afterCursor;
-
-    setEditContent(newContent);
-    updateNodeContent(previewNodeId, newContent);
-    setAutocomplete(null);
-
-    // Position cursor after the mention
-    const newCursorPos = autocomplete.triggerIndex + mention.length;
-    setTimeout(() => {
-      textarea.selectionStart = newCursorPos;
-      textarea.selectionEnd = newCursorPos;
-      textarea.focus();
-    }, 0);
-  };
+  }, [previewNodeId, setPreviewNode, isEditing]);
 
   const handleCopy = async () => {
     if (!data?.content) return;
@@ -363,35 +119,6 @@ export function SidePanel() {
     });
   };
 
-  // Handle resize drag
-  useEffect(() => {
-    if (!isResizing) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const maxWidth = window.innerWidth * MAX_WIDTH_PERCENT;
-      const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, window.innerWidth - e.clientX));
-      setWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-      document.body.classList.remove('resizing');
-    };
-
-    document.body.classList.add('resizing');
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizing]);
-
-  const handleResizeStart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  };
-
   if (!previewNodeId || !data) {
     return null;
   }
@@ -430,50 +157,27 @@ export function SidePanel() {
           {isUserNode && !isEditing && (
             <button
               className="side-panel-edit-button"
-              onClick={handleEdit}
+              onClick={() => setIsEditing(true)}
               title="Edit content"
             >
               Edit
             </button>
           )}
           {isUserNode && (
-            <>
-              {availableProviders.length > 0 && (
-                <ProviderSelector
-                  value={selectedProvider}
-                  onChange={(provider) => {
-                    setSelectedProvider(provider);
-                    // Reset model selection when provider changes
-                    setSelectedModel(undefined);
-                  }}
-                  availableProviders={availableProviders}
-                  disabled={isBlocked}
-                  compact
-                />
-              )}
-              <ModelSelector
-                provider={selectedProvider}
-                value={selectedModel}
-                onChange={setSelectedModel}
-                availableModels={availableModels[selectedProvider] ?? []}
-                disabled={isBlocked}
-                loading={loadingModels}
-                compact
-              />
-              <button
-                className="side-panel-generate-button"
-                onClick={handleGenerate}
-                disabled={isBlocked || !data?.content.trim()}
-                title="Generate response (Cmd+Enter)"
-              >
-                {isBlocked ? 'Generating...' : 'Generate'}
-              </button>
-            </>
+            <GenerationControls
+              provider={selectedProvider}
+              model={selectedModel}
+              onProviderChange={setSelectedProvider}
+              onModelChange={setSelectedModel}
+              disabled={isBlocked}
+              generateDisabled={isBlocked || !data?.content.trim()}
+              onGenerate={handleGenerate}
+            />
           )}
           {isEditing && (
             <button
               className="side-panel-done-button"
-              onClick={handleDone}
+              onClick={() => setIsEditing(false)}
             >
               Done
             </button>
@@ -489,54 +193,12 @@ export function SidePanel() {
       </div>
       <div className="side-panel-content">
         {isEditing ? (
-          <div
-            className={`side-panel-edit-area ${isDragOver ? 'drag-over' : ''}`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <textarea
-              ref={textareaRef}
-              className="side-panel-textarea"
-              value={editContent}
-              onChange={handleContentChange}
-              onBlur={handleTextareaBlur}
-              onKeyDown={handleTextareaKeyDown}
-              onPaste={handlePaste}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              placeholder="Enter your message... (@ to mention files, paste or drop images)"
-            />
-            {images.length > 0 && (
-              <div className="side-panel-image-thumbnails">
-                {images.map((img, index) => (
-                  <div key={index} className="side-panel-image-thumbnail">
-                    <img
-                      src={`data:${img.mimeType};base64,${img.data}`}
-                      alt={img.name || `Image ${index + 1}`}
-                    />
-                    <button
-                      className="side-panel-image-remove"
-                      onClick={(e) => handleRemoveImage(index, e)}
-                      title="Remove image"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            {autocomplete?.isOpen && (
-              <FileAutocomplete
-                ref={autocompleteRef}
-                isOpen={autocomplete.isOpen}
-                query={autocomplete.query}
-                position={autocomplete.position}
-                onSelect={handleFileSelect}
-                onClose={() => setAutocomplete(null)}
-              />
-            )}
-          </div>
+          <EditArea
+            nodeId={previewNodeId}
+            initialContent={data.content}
+            images={images}
+            onGenerate={handleGenerate}
+          />
         ) : data?.content ? (
           isStreaming ? (
             <pre className="side-panel-plain-text">{data.content}</pre>
