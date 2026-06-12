@@ -37,6 +37,21 @@ import {
 
 const COLLAPSED_NODE_HEIGHT = 120;
 
+// Streaming chunks are buffered and applied to the graph at most once per
+// interval, so a fast stream doesn't trigger a full graph projection per chunk.
+export const STREAM_FLUSH_INTERVAL_MS = 100;
+
+const pendingStreamChunks = new Map<string, string>();
+let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleStreamFlush() {
+  if (streamFlushTimer !== null) return;
+  streamFlushTimer = setTimeout(() => {
+    streamFlushTimer = null;
+    useGraphStore.getState().flushStreamingChunks();
+  }, STREAM_FLUSH_INTERVAL_MS);
+}
+
 interface ProjectFileV3 {
   version: 3;
   graph: GraphJSON;
@@ -96,6 +111,7 @@ interface GraphState {
   createUserNodeDownstream: (parentId: string) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, chunk: string) => void;
+  flushStreamingChunks: () => void;
   startStreaming: (nodeId: string) => void;
   stopStreaming: (nodeId: string) => void;
   isNodeBlocked: (nodeId: string) => boolean;
@@ -409,8 +425,19 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   },
 
   appendToNode: (nodeId, chunk) => {
+    pendingStreamChunks.set(nodeId, (pendingStreamChunks.get(nodeId) ?? '') + chunk);
+    scheduleStreamFlush();
+  },
+
+  flushStreamingChunks: () => {
+    if (pendingStreamChunks.size === 0) return;
     const state = get();
-    const graph = GraphMutations.appendContent(state.graph, nodeId, chunk, Date.now());
+    const now = Date.now();
+    let graph = state.graph;
+    for (const [nodeId, text] of pendingStreamChunks) {
+      graph = GraphMutations.appendContent(graph, nodeId, text, now);
+    }
+    pendingStreamChunks.clear();
     if (graph === state.graph) return;
     set({
       graph,
@@ -430,6 +457,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
 
   stopStreaming: (nodeId) => {
     logger.debug('[Store] stopStreaming called with:', nodeId);
+    get().flushStreamingChunks();
     set((state) => {
       const next = new Set(state.streamingNodeIds);
       next.delete(nodeId);
@@ -455,6 +483,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     set((state) => ({ previewNodeId: state.previewNodeId === nodeId ? null : nodeId })),
 
   deleteNode: (nodeId) => {
+    pendingStreamChunks.delete(nodeId);
     const state = get();
     const graph = GraphMutations.removeNode(state.graph, nodeId);
     if (graph === state.graph) return;
@@ -513,7 +542,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     });
   },
 
-  buildConversationContext: (nodeId) => GraphModel.conversationPath(get().graph, nodeId),
+  buildConversationContext: (nodeId) => {
+    get().flushStreamingChunks();
+    return GraphModel.conversationPath(get().graph, nodeId);
+  },
   getConversationPathNodeIds: (nodeId) => GraphModel.conversationPathIds(get().graph, nodeId),
 
   setSummary: (nodeId, summary) => {
@@ -568,6 +600,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   setProjectPath: (path) => set({ projectPath: path }),
 
   saveProject: async () => {
+    get().flushStreamingChunks();
     const { projectPath, graph, projectModelPreferences } = get();
     if (!projectPath) {
       logger.warn('No project path set, cannot save');
