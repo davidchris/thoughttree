@@ -1,20 +1,134 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_client_protocol::{
-    Agent, ClientSideConnection, ContentBlock, ImageContent, Implementation, InitializeRequest,
-    NewSessionRequest, PromptRequest, ProtocolVersion, SetSessionModelRequest, TextContent,
+    Agent, Client, ClientSideConnection, ContentBlock, ImageContent, Implementation,
+    InitializeRequest, InitializeResponse, NewSessionRequest, PromptRequest, ProtocolVersion,
+    SetSessionModelRequest, TextContent,
 };
 use chrono::Local;
 use futures::lock::Mutex;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info, warn};
 
 use crate::backend::acp::clients::{ModelDiscoveryClient, StreamingClient, SummaryClient};
 use crate::backend::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
 use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths};
+
+/// How long to wait for the agent subprocess to answer `initialize` before
+/// giving up. A broken sidecar otherwise hangs the request forever.
+const INIT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long to wait for the subprocess to exit on its own after stdin closes,
+/// before killing it.
+const EXIT_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// An ACP agent subprocess together with its stderr-logging and connection
+/// I/O tasks, so teardown can wait for all of them instead of leaking.
+struct AgentProcess {
+    child: tokio::process::Child,
+    stderr_task: Option<JoinHandle<()>>,
+    io_task: JoinHandle<()>,
+}
+
+impl AgentProcess {
+    /// Gracefully shut down: the caller must drop the connection first (which
+    /// closes the subprocess's stdin), then this waits for exit and drains the
+    /// I/O and stderr tasks. Kills the process if it doesn't exit in time.
+    /// On early-error paths where this isn't reached, `kill_on_drop(true)`
+    /// still terminates the subprocess.
+    async fn shutdown(mut self, tag: &str) {
+        match tokio::time::timeout(EXIT_TIMEOUT, self.child.wait()).await {
+            Ok(Ok(status)) => info!("[{}] subprocess exited: {}", tag, status),
+            Ok(Err(e)) => warn!("[{}] failed waiting on subprocess: {}", tag, e),
+            Err(_) => {
+                warn!(
+                    "[{}] subprocess did not exit after stdin close; killing",
+                    tag
+                );
+                if let Err(e) = self.child.kill().await {
+                    warn!("[{}] failed to kill subprocess: {}", tag, e);
+                }
+            }
+        }
+        let _ = self.io_task.await;
+        if let Some(task) = self.stderr_task {
+            let _ = task.await;
+        }
+    }
+}
+
+/// Wire up an ACP connection over the child's stdio and start the stderr
+/// logger and connection I/O tasks.
+fn connect_agent(
+    mut child: tokio::process::Child,
+    client: Arc<impl Client + 'static>,
+    tag: &'static str,
+) -> anyhow::Result<(ClientSideConnection, AgentProcess)> {
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout handle"))?;
+
+    let stderr_task = child.stderr.take().map(|stderr| {
+        tokio::task::spawn_local(async move {
+            use tokio::io::AsyncBufReadExt;
+            let reader = tokio::io::BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                warn!("[{} stderr] {}", tag, line);
+            }
+        })
+    });
+
+    let (connection, io_future) =
+        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
+            tokio::task::spawn_local(f);
+        });
+
+    let io_task = tokio::task::spawn_local(async move {
+        if let Err(e) = io_future.await {
+            error!("[{}] I/O error: {:?}", tag, e);
+        }
+    });
+
+    Ok((
+        connection,
+        AgentProcess {
+            child,
+            stderr_task,
+            io_task,
+        },
+    ))
+}
+
+/// Run `initialize` with a timeout so a wedged subprocess can't hang the UI.
+async fn initialize_with_timeout(
+    connection: &ClientSideConnection,
+    client_info: Implementation,
+) -> anyhow::Result<InitializeResponse> {
+    tokio::time::timeout(
+        INIT_TIMEOUT,
+        connection
+            .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(client_info)),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "Agent did not respond to initialize within {}s",
+            INIT_TIMEOUT.as_secs()
+        )
+    })?
+    .map_err(|e| anyhow::anyhow!("Failed to initialize: {:?}", e))
+}
 
 /// Parameters for [`run_prompt_session`]
 pub(crate) struct PromptSessionParams {
@@ -42,35 +156,13 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
     } = params;
     // Spawn the ACP subprocess in the notes directory so skills are loaded
     // For Gemini, model_id is passed at spawn time via --model flag
-    let mut child = spawn_agent_subprocess(
+    let child = spawn_agent_subprocess(
         &provider,
         &notes_directory,
         &provider_paths,
         model_id.as_deref(),
     )
     .await?;
-
-    // Get stdin/stdout handles
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout handle"))?;
-
-    // Log stderr
-    if let Some(stderr) = child.stderr.take() {
-        tokio::task::spawn_local(async move {
-            use tokio::io::AsyncBufReadExt;
-            let reader = tokio::io::BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                warn!("[claude-code-acp stderr] {}", line);
-            }
-        });
-    }
 
     // Create client with notes directory for permission filtering
     let client = Arc::new(StreamingClient::new(
@@ -80,28 +172,16 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
         notes_directory.clone(),
     ));
 
-    // Create connection
     info!("Creating ACP connection...");
-    let (connection, io_future) =
-        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
-            tokio::task::spawn_local(f);
-        });
-
-    // Run I/O in background
-    tokio::task::spawn_local(async move {
-        if let Err(e) = io_future.await {
-            error!("I/O error: {:?}", e);
-        }
-    });
+    let (connection, process) = connect_agent(child, client, "claude-code-acp")?;
 
     // Initialize
     info!("Initializing connection...");
-    let init_response = connection
-        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-            Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
-        ))
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize: {:?}", e))?;
+    let init_response = initialize_with_timeout(
+        &connection,
+        Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
+    )
+    .await?;
 
     info!(
         "Connected to agent: {:?} (protocol: {})",
@@ -189,9 +269,10 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
 
     info!("Stop reason: {:?}", prompt_response.stop_reason);
 
-    // Clean shutdown - just drop the child, kill_on_drop(true) will terminate it
+    // Dropping the connection closes the subprocess's stdin; shutdown then
+    // waits for exit and drains the I/O and stderr tasks.
     drop(connection);
-    drop(child);
+    process.shutdown("claude-code-acp").await;
 
     Ok(format!("{:?}", prompt_response.stop_reason))
 }
@@ -254,44 +335,23 @@ pub(crate) async fn run_model_discovery_session(
     provider_paths: ProviderPaths,
 ) -> Result<Vec<ModelInfo>, String> {
     // Spawn the ACP subprocess (model_id is None for discovery - we're just fetching available models)
-    let mut child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
+    let child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
         .await
         .map_err(|e| format!("Failed to spawn agent: {}", e))?;
-
-    // Get stdin/stdout handles
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to get stdin handle".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to get stdout handle".to_string())?;
-
-    // Drop stderr - we don't need it for discovery
-    drop(child.stderr.take());
 
     // Create minimal client
     let client = Arc::new(ModelDiscoveryClient);
 
-    // Create connection
-    let (connection, io_future) =
-        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
-            tokio::task::spawn_local(f);
-        });
-
-    // Run I/O in background
-    tokio::task::spawn_local(async move {
-        let _ = io_future.await;
-    });
+    let (connection, process) =
+        connect_agent(child, client, "model-discovery").map_err(|e| e.to_string())?;
 
     // Initialize
-    let _init_response = connection
-        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-            Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
-        ))
-        .await
-        .map_err(|e| format!("Failed to initialize: {:?}", e))?;
+    let _init_response = initialize_with_timeout(
+        &connection,
+        Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Create session to get models
     let session_response = connection
@@ -338,7 +398,9 @@ pub(crate) async fn run_model_discovery_session(
         models.iter().map(|m| &m.model_id).collect::<Vec<_>>()
     );
 
-    // Child process will be dropped and killed here
+    drop(connection);
+    process.shutdown("model-discovery").await;
+
     Ok(models)
 }
 
@@ -349,56 +411,21 @@ pub(crate) async fn run_summary_session(
     custom_path: Option<String>,
 ) -> anyhow::Result<String> {
     // Spawn ACP subprocess
-    let mut child = spawn_claude_code_acp(&notes_directory, custom_path.as_deref()).await?;
-
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout handle"))?;
-
-    // Log stderr for debugging
-    if let Some(stderr) = child.stderr.take() {
-        tokio::task::spawn_local(async move {
-            use tokio::io::AsyncBufReadExt;
-            let reader = tokio::io::BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                warn!("[summary-acp stderr] {}", line);
-            }
-        });
-    }
-
-    // Small delay to ensure subprocess is ready
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let child = spawn_claude_code_acp(&notes_directory, custom_path.as_deref()).await?;
 
     let client = Arc::new(SummaryClient::new());
     let response_text = client.response_text.clone();
 
-    // Create connection
-    let (connection, io_future) =
-        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
-            tokio::task::spawn_local(f);
-        });
+    let (connection, process) = connect_agent(child, client, "summary-acp")?;
 
-    // Run I/O in background
-    tokio::task::spawn_local(async move {
-        if let Err(e) = io_future.await {
-            error!("[summary] I/O error: {:?}", e);
-        }
-    });
-
-    // Initialize
+    // Initialize. This doubles as the readiness handshake: stdin writes are
+    // buffered by the pipe, so no startup delay is needed.
     info!("Summary session: initializing connection...");
-    let init_response = connection
-        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-            Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
-        ))
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize summary session: {:?}", e))?;
+    let init_response = initialize_with_timeout(
+        &connection,
+        Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
+    )
+    .await?;
 
     info!(
         "Summary session connected to: {:?}",
@@ -463,7 +490,7 @@ pub(crate) async fn run_summary_session(
 
     // Clean up
     drop(connection);
-    drop(child);
+    process.shutdown("summary-acp").await;
 
     // Get result and clean it up
     let result = response_text.lock().await.trim().to_string();
