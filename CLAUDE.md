@@ -17,11 +17,6 @@ bun run build         # TypeScript check + Vite build
 # Testing
 bun test              # Run tests in watch mode
 bun test:run          # Run tests once
-
-# ACP client prototype (standalone test harness)
-cd src-tauri/acp
-cargo build
-RUST_LOG=info cargo run
 ```
 
 ## Architecture Summary
@@ -34,7 +29,7 @@ See README.md for detailed architecture diagrams and component breakdown.
 
 ## ACP Integration Notes
 
-The ACP client (prototyped in `src-tauri/acp/`) has critical implementation details:
+The ACP client (`src-tauri/src/backend/acp/`) has critical implementation details:
 
 - **tokio-util compat layer required:** SDK uses `futures-io` traits, not tokio's
 - **Non-Send futures:** Use `#[async_trait(?Send)]` and `tokio::task::LocalSet`
@@ -45,6 +40,10 @@ The ACP client (prototyped in `src-tauri/acp/`) has critical implementation deta
 
 App is released and functional. See CHANGELOG.md for version history and README.md for user documentation.
 
+## Code Search
+
+Structural search: `sg -lang rust -p 'pattern'` for syntax-aware matching across Rust/TypeScript. Faster than text grep for finding function defs, imports, type patterns.
+
 ## Development Guidelines
 
 - **Test-Driven Development:** Use TDD where beneficial—write tests before implementation for complex logic, edge cases, and critical paths.
@@ -53,7 +52,7 @@ App is released and functional. See CHANGELOG.md for version history and README.
 ## Key Files
 
 - `src-tauri/src/lib.rs` - Tauri app entry point and commands
-- `src-tauri/acp/src/main.rs` - ACP client reference implementation
+- `src-tauri/src/backend/acp/` - ACP client (sessions, clients, process spawning)
 - `src/App.tsx` - React app root
 - `src/components/SidePanel/SidePanel.test.tsx` - Example test file
 - `src-tauri/tauri.conf.json` - Tauri configuration
