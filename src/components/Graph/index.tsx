@@ -37,15 +37,7 @@ export function Graph() {
   const selectNode = useGraphStore((state) => state.selectNode);
   const createUserNode = useGraphStore((state) => state.createUserNode);
   const setEditing = useGraphStore((state) => state.setEditing);
-  const selectedNodeId = useGraphStore((state) => state.selectedNodeId);
-  const nodeData = useGraphStore((state) => state.nodeData);
-  const createUserNodeDownstream = useGraphStore((state) => state.createUserNodeDownstream);
-  const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
-  const editingNodeId = useGraphStore((state) => state.editingNodeId);
-  const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
   const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
-  const previewNodeId = useGraphStore((state) => state.previewNodeId);
-  const triggerSidePanelEditMode = useGraphStore((state) => state.triggerSidePanelEditMode);
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
 
@@ -246,9 +238,23 @@ export function Graph() {
     []
   );
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts. The handler reads store state via getState() so it
+  // stays stable and is attached exactly once, instead of detaching and
+  // re-attaching on every node mutation (e.g. each streaming flush).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const {
+        selectedNodeId,
+        editingNodeId,
+        previewNodeId,
+        nodeData,
+        togglePreviewNode,
+        isNodeBlocked,
+        triggerSidePanelEditMode,
+        setPreviewNode,
+        createUserNodeDownstream,
+      } = useGraphStore.getState();
+
       // Spacebar to toggle preview panel (but not when typing in an input)
       if (e.key === ' ' && selectedNodeId && !editingNodeId) {
         const target = e.target as HTMLElement;
@@ -303,7 +309,7 @@ export function Graph() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeId, nodeData, createUserNodeDownstream, isNodeBlocked, editingNodeId, togglePreviewNode, previewNodeId, triggerSidePanelEditMode, setPreviewNode]);
+  }, []);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {
@@ -364,6 +370,7 @@ export function Graph() {
   // so the agent becomes the parent (source) and user node becomes child (target)
   const handleConnect = useCallback(
     (connection: Connection) => {
+      const { nodeData } = useGraphStore.getState();
       const targetNodeData = connection.target ? nodeData.get(connection.target) : null;
       const sourceNodeData = connection.source ? nodeData.get(connection.source) : null;
 
@@ -380,7 +387,7 @@ export function Graph() {
         onConnect(connection);
       }
     },
-    [onConnect, nodeData]
+    [onConnect]
   );
 
   return (
