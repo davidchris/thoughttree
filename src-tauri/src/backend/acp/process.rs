@@ -33,7 +33,7 @@ pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
         for _ in 0..10 {
             let dev_sidecar = current
                 .join("src-tauri/binaries")
-                .join(format!("claude-code-acp-{}", target_triple));
+                .join(format!("claude-code-acp-{target_triple}"));
             if dev_sidecar.exists() {
                 return Some(dev_sidecar);
             }
@@ -293,7 +293,7 @@ pub(crate) async fn spawn_claude_code_acp(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {e}"))?;
 
     Ok(child)
 }
@@ -328,7 +328,7 @@ pub(crate) async fn spawn_gemini_cli_acp(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn Gemini CLI: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to spawn Gemini CLI: {e}"))?;
 
     Ok(child)
 }

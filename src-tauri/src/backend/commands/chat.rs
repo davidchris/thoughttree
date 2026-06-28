@@ -62,8 +62,7 @@ pub(crate) async fn respond_to_permission(
         Ok(())
     } else {
         Err(format!(
-            "No pending permission request with ID: {}",
-            request_id
+            "No pending permission request with ID: {request_id}"
         ))
     }
 }

@@ -69,11 +69,11 @@ async fn validate_executable(path: &Path, provider: &AgentProvider) -> Result<St
         .arg("--version")
         .output()
         .await
-        .map_err(|e| format!("Failed to execute: {}", e))?;
+        .map_err(|e| format!("Failed to execute: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{}{}", stdout, stderr);
+    let combined = format!("{stdout}{stderr}");
 
     let expected_pattern = match provider {
         AgentProvider::ClaudeCode => "claude",

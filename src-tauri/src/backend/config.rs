@@ -15,21 +15,21 @@ fn save_serialized_value<T: Serialize + ?Sized>(
 ) -> Result<(), String> {
     let store = app
         .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {}", e))?;
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     let json_value =
-        serde_json::to_value(value).map_err(|e| format!("Failed to serialize {}: {}", key, e))?;
+        serde_json::to_value(value).map_err(|e| format!("Failed to serialize {key}: {e}"))?;
 
     store.set(key, json_value);
     store
         .save()
-        .map_err(|e| format!("Failed to save config: {}", e))
+        .map_err(|e| format!("Failed to save config: {e}"))
 }
 
 pub(crate) fn get_notes_directory_optional(app: &AppHandle) -> Result<Option<String>, String> {
     let store = app
         .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {}", e))?;
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
         .get("notes_directory")
@@ -49,7 +49,7 @@ pub(crate) fn set_notes_directory(app: &AppHandle, path: &str) -> Result<(), Str
 pub(crate) fn get_default_provider(app: &AppHandle) -> Result<AgentProvider, String> {
     let store = app
         .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {}", e))?;
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
         .get("default_provider")
@@ -67,7 +67,7 @@ pub(crate) fn set_default_provider(
 pub(crate) fn get_model_preferences(app: &AppHandle) -> Result<ModelPreferences, String> {
     let store = app
         .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {}", e))?;
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
         .get("model_preferences")
@@ -85,7 +85,7 @@ pub(crate) fn set_model_preferences(
 pub(crate) fn get_provider_paths(app: &AppHandle) -> Result<ProviderPaths, String> {
     let store = app
         .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {}", e))?;
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
         .get("provider_paths")
@@ -100,7 +100,7 @@ pub(crate) fn set_provider_paths(app: &AppHandle, paths: &ProviderPaths) -> Resu
 pub(crate) fn get_recent_projects(app: &AppHandle) -> Result<Vec<String>, String> {
     let store = app
         .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {}", e))?;
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
         .get("recent_projects")

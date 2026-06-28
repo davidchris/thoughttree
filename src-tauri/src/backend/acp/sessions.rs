@@ -127,7 +127,7 @@ async fn initialize_with_timeout(
             INIT_TIMEOUT.as_secs()
         )
     })?
-    .map_err(|e| anyhow::anyhow!("Failed to initialize: {:?}", e))
+    .map_err(|e| anyhow::anyhow!("Failed to initialize: {e:?}"))
 }
 
 /// Parameters for [`run_prompt_session`]
@@ -193,7 +193,7 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
     let session_response = connection
         .new_session(NewSessionRequest::new(notes_directory))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create session: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create session: {e:?}"))?;
 
     info!("Session created: {}", session_response.session_id);
 
@@ -206,12 +206,12 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
                 agent_client_protocol::ModelId::new(model.clone()),
             ))
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to set model: {:?}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to set model: {e:?}"))?;
     }
 
     // Get current date and format it
     let current_date = Local::now().format("%B %d, %Y").to_string();
-    let date_prefix = format!("Current date: {}\n\n", current_date);
+    let date_prefix = format!("Current date: {current_date}\n\n");
 
     // Build prompt from conversation messages
     let prompt_text = messages
@@ -221,7 +221,7 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
         .join("\n\n");
 
     // Prepend current date to the prompt
-    let prompt_text = format!("{}{}", date_prefix, prompt_text);
+    let prompt_text = format!("{date_prefix}{prompt_text}");
 
     // Build content blocks: images first, then text
     // Claude processes images before text for better understanding
@@ -265,7 +265,7 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
             content_blocks,
         ))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to send prompt: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to send prompt: {e:?}"))?;
 
     info!("Stop reason: {:?}", prompt_response.stop_reason);
 
@@ -337,7 +337,7 @@ pub(crate) async fn run_model_discovery_session(
     // Spawn the ACP subprocess (model_id is None for discovery - we're just fetching available models)
     let child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
         .await
-        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
+        .map_err(|e| format!("Failed to spawn agent: {e}"))?;
 
     // Create minimal client
     let client = Arc::new(ModelDiscoveryClient);
@@ -357,7 +357,7 @@ pub(crate) async fn run_model_discovery_session(
     let session_response = connection
         .new_session(NewSessionRequest::new(&notes_directory))
         .await
-        .map_err(|e| format!("Failed to create session: {:?}", e))?;
+        .map_err(|e| format!("Failed to create session: {e:?}"))?;
 
     // Extract models from response
     let models: Vec<ModelInfo> = session_response
@@ -436,7 +436,7 @@ pub(crate) async fn run_summary_session(
     let session_response = connection
         .new_session(NewSessionRequest::new(&notes_directory))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create session: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create session: {e:?}"))?;
 
     // Try to switch to Haiku if available
     if let Some(models) = &session_response.models {
@@ -472,8 +472,7 @@ pub(crate) async fn run_summary_session(
     // Build summarization prompt
     let prompt_text = format!(
         "Write a 3-5 word heading that describes what this text is about. \
-         Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{}",
-        truncated_content
+         Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{truncated_content}"
     );
 
     // Send prompt and wait for completion
