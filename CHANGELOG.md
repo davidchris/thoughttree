@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- Faster Streaming - Agent responses now batch rapid token updates, keeping the canvas more responsive during long generations
+- ACP Stability - Claude Code sessions now manage subprocess lifecycle more reliably and time out stalled initialization instead of hanging indefinitely
+- Safer Summary Generation - Background summaries now keep stricter read-only tool permissions
+- Dependency Updates - Updated Tauri and related dependencies with current security fixes
+- Build Reliability - CI now checks TypeScript, Rust formatting, Clippy, and backend tests before changes can land
+
 ## 0.3.2
 
 - Multi-Parent Context Fix - Synthesizer nodes (multiple parents) now include all parent threads in conversation context; previously extra parent edges were silently dropped
@@ -53,4 +61,3 @@
 - Auto-Resize Input - Text box grows while typing
 - Sharp Text Zoom - Fixed pixelation when zoomed in
 - Markdown in Nodes - Render markdown content in conversation nodes
-
