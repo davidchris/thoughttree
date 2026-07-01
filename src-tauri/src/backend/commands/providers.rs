@@ -4,9 +4,7 @@ use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 use tokio::process::Command;
 
-use crate::backend::acp::process::{
-    find_claude_code_executable, find_gemini_cli_executable, find_sidecar_path,
-};
+use crate::backend::acp::process::{find_provider_executable, find_sidecar_path};
 use crate::backend::acp::sessions::run_model_discovery_session;
 use crate::backend::config;
 use crate::backend::runtime::run_localset_blocking;
@@ -15,44 +13,32 @@ use crate::backend::types::{
 };
 
 fn check_provider_availability(provider: &AgentProvider, paths: &ProviderPaths) -> ProviderStatus {
-    match provider {
-        AgentProvider::ClaudeCode => {
-            let sidecar_available = find_sidecar_path().is_some();
-            let custom_path = paths.claude_code.as_deref();
-            let cli_available = find_claude_code_executable(custom_path).is_some();
+    // Claude Code additionally ships a bundled ACP sidecar (see ADR-0001);
+    // without it the CLI alone can't serve sessions
+    if matches!(provider, AgentProvider::ClaudeCode) && find_sidecar_path().is_none() {
+        return ProviderStatus {
+            provider: provider.clone(),
+            available: false,
+            error_message: Some(
+                "claude-code-acp sidecar not found (dev: run bun run build:sidecar)".to_string(),
+            ),
+        };
+    }
 
-            ProviderStatus {
-                provider: provider.clone(),
-                available: sidecar_available && cli_available,
-                error_message: if !sidecar_available {
-                    Some(
-                        "claude-code-acp sidecar not found (dev: run bun run build:sidecar)"
-                            .to_string(),
-                    )
-                } else if !cli_available {
-                    Some(
-                        "Claude Code CLI not found. Install via: brew install --cask claude-code"
-                            .to_string(),
-                    )
-                } else {
-                    None
-                },
-            }
-        }
-        AgentProvider::GeminiCli => {
-            let custom_path = paths.gemini_cli.as_deref();
-            let cli_available = find_gemini_cli_executable(custom_path).is_some();
+    let descriptor = provider.descriptor();
+    let custom_path = paths.get(provider).map(String::as_str);
+    let cli_available = find_provider_executable(provider, custom_path).is_some();
 
-            ProviderStatus {
-                provider: provider.clone(),
-                available: cli_available,
-                error_message: if !cli_available {
-                    Some("Gemini CLI not found. Install via: brew install gemini-cli".to_string())
-                } else {
-                    None
-                },
-            }
-        }
+    ProviderStatus {
+        provider: provider.clone(),
+        available: cli_available,
+        error_message: (!cli_available).then(|| {
+            format!(
+                "{} not found. {}",
+                descriptor.display_name,
+                descriptor.install_hint.lines().next().unwrap_or_default()
+            )
+        }),
     }
 }
 
@@ -75,10 +61,7 @@ async fn validate_executable(path: &Path, provider: &AgentProvider) -> Result<St
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}{stderr}");
 
-    let expected_pattern = match provider {
-        AgentProvider::ClaudeCode => "claude",
-        AgentProvider::GeminiCli => "gemini",
-    };
+    let expected_pattern = provider.descriptor().version_pattern;
 
     if combined.to_lowercase().contains(expected_pattern) {
         let version_line = stdout
@@ -101,10 +84,10 @@ async fn validate_executable(path: &Path, provider: &AgentProvider) -> Result<St
 pub(crate) async fn get_available_providers(app: AppHandle) -> Result<Vec<ProviderStatus>, String> {
     let paths = config::get_provider_paths(&app)?;
 
-    Ok(vec![
-        check_provider_availability(&AgentProvider::ClaudeCode, &paths),
-        check_provider_availability(&AgentProvider::GeminiCli, &paths),
-    ])
+    Ok(AgentProvider::ALL
+        .iter()
+        .map(|provider| check_provider_availability(provider, &paths))
+        .collect())
 }
 
 #[tauri::command]

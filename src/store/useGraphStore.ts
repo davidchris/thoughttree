@@ -527,7 +527,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   getEffectiveModel: (provider) => {
     const { projectModelPreferences } = get();
     const { globalModelPreferences } = useProviderStore.getState();
-    return projectModelPreferences?.[provider] ?? globalModelPreferences[provider];
+    return projectModelPreferences?.[provider] ?? globalModelPreferences[provider] ?? undefined;
   },
 
   setProjectPath: (path) => set({ projectPath: path }),

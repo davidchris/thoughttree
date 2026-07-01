@@ -373,23 +373,7 @@ pub(crate) async fn run_model_discovery_session(
         })
         .unwrap_or_default();
 
-    // Gemini CLI doesn't expose models via ACP, so provide fallback options
-    // These correspond to the --model flag values for `gemini` CLI
-    let models = if models.is_empty() && matches!(provider, AgentProvider::GeminiCli) {
-        info!("Gemini CLI returned no models via ACP, using fallback model list");
-        vec![
-            ModelInfo {
-                model_id: "gemini-3".to_string(),
-                display_name: "Gemini 3 (Auto)".to_string(),
-            },
-            ModelInfo {
-                model_id: "gemini-2.5".to_string(),
-                display_name: "Gemini 2.5 (Auto)".to_string(),
-            },
-        ]
-    } else {
-        models
-    };
+    let models = with_fallback_models(&provider, models);
 
     info!(
         "Discovered {} models for {:?}: {:?}",
@@ -402,6 +386,27 @@ pub(crate) async fn run_model_discovery_session(
     process.shutdown("model-discovery").await;
 
     Ok(models)
+}
+
+/// Some providers (e.g. Gemini CLI) don't expose models via ACP; offer the
+/// descriptor's fallback list, which mirrors the CLI's `--model` flag values.
+fn with_fallback_models(provider: &AgentProvider, models: Vec<ModelInfo>) -> Vec<ModelInfo> {
+    let fallback = provider.descriptor().fallback_models;
+    if !models.is_empty() || fallback.is_empty() {
+        return models;
+    }
+
+    info!(
+        "{} returned no models via ACP, using fallback model list",
+        provider.display_name()
+    );
+    fallback
+        .iter()
+        .map(|(model_id, display_name)| ModelInfo {
+            model_id: model_id.to_string(),
+            display_name: display_name.to_string(),
+        })
+        .collect()
 }
 
 /// Run a summarization session with Haiku model
@@ -502,5 +507,48 @@ pub(crate) async fn run_summary_session(
         Ok(format!("{}…", &result[..37]))
     } else {
         Ok(result.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fallback_models_come_from_descriptor_when_discovery_is_empty() {
+        let models = with_fallback_models(&AgentProvider::GeminiCli, vec![]);
+
+        let expected: Vec<(String, String)> = AgentProvider::GeminiCli
+            .descriptor()
+            .fallback_models
+            .iter()
+            .map(|(id, name)| (id.to_string(), name.to_string()))
+            .collect();
+        let actual: Vec<(String, String)> = models
+            .iter()
+            .map(|m| (m.model_id.clone(), m.display_name.clone()))
+            .collect();
+
+        assert!(!models.is_empty(), "Gemini must offer fallback models");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_discovered_models_are_kept_when_present() {
+        let discovered = vec![ModelInfo {
+            model_id: "gemini-9".to_string(),
+            display_name: "Gemini 9".to_string(),
+        }];
+
+        let models = with_fallback_models(&AgentProvider::GeminiCli, discovered.clone());
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].model_id, "gemini-9");
+    }
+
+    #[test]
+    fn test_provider_without_fallbacks_returns_empty_when_discovery_is_empty() {
+        let models = with_fallback_models(&AgentProvider::ClaudeCode, vec![]);
+        assert!(models.is_empty());
     }
 }

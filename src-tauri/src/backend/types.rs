@@ -9,13 +9,75 @@ pub(crate) enum AgentProvider {
     GeminiCli,
 }
 
+/// Static per-provider data. Adding a Provider means adding a variant,
+/// a descriptor entry, and a spawn arm — no other code changes.
+pub(crate) struct ProviderDescriptor {
+    /// Serde value of the variant AND key in per-provider config maps
+    pub id: &'static str,
+    pub display_name: &'static str,
+    /// Binary name the discovery paths point at
+    pub executable_name: &'static str,
+    /// Absolute install locations, in order of preference
+    pub known_paths: &'static [&'static str],
+    /// Install locations relative to the user's home directory
+    pub home_relative_paths: &'static [&'static str],
+    /// Env var that overrides discovery entirely
+    pub env_override: Option<&'static str>,
+    pub install_hint: &'static str,
+    /// Substring expected in `--version` output
+    pub version_pattern: &'static str,
+    /// (model_id, display_name) offered when ACP model discovery returns nothing
+    pub fallback_models: &'static [(&'static str, &'static str)],
+}
+
+const CLAUDE_CODE_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
+    id: "claude-code",
+    display_name: "Claude Code",
+    executable_name: "claude",
+    known_paths: &["/opt/homebrew/bin/claude", "/usr/local/bin/claude"],
+    home_relative_paths: &[
+        ".claude/local/claude",
+        ".local/bin/claude",
+        ".bun/bin/claude",
+        ".npm-global/bin/claude",
+    ],
+    env_override: Some("CLAUDE_CODE_EXECUTABLE"),
+    install_hint:
+        "Install via: brew install --cask claude-code\nOr: npm install -g @anthropic-ai/claude-code",
+    version_pattern: "claude",
+    fallback_models: &[],
+};
+
+const GEMINI_CLI_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
+    id: "gemini-cli",
+    display_name: "Gemini CLI",
+    executable_name: "gemini",
+    known_paths: &["/opt/homebrew/bin/gemini", "/usr/local/bin/gemini"],
+    home_relative_paths: &[".bun/bin/gemini", ".npm-global/bin/gemini"],
+    env_override: None,
+    install_hint: "Install via: brew install gemini-cli\nOr: bun install -g @google/gemini-cli",
+    version_pattern: "gemini",
+    fallback_models: &[
+        ("gemini-3", "Gemini 3 (Auto)"),
+        ("gemini-2.5", "Gemini 2.5 (Auto)"),
+    ],
+};
+
 impl AgentProvider {
+    /// Every supported provider — drives availability lists and config maps
+    pub(crate) const ALL: &'static [AgentProvider] =
+        &[AgentProvider::ClaudeCode, AgentProvider::GeminiCli];
+
+    pub(crate) fn descriptor(&self) -> &'static ProviderDescriptor {
+        match self {
+            AgentProvider::ClaudeCode => &CLAUDE_CODE_DESCRIPTOR,
+            AgentProvider::GeminiCli => &GEMINI_CLI_DESCRIPTOR,
+        }
+    }
+
     /// Human-readable display name for UI
     pub(crate) fn display_name(&self) -> &'static str {
-        match self {
-            AgentProvider::ClaudeCode => "Claude Code",
-            AgentProvider::GeminiCli => "Gemini CLI",
-        }
+        self.descriptor().display_name
     }
 }
 
@@ -34,43 +96,31 @@ pub(crate) struct ModelInfo {
     pub display_name: String,
 }
 
-/// User's preferred model per provider (stores model_id strings)
+/// Per-provider config map keyed by descriptor id. Serde-transparent so the
+/// on-disk shape stays a plain JSON object; `Option<T>` values keep legacy
+/// `null` entries, and String keys keep unknown provider keys from newer
+/// app versions.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub(crate) struct ModelPreferences {
-    #[serde(default, rename = "claude-code")]
-    pub claude_code: Option<String>,
-    #[serde(default, rename = "gemini-cli")]
-    pub gemini_cli: Option<String>,
-}
+#[serde(transparent)]
+pub(crate) struct PerProvider<T>(std::collections::BTreeMap<String, Option<T>>);
 
-impl ModelPreferences {
-    /// Set the model preference for a given provider
-    pub(crate) fn set(&mut self, provider: &AgentProvider, model_id: Option<String>) {
-        match provider {
-            AgentProvider::ClaudeCode => self.claude_code = model_id,
-            AgentProvider::GeminiCli => self.gemini_cli = model_id,
-        }
+impl<T> PerProvider<T> {
+    pub(crate) fn get(&self, provider: &AgentProvider) -> Option<&T> {
+        self.0
+            .get(provider.descriptor().id)
+            .and_then(|value| value.as_ref())
+    }
+
+    pub(crate) fn set(&mut self, provider: &AgentProvider, value: Option<T>) {
+        self.0.insert(provider.descriptor().id.to_string(), value);
     }
 }
+
+/// User's preferred model per provider (stores model_id strings)
+pub(crate) type ModelPreferences = PerProvider<String>;
 
 /// Custom executable paths for providers (user-configured overrides)
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub(crate) struct ProviderPaths {
-    #[serde(default, rename = "claude-code")]
-    pub claude_code: Option<String>,
-    #[serde(default, rename = "gemini-cli")]
-    pub gemini_cli: Option<String>,
-}
-
-impl ProviderPaths {
-    /// Set the custom path for a given provider
-    pub(crate) fn set(&mut self, provider: &AgentProvider, path: Option<String>) {
-        match provider {
-            AgentProvider::ClaudeCode => self.claude_code = path,
-            AgentProvider::GeminiCli => self.gemini_cli = path,
-        }
-    }
-}
+pub(crate) type ProviderPaths = PerProvider<String>;
 
 // Types for frontend communication
 #[derive(Clone, Serialize)]
@@ -149,5 +199,54 @@ mod tests {
     fn test_provider_display_names() {
         assert_eq!(AgentProvider::ClaudeCode.display_name(), "Claude Code");
         assert_eq!(AgentProvider::GeminiCli.display_name(), "Gemini CLI");
+    }
+
+    #[test]
+    fn test_per_provider_loads_legacy_config_with_null_entries() {
+        let json = r#"{"claude-code":null,"gemini-cli":"/usr/local/bin/gemini"}"#;
+        let paths: PerProvider<String> = serde_json::from_str(json).unwrap();
+
+        assert_eq!(paths.get(&AgentProvider::ClaudeCode), None);
+        assert_eq!(
+            paths.get(&AgentProvider::GeminiCli),
+            Some(&"/usr/local/bin/gemini".to_string())
+        );
+    }
+
+    #[test]
+    fn test_per_provider_round_trip_preserves_nulls_and_unknown_keys() {
+        let json =
+            r#"{"claude-code":null,"codex":"/opt/codex","gemini-cli":"/usr/local/bin/gemini"}"#;
+        let paths: PerProvider<String> = serde_json::from_str(json).unwrap();
+        let round_tripped = serde_json::to_string(&paths).unwrap();
+
+        assert_eq!(round_tripped, json);
+    }
+
+    #[test]
+    fn test_per_provider_set_and_get() {
+        let mut prefs: PerProvider<String> = PerProvider::default();
+        assert_eq!(prefs.get(&AgentProvider::GeminiCli), None);
+
+        prefs.set(&AgentProvider::GeminiCli, Some("gemini-3".to_string()));
+        assert_eq!(
+            prefs.get(&AgentProvider::GeminiCli),
+            Some(&"gemini-3".to_string())
+        );
+
+        prefs.set(&AgentProvider::GeminiCli, None);
+        assert_eq!(prefs.get(&AgentProvider::GeminiCli), None);
+    }
+
+    #[test]
+    fn test_descriptor_id_matches_serde_string_for_all_providers() {
+        for provider in AgentProvider::ALL {
+            let serde_string = serde_json::to_value(provider).unwrap();
+            assert_eq!(
+                serde_string.as_str().unwrap(),
+                provider.descriptor().id,
+                "descriptor id drifted from serde representation for {provider:?}"
+            );
+        }
     }
 }

@@ -10,15 +10,28 @@ export interface ProviderStatus {
   error_message: string | null;
 }
 
-export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = {
-  'claude-code': 'Claude Code',
-  'gemini-cli': 'Gemini CLI',
-};
+/// Static per-provider data, mirroring the Rust ProviderDescriptor table
+/// (src-tauri/src/backend/types.rs). Adding a Provider means adding one entry.
+export interface ProviderDescriptor {
+  id: AgentProvider;
+  displayName: string;
+  shortName: string;
+}
 
-export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = {
-  'claude-code': 'Claude',
-  'gemini-cli': 'Gemini',
-};
+export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
+  { id: 'claude-code', displayName: 'Claude Code', shortName: 'Claude' },
+  { id: 'gemini-cli', displayName: 'Gemini CLI', shortName: 'Gemini' },
+];
+
+export const ALL_PROVIDERS: readonly AgentProvider[] = PROVIDER_DESCRIPTORS.map((d) => d.id);
+
+export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = Object.fromEntries(
+  PROVIDER_DESCRIPTORS.map((d) => [d.id, d.displayName])
+) as Record<AgentProvider, string>;
+
+export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = Object.fromEntries(
+  PROVIDER_DESCRIPTORS.map((d) => [d.id, d.shortName])
+) as Record<AgentProvider, string>;
 
 export const DEFAULT_PROVIDER: AgentProvider = 'claude-code';
 
@@ -31,15 +44,9 @@ export interface ModelInfo {
   display_name: string;
 }
 
-export interface ModelPreferences {
-  'claude-code'?: string;
-  'gemini-cli'?: string;
-}
+export type ModelPreferences = Partial<Record<AgentProvider, string | null>>;
 
-export interface ProviderPaths {
-  'claude-code'?: string;
-  'gemini-cli'?: string;
-}
+export type ProviderPaths = Partial<Record<AgentProvider, string | null>>;
 
 // ============================================================================
 // Node data types - discriminated union for user vs agent nodes
