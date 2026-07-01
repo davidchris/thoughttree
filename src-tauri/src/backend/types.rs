@@ -71,9 +71,16 @@ const CODEX_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     known_paths: &["/opt/homebrew/bin/codex-acp", "/usr/local/bin/codex-acp"],
     home_relative_paths: &[".bun/bin/codex-acp", ".npm-global/bin/codex-acp"],
     env_override: None,
-    install_hint: "Install adapter: npm install -g @zed-industries/codex-acp — then login: npm install -g @openai/codex && codex login",
+    install_hint: "Install adapter: npm install -g @agentclientprotocol/codex-acp — then login: npm install -g @openai/codex && codex login",
     version_pattern: "codex",
-    fallback_models: &[],
+    // ACP model discovery returns nothing for codex-acp, so this curated list
+    // drives the selector. Ids verified against codex-cli 0.142.5 (2026-07).
+    fallback_models: &[
+        ("gpt-5.5", "GPT-5.5"),
+        ("gpt-5.4", "GPT-5.4"),
+        ("gpt-5.4-mini", "GPT-5.4 Mini"),
+        ("gpt-5.3-codex", "GPT-5.3 Codex"),
+    ],
 };
 
 impl AgentProvider {
@@ -227,13 +234,27 @@ mod tests {
     }
 
     #[test]
-    fn test_codex_descriptor_targets_acp_adapter_with_no_fallback_models() {
-        let descriptor = AgentProvider::Codex.descriptor();
-
+    fn test_codex_descriptor_targets_acp_adapter() {
         // Availability = adapter binary found, so discovery targets codex-acp
-        assert_eq!(descriptor.executable_name, "codex-acp");
-        // Model selection is a separate slice; nothing offered yet
-        assert!(descriptor.fallback_models.is_empty());
+        assert_eq!(AgentProvider::Codex.descriptor().executable_name, "codex-acp");
+    }
+
+    #[test]
+    fn test_codex_fallback_models_offer_current_codex_lineup() {
+        // Codex ACP discovery returns nothing, so this static list drives the
+        // model selector. Ids verified against codex-cli 0.142.5 built-in
+        // model table (2026-07).
+        let ids: Vec<&str> = AgentProvider::Codex
+            .descriptor()
+            .fallback_models
+            .iter()
+            .map(|(id, _)| *id)
+            .collect();
+
+        assert_eq!(
+            ids,
+            vec!["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"]
+        );
     }
 
     #[test]
@@ -247,7 +268,8 @@ mod tests {
             .next()
             .unwrap();
 
-        assert!(first_line.contains("@zed-industries/codex-acp"));
+        // @zed-industries/codex-acp is deprecated; successor package
+        assert!(first_line.contains("@agentclientprotocol/codex-acp"));
         assert!(first_line.contains("codex login"));
     }
 

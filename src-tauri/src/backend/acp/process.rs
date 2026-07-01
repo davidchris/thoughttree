@@ -231,22 +231,33 @@ pub(crate) async fn spawn_gemini_cli_acp(
     Ok(child)
 }
 
-/// Spawn a provider's ACP adapter plainly over stdio — no extra flags, no
-/// sidecar. Sessions use the adapter's own config default model.
+/// Args selecting the Codex model via the adapter's standard config-override
+/// flag (`codex-acp -c model=<id>`). No preference → no flag, so the user's
+/// own codex config default applies.
+fn codex_config_args(model_id: Option<&str>) -> Vec<String> {
+    model_id
+        .map(|id| vec!["-c".to_string(), format!("model={id}")])
+        .unwrap_or_default()
+}
+
+/// Spawn a provider's ACP adapter over stdio — no sidecar. Extra args carry
+/// per-spawn config such as the model override.
 pub(crate) async fn spawn_plain_adapter(
     provider: &AgentProvider,
     notes_directory: &Path,
     custom_path: Option<&str>,
+    args: &[String],
 ) -> anyhow::Result<tokio::process::Child> {
     let descriptor = provider.descriptor();
     let adapter_path = resolve_adapter_path(provider, custom_path)?;
 
     info!(
-        "Spawning {} adapter: {:?} in {:?}",
-        descriptor.display_name, adapter_path, notes_directory
+        "Spawning {} adapter: {:?} in {:?} with args {:?}",
+        descriptor.display_name, adapter_path, notes_directory, args
     );
 
     let child = Command::new(&adapter_path)
+        .args(args)
         .current_dir(notes_directory)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -272,7 +283,16 @@ pub(crate) async fn spawn_agent_subprocess(
             // Gemini CLI requires model to be specified at spawn time via --model flag
             spawn_gemini_cli_acp(notes_directory, custom_path, model_id).await
         }
-        AgentProvider::Codex => spawn_plain_adapter(provider, notes_directory, custom_path).await,
+        AgentProvider::Codex => {
+            // Codex model is applied at spawn via `-c model=<id>`
+            spawn_plain_adapter(
+                provider,
+                notes_directory,
+                custom_path,
+                &codex_config_args(model_id),
+            )
+            .await
+        }
     }
 }
 
@@ -333,6 +353,17 @@ mod tests {
         let paths = candidate_paths(claude_descriptor(), None, None, None, &[]);
         let known_count = claude_descriptor().known_paths.len();
         assert_eq!(paths.len(), known_count);
+    }
+
+    #[test]
+    fn test_codex_args_pass_model_as_config_override() {
+        let args = codex_config_args(Some("gpt-5.5"));
+        assert_eq!(args, vec!["-c".to_string(), "model=gpt-5.5".to_string()]);
+    }
+
+    #[test]
+    fn test_codex_args_empty_without_model_so_adapter_default_applies() {
+        assert!(codex_config_args(None).is_empty());
     }
 
     #[test]

@@ -202,6 +202,37 @@ describe("SidePanel", () => {
     });
   });
 
+  describe("Model selection", () => {
+    it("offers the Codex model list when Codex is the active provider", () => {
+      setupMockStore({
+        defaultProvider: "codex",
+        availableProviders: [
+          { provider: "claude-code", available: true, error_message: null },
+          { provider: "codex", available: true, error_message: null },
+        ],
+        availableModels: {
+          "claude-code": [{ model_id: "claude-sonnet", display_name: "Sonnet" }],
+          codex: [
+            { model_id: "gpt-5.5", display_name: "GPT-5.5" },
+            { model_id: "gpt-5.4-mini", display_name: "GPT-5.4 Mini" },
+          ],
+        },
+      });
+      render(<SidePanel />);
+
+      expect(
+        screen.getByRole("option", { name: "GPT-5.5" })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", { name: "GPT-5.4 Mini" })
+      ).toBeInTheDocument();
+      // Claude's models must not leak into the Codex selector
+      expect(
+        screen.queryByRole("option", { name: "Sonnet" })
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe("Provider display", () => {
     it('shows "Claude" badge for claude-code provider', () => {
       const nodeData = new Map([
