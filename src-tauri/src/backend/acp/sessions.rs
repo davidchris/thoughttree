@@ -551,4 +551,12 @@ mod tests {
         let models = with_fallback_models(&AgentProvider::ClaudeCode, vec![]);
         assert!(models.is_empty());
     }
+
+    #[test]
+    fn test_codex_offers_no_models() {
+        // ThoughtTree doesn't consume ACP config-option models (see PRD);
+        // model selection for Codex is a later slice
+        let models = with_fallback_models(&AgentProvider::Codex, vec![]);
+        assert!(models.is_empty());
+    }
 }

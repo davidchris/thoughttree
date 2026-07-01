@@ -59,24 +59,80 @@ async fn validate_executable(path: &Path, provider: &AgentProvider) -> Result<St
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}{stderr}");
 
+    interpret_version_probe(&stdout, &stderr, provider)
+}
+
+/// Judge a `--version` probe's output. Adapters without a `--version` flag
+/// (codex-acp) still validate: their usage error names the binary, so the
+/// pattern matches and the `Usage:` line stands in for the version string.
+fn interpret_version_probe(
+    stdout: &str,
+    stderr: &str,
+    provider: &AgentProvider,
+) -> Result<String, String> {
+    let combined = format!("{stdout}{stderr}");
     let expected_pattern = provider.descriptor().version_pattern;
 
-    if combined.to_lowercase().contains(expected_pattern) {
-        let version_line = stdout
-            .lines()
-            .next()
-            .or_else(|| stderr.lines().next())
-            .unwrap_or("Unknown version")
-            .trim();
-        Ok(version_line.to_string())
-    } else {
-        Err(format!(
+    if !combined.to_lowercase().contains(expected_pattern) {
+        return Err(format!(
             "Not a valid {} executable (output: {})",
             provider.display_name(),
             combined.chars().take(100).collect::<String>()
-        ))
+        ));
+    }
+
+    let version_line = stdout
+        .lines()
+        .next()
+        .or_else(|| stderr.lines().next())
+        .unwrap_or("Unknown version")
+        .trim();
+
+    if version_line.to_lowercase().starts_with("error") {
+        let usage_line = combined
+            .lines()
+            .map(str::trim)
+            .find(|line| line.starts_with("Usage:"))
+            .unwrap_or("Recognized executable");
+        return Ok(usage_line.to_string());
+    }
+
+    Ok(version_line.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_probe_accepts_adapter_without_version_flag() {
+        // Real codex-acp output: `--version` is unrecognized, usage goes to
+        // stderr — validation must still pass because usage names the binary
+        let stderr = "error: unexpected argument '--version' found\n\n\
+                      Usage: codex-acp [OPTIONS]\n\n\
+                      For more information, try '--help'.\n";
+
+        let result = interpret_version_probe("", stderr, &AgentProvider::Codex);
+
+        let displayed = result.expect("codex-acp usage output should validate");
+        assert!(
+            !displayed.to_lowercase().starts_with("error"),
+            "settings should not display an error line as the version: {displayed}"
+        );
+        assert!(displayed.contains("codex-acp"));
+    }
+
+    #[test]
+    fn test_version_probe_accepts_normal_version_output() {
+        let result = interpret_version_probe("1.0.35 (Claude Code)\n", "", &AgentProvider::ClaudeCode);
+        assert_eq!(result.unwrap(), "1.0.35 (Claude Code)");
+    }
+
+    #[test]
+    fn test_version_probe_rejects_wrong_executable() {
+        let result = interpret_version_probe("git version 2.44.0\n", "", &AgentProvider::Codex);
+        assert!(result.is_err());
     }
 }
 

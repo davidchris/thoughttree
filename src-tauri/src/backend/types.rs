@@ -7,6 +7,7 @@ pub(crate) enum AgentProvider {
     #[default]
     ClaudeCode,
     GeminiCli,
+    Codex,
 }
 
 /// Static per-provider data. Adding a Provider means adding a variant,
@@ -63,15 +64,31 @@ const GEMINI_CLI_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     ],
 };
 
+const CODEX_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
+    id: "codex",
+    display_name: "Codex",
+    executable_name: "codex-acp",
+    known_paths: &["/opt/homebrew/bin/codex-acp", "/usr/local/bin/codex-acp"],
+    home_relative_paths: &[".bun/bin/codex-acp", ".npm-global/bin/codex-acp"],
+    env_override: None,
+    install_hint: "Install adapter: npm install -g @zed-industries/codex-acp — then login: npm install -g @openai/codex && codex login",
+    version_pattern: "codex",
+    fallback_models: &[],
+};
+
 impl AgentProvider {
     /// Every supported provider — drives availability lists and config maps
-    pub(crate) const ALL: &'static [AgentProvider] =
-        &[AgentProvider::ClaudeCode, AgentProvider::GeminiCli];
+    pub(crate) const ALL: &'static [AgentProvider] = &[
+        AgentProvider::ClaudeCode,
+        AgentProvider::GeminiCli,
+        AgentProvider::Codex,
+    ];
 
     pub(crate) fn descriptor(&self) -> &'static ProviderDescriptor {
         match self {
             AgentProvider::ClaudeCode => &CLAUDE_CODE_DESCRIPTOR,
             AgentProvider::GeminiCli => &GEMINI_CLI_DESCRIPTOR,
+            AgentProvider::Codex => &CODEX_DESCRIPTOR,
         }
     }
 
@@ -196,9 +213,42 @@ mod tests {
     }
 
     #[test]
+    fn test_codex_serde_round_trip() {
+        let codex: AgentProvider = serde_json::from_str("\"codex\"").unwrap();
+        assert_eq!(codex, AgentProvider::Codex);
+        assert_eq!(serde_json::to_string(&codex).unwrap(), "\"codex\"");
+    }
+
+    #[test]
     fn test_provider_display_names() {
         assert_eq!(AgentProvider::ClaudeCode.display_name(), "Claude Code");
         assert_eq!(AgentProvider::GeminiCli.display_name(), "Gemini CLI");
+        assert_eq!(AgentProvider::Codex.display_name(), "Codex");
+    }
+
+    #[test]
+    fn test_codex_descriptor_targets_acp_adapter_with_no_fallback_models() {
+        let descriptor = AgentProvider::Codex.descriptor();
+
+        // Availability = adapter binary found, so discovery targets codex-acp
+        assert_eq!(descriptor.executable_name, "codex-acp");
+        // Model selection is a separate slice; nothing offered yet
+        assert!(descriptor.fallback_models.is_empty());
+    }
+
+    #[test]
+    fn test_codex_install_hint_first_line_covers_adapter_and_login() {
+        // The provider dropdown surfaces only the hint's first line — both
+        // steps (adapter install + vendor login) must fit there
+        let first_line = AgentProvider::Codex
+            .descriptor()
+            .install_hint
+            .lines()
+            .next()
+            .unwrap();
+
+        assert!(first_line.contains("@zed-industries/codex-acp"));
+        assert!(first_line.contains("codex login"));
     }
 
     #[test]

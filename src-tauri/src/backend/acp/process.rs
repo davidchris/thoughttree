@@ -166,15 +166,7 @@ pub(crate) async fn spawn_claude_code_acp(
     })?;
 
     // Find Claude Code CLI for the sidecar to use
-    let descriptor = AgentProvider::ClaudeCode.descriptor();
-    let claude_cli_path = find_provider_executable(&AgentProvider::ClaudeCode, custom_path)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "{} not found.\n{}",
-                descriptor.display_name,
-                descriptor.install_hint
-            )
-        })?;
+    let claude_cli_path = resolve_adapter_path(&AgentProvider::ClaudeCode, custom_path)?;
 
     info!(
         "Spawning claude-code-acp sidecar: {:?} in {:?}",
@@ -195,21 +187,28 @@ pub(crate) async fn spawn_claude_code_acp(
     Ok(child)
 }
 
+/// Resolve a provider's adapter executable, or fail with its install hint
+fn resolve_adapter_path(
+    provider: &AgentProvider,
+    custom_path: Option<&str>,
+) -> anyhow::Result<PathBuf> {
+    let descriptor = provider.descriptor();
+    find_provider_executable(provider, custom_path).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} not found.\n{}",
+            descriptor.display_name,
+            descriptor.install_hint
+        )
+    })
+}
+
 /// Spawn Gemini CLI in ACP mode
 pub(crate) async fn spawn_gemini_cli_acp(
     notes_directory: &Path,
     custom_path: Option<&str>,
     model_id: Option<&str>,
 ) -> anyhow::Result<tokio::process::Child> {
-    let descriptor = AgentProvider::GeminiCli.descriptor();
-    let gemini_path =
-        find_provider_executable(&AgentProvider::GeminiCli, custom_path).ok_or_else(|| {
-            anyhow::anyhow!(
-                "{} not found.\n{}",
-                descriptor.display_name,
-                descriptor.install_hint
-            )
-        })?;
+    let gemini_path = resolve_adapter_path(&AgentProvider::GeminiCli, custom_path)?;
 
     // Use provided model or default to gemini-3
     let model = model_id.unwrap_or("gemini-3");
@@ -232,6 +231,33 @@ pub(crate) async fn spawn_gemini_cli_acp(
     Ok(child)
 }
 
+/// Spawn a provider's ACP adapter plainly over stdio — no extra flags, no
+/// sidecar. Sessions use the adapter's own config default model.
+pub(crate) async fn spawn_plain_adapter(
+    provider: &AgentProvider,
+    notes_directory: &Path,
+    custom_path: Option<&str>,
+) -> anyhow::Result<tokio::process::Child> {
+    let descriptor = provider.descriptor();
+    let adapter_path = resolve_adapter_path(provider, custom_path)?;
+
+    info!(
+        "Spawning {} adapter: {:?} in {:?}",
+        descriptor.display_name, adapter_path, notes_directory
+    );
+
+    let child = Command::new(&adapter_path)
+        .current_dir(notes_directory)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to spawn {}: {e}", descriptor.display_name))?;
+
+    Ok(child)
+}
+
 /// Spawn an ACP-compatible agent subprocess based on provider
 pub(crate) async fn spawn_agent_subprocess(
     provider: &AgentProvider,
@@ -246,6 +272,7 @@ pub(crate) async fn spawn_agent_subprocess(
             // Gemini CLI requires model to be specified at spawn time via --model flag
             spawn_gemini_cli_acp(notes_directory, custom_path, model_id).await
         }
+        AgentProvider::Codex => spawn_plain_adapter(provider, notes_directory, custom_path).await,
     }
 }
 
@@ -306,5 +333,32 @@ mod tests {
         let paths = candidate_paths(claude_descriptor(), None, None, None, &[]);
         let known_count = claude_descriptor().known_paths.len();
         assert_eq!(paths.len(), known_count);
+    }
+
+    #[test]
+    fn test_codex_candidate_paths_target_adapter_binary() {
+        let home = PathBuf::from("/home/tester");
+        let nvm_dirs = vec![PathBuf::from("/home/tester/.nvm/versions/node/v20.0.0")];
+
+        let paths = candidate_paths(
+            AgentProvider::Codex.descriptor(),
+            None,
+            None,
+            Some(&home),
+            &nvm_dirs,
+        );
+
+        let expected: Vec<PathBuf> = [
+            "/opt/homebrew/bin/codex-acp",
+            "/usr/local/bin/codex-acp",
+            "/home/tester/.bun/bin/codex-acp",
+            "/home/tester/.npm-global/bin/codex-acp",
+            "/home/tester/.nvm/versions/node/v20.0.0/bin/codex-acp",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+
+        assert_eq!(paths, expected);
     }
 }

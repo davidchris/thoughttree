@@ -2,7 +2,7 @@
 // Agent Provider Types
 // ============================================================================
 
-export type AgentProvider = 'claude-code' | 'gemini-cli';
+export type AgentProvider = 'claude-code' | 'gemini-cli' | 'codex';
 
 export interface ProviderStatus {
   provider: AgentProvider;
@@ -21,6 +21,7 @@ export interface ProviderDescriptor {
 export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
   { id: 'claude-code', displayName: 'Claude Code', shortName: 'Claude' },
   { id: 'gemini-cli', displayName: 'Gemini CLI', shortName: 'Gemini' },
+  { id: 'codex', displayName: 'Codex', shortName: 'Codex' },
 ];
 
 export const ALL_PROVIDERS: readonly AgentProvider[] = PROVIDER_DESCRIPTORS.map((d) => d.id);
