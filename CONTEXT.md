@@ -36,8 +36,24 @@ _Avoid_: position (ambiguous), coords.
 The transformation `(Graph, uiState) → ReactFlow Node[]` that produces presentation nodes for `@xyflow/react`. ReactFlow `node.data` carries only `{ id }`; node components subscribe to the store by id for content.
 _Avoid_: node mapping, view model.
 
+**Palette**:
+The overlay for finding and jumping to GraphNodes. Searches a Corpus snapshot taken when it opens; an empty query lists recently updated GraphNodes.
+_Avoid_: quick switcher, omnibar, spotlight, command palette (no commands exist yet).
+
+**Corpus snapshot**:
+The frozen collection of GraphNodes the Palette searches, captured at open. Stable for the Palette's lifetime — results never re-rank under the user while the Graph changes (e.g., during streaming). Immutability of GraphNodes makes capture cheap.
+_Avoid_: index, cache.
+
+**Search hit**:
+One Palette result: a reference to a GraphNode plus display-ready matched-text ranges (title, optional snippet). Discriminated by kind so future non-node results can join.
+_Avoid_: result (vague), match (verb/noun confusion).
+
+**Jump**:
+The Palette's selection action: select the GraphNode, center the viewport on it, flash it briefly. Composes with existing selection-based shortcuts (preview, edit, reply).
+_Avoid_: navigate, go-to, focus (collides with DOM focus).
+
 **ACP session**:
-A single subprocess instance of `claude-code-acp` (or sibling provider CLI) that the Rust backend drives via the Agent Client Protocol. Owns one streaming conversation. Orchestrated by `run_prompt_session` / `run_summary_session` / `run_model_discovery_session` in `src-tauri/src/backend/acp/sessions.rs`, driven by an ACP client.
+A single subprocess instance of a Provider's ACP adapter that the Rust backend drives via the Agent Client Protocol. Owns one streaming conversation. Orchestrated by `run_prompt_session` / `run_summary_session` / `run_model_discovery_session` in `src-tauri/src/backend/acp/sessions.rs`, driven by an ACP client.
 _Avoid_: agent, worker.
 
 **ACP client**:
@@ -45,8 +61,12 @@ A `Client` trait impl that receives notifications from the ACP subprocess — `S
 _Avoid_: listener, callback.
 
 **Provider**:
-A backend LLM source (e.g., `claude-code`, `gemini-cli`). Each Provider has discoverable executable paths and a list of available models.
+A backend LLM source (e.g., `claude-code`, `gemini-cli`, `codex`). Each Provider has one ACP adapter, discoverable executable paths, and a list of available models.
 _Avoid_: backend, vendor.
+
+**ACP adapter**:
+The executable a Provider spawns to speak ACP over stdio. Three shapes exist: bundled sidecar wrapping a vendor CLI (`claude-code-acp`), vendor CLI with native ACP flag (`gemini --experimental-acp`), user-installed bridge binary (`codex-acp`). The Provider abstraction hides which shape is in use.
+_Avoid_: sidecar (that's one distribution shape, not the concept), agent binary.
 
 **Backend module tree**:
 The concern-grouped Rust modules under `src-tauri/src/backend/`: `types`, `state`, `runtime`, `config`, `acp/{clients,process,sessions}`, `commands/{chat,projects,providers,summary}`. `lib.rs` is a thin entry point that registers Tauri commands; all logic lives under `backend/`.
@@ -75,6 +95,8 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - A **Conversation path** is derived from a **Graph** and a target **GraphNode**
 - The **GraphModel** operates on a **Graph**; the Zustand store holds a **Graph** value and calls **GraphModel** for mutations
 - The **ReactFlow projection** consumes a **Graph** plus UI state; ReactFlow itself never sees **GraphNode** directly
+- The **Palette** searches a **Corpus snapshot** of the **Graph**'s **GraphNodes**; each **Search hit** references one **GraphNode**
+- A **Jump** sets selection and viewport to one **GraphNode**
 - An **ACP session** is spawned per **Provider** and bound to one streaming **GraphNode** at a time
 - An **ACP session** drives an **ACP client**; user-permission prompts during the session use a **Permission channel** routed back through a **Tauri command**
 - All **ACP session**s and model-discovery runs execute on a **LocalSet runtime**

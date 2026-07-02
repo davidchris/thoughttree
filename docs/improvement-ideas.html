@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ThoughtTree — Three Ideas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..600&family=JetBrains+Mono:ital,wght@0,300..700;1,300..700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Catppuccin Mocha ---------- */
+  :root {
+    --crust:    #11111b;
+    --mantle:   #181825;
+    --base:     #1e1e2e;
+    --surface0: #313244;
+    --surface1: #45475a;
+    --surface2: #585b70;
+    --overlay0: #6c7086;
+    --overlay1: #7f849c;
+    --subtext0: #a6adc8;
+    --subtext1: #bac2de;
+    --text:     #cdd6f4;
+    --mauve:    #cba6f7;
+    --blue:     #89b4fa;
+    --sapphire: #74c7ec;
+    --teal:     #94e2d5;
+    --green:    #a6e3a1;
+    --yellow:   #f9e2af;
+    --peach:    #fab387;
+    --red:      #f38ba8;
+    --pink:     #f5c2e7;
+    --lavender: #b4befe;
+
+    --serif: "Fraunces", Georgia, serif;
+    --body:  "Newsreader", Georgia, serif;
+    --mono:  "JetBrains Mono", ui-monospace, monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--crust);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 19px;
+    line-height: 1.65;
+    font-weight: 340;
+    overflow-x: hidden;
+  }
+
+  ::selection { background: var(--mauve); color: var(--crust); }
+
+  /* grain overlay */
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 999;
+    opacity: .04;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 32px; }
+
+  /* ---------- hero ---------- */
+  header {
+    position: relative;
+    padding: 110px 0 90px;
+    background:
+      radial-gradient(ellipse 900px 420px at 15% -10%, rgba(203,166,247,.12), transparent 60%),
+      radial-gradient(ellipse 700px 380px at 85% 0%, rgba(137,180,250,.09), transparent 60%),
+      var(--crust);
+    border-bottom: 1px solid var(--surface0);
+    overflow: hidden;
+  }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+    color: var(--overlay1);
+    margin-bottom: 28px;
+    animation: rise .7s .05s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .kicker b { color: var(--mauve); font-weight: 500; }
+
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(46px, 7.5vw, 84px);
+    font-weight: 380;
+    line-height: 1.02;
+    letter-spacing: -.015em;
+    max-width: 14ch;
+    animation: rise .8s .15s cubic-bezier(.2,.7,.2,1) both;
+  }
+  h1 em {
+    font-style: italic;
+    font-weight: 340;
+    color: var(--mauve);
+  }
+
+  .lede {
+    margin-top: 30px;
+    max-width: 58ch;
+    font-size: 21px;
+    color: var(--subtext1);
+    animation: rise .8s .28s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .lede code { font-family: var(--mono); font-size: .78em; color: var(--lavender); background: var(--surface0); padding: 2px 7px; border-radius: 5px; }
+
+  .toc {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    margin-top: 44px;
+    animation: rise .8s .4s cubic-bezier(.2,.7,.2,1) both;
+  }
+  .toc a {
+    font-family: var(--mono); font-size: 13px;
+    text-decoration: none;
+    color: var(--subtext0);
+    border: 1px solid var(--surface1);
+    border-radius: 999px;
+    padding: 9px 18px;
+    transition: all .25s ease;
+    background: rgba(30,30,46,.6);
+  }
+  .toc a span { margin-right: 8px; }
+  .toc a:nth-child(1) span { color: var(--mauve); }
+  .toc a:nth-child(2) span { color: var(--blue); }
+  .toc a:nth-child(3) span { color: var(--peach); }
+  .toc a:hover { color: var(--text); border-color: var(--overlay0); transform: translateY(-2px); }
+
+  /* hero DAG doodle */
+  .hero-dag {
+    position: absolute;
+    right: -40px; top: 50%;
+    transform: translateY(-50%);
+    opacity: .5;
+    animation: fadeIn 1.4s .5s both;
+  }
+  .hero-dag .edge {
+    stroke: var(--surface1); stroke-width: 1.5; fill: none;
+    stroke-dasharray: 240; stroke-dashoffset: 240;
+    animation: draw 1.6s .7s cubic-bezier(.4,0,.2,1) forwards;
+  }
+  .hero-dag circle { opacity: 0; animation: fadeIn .5s both; }
+  .hero-dag circle:nth-of-type(1) { animation-delay: .8s; }
+  .hero-dag circle:nth-of-type(2) { animation-delay: 1.1s; }
+  .hero-dag circle:nth-of-type(3) { animation-delay: 1.3s; }
+  .hero-dag circle:nth-of-type(4) { animation-delay: 1.5s; }
+  .hero-dag circle:nth-of-type(5) { animation-delay: 1.7s; }
+  .hero-dag circle:nth-of-type(6) { animation-delay: 1.9s; }
+
+  @keyframes rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+  @keyframes fadeIn { from { opacity: 0; } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  /* ---------- idea sections ---------- */
+  section.idea {
+    position: relative;
+    padding: 96px 0 88px;
+    border-bottom: 1px solid var(--surface0);
+  }
+  section.idea:nth-of-type(odd) { background: var(--mantle); }
+
+  .idea .wrap { position: relative; }
+
+  .big-num {
+    position: absolute;
+    top: -46px; right: -10px;
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: clamp(120px, 18vw, 220px);
+    line-height: 1;
+    color: transparent;
+    -webkit-text-stroke: 1px var(--surface1);
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .idea-tag {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 12px;
+    letter-spacing: .22em; text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 20px;
+  }
+  .idea-tag::before {
+    content: ""; width: 34px; height: 1px; background: var(--accent);
+  }
+
+  h2 {
+    font-family: var(--serif);
+    font-size: clamp(34px, 4.6vw, 52px);
+    font-weight: 400;
+    line-height: 1.08;
+    letter-spacing: -.01em;
+    max-width: 20ch;
+  }
+  h2 em { font-style: italic; color: var(--accent); font-weight: 360; }
+
+  .prose { max-width: 62ch; margin-top: 26px; color: var(--subtext1); }
+  .prose + .prose { margin-top: 16px; }
+  .prose strong { color: var(--text); font-weight: 520; }
+  .prose code { font-family: var(--mono); font-size: .76em; color: var(--lavender); background: var(--surface0); padding: 2px 7px; border-radius: 5px; white-space: nowrap; }
+
+  .now-vs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin: 40px 0 0;
+  }
+  .now-vs .cell {
+    border: 1px solid var(--surface0);
+    border-radius: 12px;
+    padding: 22px 24px;
+    background: var(--base);
+    font-size: 17px;
+    color: var(--subtext0);
+  }
+  .now-vs .cell h4 {
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: .24em; text-transform: uppercase;
+    margin-bottom: 12px; font-weight: 500;
+  }
+  .now-vs .today h4 { color: var(--red); }
+  .now-vs .proposed h4 { color: var(--green); }
+  .now-vs .proposed { border-color: color-mix(in srgb, var(--accent) 35%, var(--surface0)); }
+
+  /* mockup frame */
+  .mock {
+    margin-top: 56px;
+    border: 1px solid var(--surface1);
+    border-radius: 14px;
+    background: var(--base);
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.4);
+    overflow: hidden;
+    transform: translateY(30px);
+    opacity: 0;
+    transition: all .8s cubic-bezier(.2,.7,.2,1);
+  }
+  .mock.in { transform: none; opacity: 1; }
+
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px;
+    background: var(--mantle);
+    border-bottom: 1px solid var(--surface0);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #f38ba8aa; } .dot.y { background: #f9e2afaa; } .dot.g { background: #a6e3a1aa; }
+  .titlebar .tt {
+    flex: 1; text-align: center;
+    font-family: var(--mono); font-size: 12px; color: var(--overlay0);
+  }
+
+  .mock-caption {
+    margin-top: 18px;
+    font-family: var(--mono); font-size: 12.5px;
+    color: var(--overlay1);
+    display: flex; gap: 10px; align-items: baseline;
+  }
+  .mock-caption::before { content: "fig."; color: var(--accent); font-style: italic; font-family: var(--serif); font-size: 15px; }
+
+  /* ---------- mock 1 : compare ---------- */
+  .compare-body { display: grid; grid-template-columns: 1fr 1fr; }
+  .branch-pane { padding: 22px 24px 26px; }
+  .branch-pane + .branch-pane { border-left: 1px dashed var(--surface1); }
+  .branch-head {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 12px;
+    margin-bottom: 16px;
+  }
+  .chip {
+    padding: 3px 10px; border-radius: 999px;
+    font-family: var(--mono); font-size: 11px;
+    border: 1px solid var(--surface1); color: var(--subtext0);
+  }
+  .chip.a { border-color: var(--mauve); color: var(--mauve); }
+  .chip.b { border-color: var(--sapphire); color: var(--sapphire); }
+
+  .md { font-size: 15.5px; color: var(--subtext1); line-height: 1.62; }
+  .md p + p { margin-top: 10px; }
+  .md .hl-a { background: rgba(203,166,247,.14); border-bottom: 1px solid rgba(203,166,247,.5); padding: 1px 2px; border-radius: 3px; }
+  .md .hl-b { background: rgba(116,199,236,.13); border-bottom: 1px solid rgba(116,199,236,.5); padding: 1px 2px; border-radius: 3px; }
+  .md .agree { color: var(--overlay1); }
+
+  .compare-foot {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px;
+    border-top: 1px solid var(--surface0);
+    background: var(--mantle);
+  }
+  .compare-foot .hint { font-family: var(--mono); font-size: 12px; color: var(--overlay0); }
+  .btn-synth {
+    font-family: var(--mono); font-size: 13px; font-weight: 500;
+    color: var(--crust);
+    background: var(--mauve);
+    border: none; border-radius: 8px;
+    padding: 9px 18px;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(203,166,247,.35);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn-synth:hover { transform: translateY(-1px); box-shadow: 0 0 36px rgba(203,166,247,.55); }
+
+  .merge-dag { display: flex; justify-content: center; padding: 26px 0 8px; grid-column: 1 / -1; background: linear-gradient(rgba(24,24,37,0), rgba(24,24,37,.6)); }
+  .merge-dag .node-pill {
+    font-family: var(--mono); font-size: 11px;
+  }
+
+  /* ---------- mock 2 : palette ---------- */
+  .palette-stage {
+    position: relative;
+    height: 430px;
+    background:
+      radial-gradient(circle at 30% 40%, rgba(137,180,250,.05), transparent 50%),
+      var(--base);
+    overflow: hidden;
+  }
+  .ghost-node {
+    position: absolute;
+    border: 1px solid var(--surface1);
+    border-radius: 10px;
+    background: var(--mantle);
+    padding: 8px 12px;
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--overlay0);
+    filter: blur(.4px);
+    opacity: .55;
+  }
+  .ghost-node.hit {
+    opacity: 1; filter: none;
+    border-color: var(--blue);
+    color: var(--subtext1);
+    box-shadow: 0 0 0 3px rgba(137,180,250,.18), 0 0 30px rgba(137,180,250,.28);
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 3px rgba(137,180,250,.18), 0 0 30px rgba(137,180,250,.25); }
+    50%     { box-shadow: 0 0 0 5px rgba(137,180,250,.28), 0 0 44px rgba(137,180,250,.45); }
+  }
+  .ghost-edge { position: absolute; pointer-events: none; }
+  .ghost-edge path { stroke: var(--surface1); stroke-width: 1.2; fill: none; opacity: .6; }
+
+  .palette {
+    position: absolute;
+    left: 50%; top: 54px;
+    transform: translateX(-50%);
+    width: min(520px, 88%);
+    background: rgba(24,24,37,.92);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--surface1);
+    border-radius: 14px;
+    box-shadow: 0 40px 90px -10px rgba(0,0,0,.8);
+    overflow: hidden;
+  }
+  .palette-input {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--surface0);
+    font-family: var(--mono); font-size: 15px;
+  }
+  .palette-input .prompt-glyph { color: var(--blue); }
+  .palette-input .typed { color: var(--text); }
+  .caret {
+    display: inline-block; width: 8px; height: 18px;
+    background: var(--blue); vertical-align: text-bottom;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .presult {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 18px;
+    font-family: var(--mono); font-size: 12.5px;
+    color: var(--subtext0);
+    border-left: 2px solid transparent;
+  }
+  .presult .m { color: var(--blue); font-weight: 600; }
+  .presult.sel {
+    background: rgba(137,180,250,.08);
+    border-left-color: var(--blue);
+    color: var(--text);
+  }
+  .presult .ntype {
+    margin-left: auto;
+    font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--surface1); color: var(--overlay1);
+    flex-shrink: 0;
+  }
+  .presult .ntype.agent { border-color: rgba(148,226,213,.4); color: var(--teal); }
+  .presult .ntype.user  { border-color: rgba(249,226,175,.4); color: var(--yellow); }
+
+  .palette-foot {
+    display: flex; gap: 18px;
+    padding: 10px 18px;
+    background: var(--mantle);
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--overlay0);
+  }
+  .palette-foot kbd {
+    font-family: var(--mono);
+    background: var(--surface0); border-radius: 4px;
+    padding: 1px 6px; margin-right: 5px;
+    color: var(--subtext0);
+    border: 1px solid var(--surface1); border-bottom-width: 2px;
+  }
+
+  /* ---------- mock 3 : context lens ---------- */
+  .lens-body { display: grid; grid-template-columns: 1.2fr .8fr; }
+  .lens-graph {
+    padding: 26px;
+    border-right: 1px solid var(--surface0);
+    display: flex; flex-direction: column; gap: 14px; align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 30%, rgba(250,179,135,.05), transparent 60%);
+  }
+  .gnode {
+    width: 240px;
+    border: 1px solid var(--surface1);
+    border-radius: 10px;
+    background: var(--mantle);
+    padding: 10px 14px;
+    font-family: var(--mono); font-size: 11.5px;
+    color: var(--subtext0);
+    position: relative;
+  }
+  .gnode .badge {
+    position: absolute; right: -10px; top: -10px;
+    font-size: 10px;
+    background: var(--surface0);
+    color: var(--peach);
+    border: 1px solid rgba(250,179,135,.4);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .gnode.streaming { border-color: var(--peach); box-shadow: 0 0 24px rgba(250,179,135,.18); }
+  .gnode.streaming .badge { background: var(--peach); color: var(--crust); }
+  .gedge { width: 1px; height: 18px; background: var(--surface1); }
+
+  .lens-panel { padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; }
+  .lens-panel h5 {
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: .2em; text-transform: uppercase;
+    color: var(--overlay1); font-weight: 500;
+  }
+  .meter {
+    height: 10px; border-radius: 999px;
+    background: var(--surface0);
+    overflow: hidden;
+    position: relative;
+  }
+  .meter .fill {
+    height: 100%; width: 34%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--teal), var(--yellow) 75%, var(--peach));
+    animation: fillIn 1.4s .3s cubic-bezier(.2,.7,.2,1) both;
+  }
+  @keyframes fillIn { from { width: 0; } }
+  .meter-legend {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 11.5px;
+    color: var(--subtext0);
+    margin-top: 8px;
+  }
+  .meter-legend b { color: var(--text); font-weight: 500; }
+
+  .cost-rows { display: flex; flex-direction: column; gap: 7px; font-family: var(--mono); font-size: 12px; }
+  .cost-rows .row { display: flex; justify-content: space-between; color: var(--subtext0); }
+  .cost-rows .row span:last-child { color: var(--subtext1); }
+  .cost-rows .row.total { border-top: 1px dashed var(--surface1); padding-top: 8px; margin-top: 3px; }
+  .cost-rows .row.total span { color: var(--peach); font-weight: 600; }
+
+  .stream-box {
+    border: 1px solid rgba(250,179,135,.35);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: rgba(250,179,135,.05);
+  }
+  .stream-box .streaming-line {
+    font-family: var(--mono); font-size: 12px; color: var(--subtext1);
+  }
+  .stream-box .streaming-line::after {
+    content: "▋"; color: var(--peach);
+    animation: blink 1s steps(1) infinite;
+  }
+  .btn-stop {
+    margin-top: 14px;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12.5px; font-weight: 500;
+    color: var(--red);
+    background: rgba(243,139,168,.08);
+    border: 1px solid rgba(243,139,168,.45);
+    border-radius: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-stop:hover { background: rgba(243,139,168,.18); box-shadow: 0 0 20px rgba(243,139,168,.2); }
+  .btn-stop .sq { width: 9px; height: 9px; background: var(--red); border-radius: 2px; }
+
+  /* ---------- meta strip ---------- */
+  .meta-strip {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    margin-top: 34px;
+  }
+  .meta-card {
+    flex: 1; min-width: 180px;
+    border: 1px solid var(--surface0);
+    border-radius: 10px;
+    padding: 16px 18px;
+    background: var(--base);
+  }
+  .meta-card h6 {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: .22em; text-transform: uppercase;
+    color: var(--overlay0); margin-bottom: 8px; font-weight: 500;
+  }
+  .meta-card p { font-size: 15px; color: var(--subtext1); }
+  .meta-card p code { font-family: var(--mono); font-size: .78em; color: var(--lavender); }
+  .effort-dots { display: flex; gap: 5px; margin-top: 4px; }
+  .effort-dots i {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--surface1);
+  }
+  .effort-dots i.on { background: var(--accent); }
+
+  /* ---------- verdict ---------- */
+  .verdict { padding: 90px 0 100px; }
+  .verdict h3 {
+    font-family: var(--serif);
+    font-size: clamp(30px, 4vw, 42px);
+    font-weight: 400;
+  }
+  .verdict h3 em { font-style: italic; color: var(--green); }
+
+  table {
+    width: 100%;
+    margin-top: 40px;
+    border-collapse: collapse;
+    font-size: 16px;
+  }
+  th {
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: .2em; text-transform: uppercase;
+    color: var(--overlay1);
+    text-align: left;
+    padding: 0 16px 14px;
+    border-bottom: 1px solid var(--surface1);
+    font-weight: 500;
+  }
+  td {
+    padding: 18px 16px;
+    border-bottom: 1px solid var(--surface0);
+    color: var(--subtext1);
+    vertical-align: top;
+  }
+  td:first-child { font-family: var(--serif); font-style: italic; font-size: 18px; color: var(--text); white-space: nowrap; }
+  td .num { font-family: var(--mono); font-style: normal; font-size: 11px; margin-right: 10px; }
+  tr:nth-child(1) td .num { color: var(--mauve); }
+  tr:nth-child(2) td .num { color: var(--blue); }
+  tr:nth-child(3) td .num { color: var(--peach); }
+  td code { font-family: var(--mono); font-size: .74em; color: var(--lavender); background: var(--surface0); padding: 1px 6px; border-radius: 4px; }
+
+  .rec {
+    margin-top: 44px;
+    border-left: 2px solid var(--green);
+    padding: 6px 0 6px 26px;
+    max-width: 62ch;
+    color: var(--subtext1);
+  }
+  .rec strong { color: var(--green); font-weight: 520; }
+
+  footer {
+    border-top: 1px solid var(--surface0);
+    padding: 34px 0 48px;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--overlay0);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+  }
+
+  /* reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(26px); transition: all .8s cubic-bezier(.2,.7,.2,1); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  @media (max-width: 780px) {
+    .compare-body, .lens-body, .now-vs { grid-template-columns: 1fr; }
+    .branch-pane + .branch-pane { border-left: none; border-top: 1px dashed var(--surface1); }
+    .lens-graph { border-right: none; border-bottom: 1px solid var(--surface0); }
+    .hero-dag { display: none; }
+    .big-num { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <p class="kicker"><b>thoughttree</b> · improvement proposals · 2026-07</p>
+    <h1>Three ideas to make the tree <em>think harder.</em></h1>
+    <p class="lede">
+      ThoughtTree already nails the hard part — conversations as a DAG, branch and
+      converge, multi-provider via ACP. These three proposals close the gap between
+      the promise in the README and what the UI can do today. None of them overlap
+      with the current <code>backlog/</code>.
+    </p>
+    <nav class="toc">
+      <a href="#idea-1"><span>01</span>Branch Compare &amp; Synthesis</a>
+      <a href="#idea-2"><span>02</span>Command Palette &amp; Graph Search</a>
+      <a href="#idea-3"><span>03</span>Context Lens &amp; Stop Control</a>
+    </nav>
+  </div>
+  <svg class="hero-dag" width="340" height="360" viewBox="0 0 340 360" fill="none" aria-hidden="true">
+    <path class="edge" d="M60 40 C60 100, 40 120, 40 170"/>
+    <path class="edge" d="M60 40 C60 100, 150 110, 150 160"/>
+    <path class="edge" d="M40 190 C40 240, 130 250, 140 290"/>
+    <path class="edge" d="M150 180 C150 230, 145 250, 145 290"/>
+    <path class="edge" d="M150 180 C150 230, 260 230, 260 270"/>
+    <circle cx="60" cy="40" r="9" fill="#f9e2af"/>
+    <circle cx="40" cy="180" r="9" fill="#94e2d5"/>
+    <circle cx="150" cy="170" r="9" fill="#94e2d5"/>
+    <circle cx="143" cy="300" r="11" fill="#cba6f7"/>
+    <circle cx="260" cy="280" r="9" fill="#89b4fa"/>
+    <circle cx="260" cy="280" r="16" stroke="#89b4fa" stroke-opacity=".3"/>
+  </svg>
+</header>
+
+<!-- ════════════════ IDEA 1 ════════════════ -->
+<section class="idea" id="idea-1" style="--accent: var(--mauve)">
+  <div class="wrap">
+    <div class="big-num">01</div>
+    <p class="idea-tag reveal">idea 01 — the missing core feature</p>
+    <h2 class="reveal">Branch Compare <em>&amp; Synthesis</em></h2>
+
+    <p class="prose reveal">
+      The README's own pitch is <strong>"compare responses across branches"</strong> —
+      but today the only way to compare two branches is to squint at two collapsed
+      nodes on the canvas. And while the graph model already supports multi-parent
+      nodes, nothing in the UI celebrates or drives the <strong>merge</strong> —
+      the single most differentiating concept ThoughtTree has over every linear chat app.
+    </p>
+    <p class="prose reveal">
+      Proposal: select two (or more) sibling agent nodes → a split
+      <strong>Compare view</strong> renders them side by side with agreement dimmed
+      and unique claims highlighted per branch. One button —
+      <strong>Synthesize</strong> — creates a multi-parent merge node pre-loaded with
+      a synthesis prompt, turning the DAG's convergence superpower into a one-click workflow.
+    </p>
+
+    <div class="now-vs reveal">
+      <div class="cell today">
+        <h4>Today</h4>
+        Pan between nodes, open side panel twice, hold both answers in your head.
+        Merge nodes exist in <code style="font-family:var(--mono);font-size:.8em">GraphModel</code> but users must wire them by hand.
+      </div>
+      <div class="cell proposed">
+        <h4>Proposed</h4>
+        Shift-click two agent nodes → ⌘⇧C opens Compare. Unique claims highlighted.
+        "Synthesize" spawns the merge node and generates in one step.
+      </div>
+    </div>
+
+    <div class="mock reveal">
+      <div class="titlebar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="tt">compare · 2 branches selected</span>
+      </div>
+      <div class="compare-body">
+        <div class="branch-pane">
+          <div class="branch-head">
+            <span class="chip a">branch A</span>
+            <span class="chip">claude · sonnet-5</span>
+          </div>
+          <div class="md">
+            <p><span class="agree">Both approaches reduce coupling between the parser and the renderer.</span></p>
+            <p>A <span class="hl-a">visitor pattern keeps the AST immutable</span> and makes new output formats cheap to add, at the cost of <span class="hl-a">more indirection up front</span>.</p>
+            <p><span class="agree">Error recovery should stay in the parser either way.</span></p>
+          </div>
+        </div>
+        <div class="branch-pane">
+          <div class="branch-head">
+            <span class="chip b">branch B</span>
+            <span class="chip">codex · gpt-5</span>
+          </div>
+          <div class="md">
+            <p><span class="agree">Both approaches reduce coupling between the parser and the renderer.</span></p>
+            <p>A <span class="hl-b">tagged-union with exhaustive matching</span> is simpler to debug and <span class="hl-b">plays better with Rust's type system</span>, but each new format touches every arm.</p>
+            <p><span class="agree">Error recovery should stay in the parser either way.</span></p>
+          </div>
+        </div>
+        <div class="merge-dag">
+          <svg width="300" height="86" viewBox="0 0 300 86" fill="none" aria-hidden="true">
+            <path d="M75 12 C75 45, 150 40, 150 62" stroke="#cba6f7" stroke-opacity=".6" stroke-width="1.5"/>
+            <path d="M225 12 C225 45, 150 40, 150 62" stroke="#74c7ec" stroke-opacity=".6" stroke-width="1.5"/>
+            <rect x="45" y="0" width="60" height="20" rx="6" fill="#313244" stroke="#cba6f7" stroke-opacity=".7"/>
+            <rect x="195" y="0" width="60" height="20" rx="6" fill="#313244" stroke="#74c7ec" stroke-opacity=".7"/>
+            <rect x="108" y="60" width="84" height="24" rx="7" fill="#cba6f7"/>
+            <text x="150" y="76" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#11111b" font-weight="600">synthesis</text>
+            <text x="75" y="14" text-anchor="middle" font-family="JetBrains Mono" font-size="9" fill="#a6adc8">A</text>
+            <text x="225" y="14" text-anchor="middle" font-family="JetBrains Mono" font-size="9" fill="#a6adc8">B</text>
+          </svg>
+        </div>
+        <div class="compare-foot">
+          <span class="hint">agreement dimmed · unique claims highlighted per branch</span>
+          <button class="btn-synth">⌘⇧M Synthesize → merge node</button>
+        </div>
+      </div>
+    </div>
+    <p class="mock-caption">1 — Compare view for two sibling branches; footer action creates a multi-parent synthesis node.</p>
+
+    <div class="meta-strip reveal">
+      <div class="meta-card">
+        <h6>Why it's cheap</h6>
+        <p>Multi-parent nodes already exist in <code>src/lib/graph/</code>; selection state lives in <code>useGraphStore</code>. This is UI + one synthesis prompt template.</p>
+      </div>
+      <div class="meta-card">
+        <h6>Key files</h6>
+        <p><code>components/ComparePanel/</code> (new), <code>useGraphStore.ts</code>, <code>GraphMutations</code></p>
+      </div>
+      <div class="meta-card">
+        <h6>Effort</h6>
+        <div class="effort-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        <p style="margin-top:8px">Medium — v1 ships without diff highlighting (plain side-by-side), highlights as v2.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ IDEA 2 ════════════════ -->
+<section class="idea" id="idea-2" style="--accent: var(--blue)">
+  <div class="wrap">
+    <div class="big-num">02</div>
+    <p class="idea-tag reveal">idea 02 — navigation at scale</p>
+    <h2 class="reveal">Command Palette <em>&amp; Graph Search</em></h2>
+
+    <p class="prose reveal">
+      A research graph earns its keep at 40+ nodes — exactly the point where panning
+      and squinting stops working. Today there is <strong>no way to search node
+      content</strong>: <code>search_files</code> only matches filenames for
+      @-mentions, and the minimap shows shapes, not meaning.
+    </p>
+    <p class="prose reveal">
+      Proposal: <strong>⌘K opens a palette</strong> that fuzzy-searches every node's
+      content and AI summary (all already in memory in <code>nodeData</code> —
+      no backend needed). Selecting a result animates the viewport to the node via
+      ReactFlow's <code>setCenter</code> and flashes it. The same surface doubles as
+      a command runner — <em>tidy graph, export thread, switch model</em> — which also
+      fixes the advertised-but-unbound ⌘L shortcut for free.
+    </p>
+
+    <div class="now-vs reveal">
+      <div class="cell today">
+        <h4>Today</h4>
+        "Where did Claude explain the borrow checker thing?" → pan, zoom, expand
+        nodes one by one. Summaries help only if visible on screen.
+      </div>
+      <div class="cell proposed">
+        <h4>Proposed</h4>
+        ⌘K → type three words → jump. Every node reachable in under two seconds,
+        every toolbar action reachable without the mouse.
+      </div>
+    </div>
+
+    <div class="mock reveal">
+      <div class="titlebar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="tt">research.thoughttree — 47 nodes</span>
+      </div>
+      <div class="palette-stage">
+        <svg class="ghost-edge" width="100%" height="100%" viewBox="0 0 900 430" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M120 60 C120 140, 80 160, 80 230"/>
+          <path d="M120 60 C120 140, 230 150, 230 210"/>
+          <path d="M230 240 C230 300, 320 300, 330 350"/>
+          <path d="M700 90 C700 160, 640 180, 640 240"/>
+          <path d="M700 90 C700 160, 800 170, 800 230"/>
+        </svg>
+        <div class="ghost-node" style="left:70px; top:44px">how do I structure the parser?</div>
+        <div class="ghost-node" style="left:40px; top:230px">visitor pattern tradeoffs…</div>
+        <div class="ghost-node hit" style="left:180px; top:212px">borrow checker fights the visitor…</div>
+        <div class="ghost-node" style="left:290px; top:352px">synthesis: hybrid approach</div>
+        <div class="ghost-node" style="left:640px; top:74px">tokenizer design questions</div>
+        <div class="ghost-node" style="left:580px; top:242px">error recovery strategies</div>
+        <div class="ghost-node" style="left:750px; top:232px">span tracking for diagnostics</div>
+
+        <div class="palette">
+          <div class="palette-input">
+            <span class="prompt-glyph">⌘K</span>
+            <span class="typed">borrow ch</span><span class="caret"></span>
+          </div>
+          <div class="presult sel">
+            <span><span class="m">borrow ch</span>ecker fights the visitor pattern here…</span>
+            <span class="ntype agent">agent</span>
+          </div>
+          <div class="presult">
+            <span>why does the <span class="m">borrow</span> error move to line 42…</span>
+            <span class="ntype user">user</span>
+          </div>
+          <div class="presult">
+            <span>&gt; run: tidy graph</span>
+            <span class="ntype">⌘L</span>
+          </div>
+          <div class="palette-foot">
+            <span><kbd>↑↓</kbd>navigate</span>
+            <span><kbd>↵</kbd>jump to node</span>
+            <span><kbd>⌘↵</kbd>open in panel</span>
+            <span><kbd>esc</kbd>close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="mock-caption">2 — Palette over a dimmed canvas; the matching node glows and the viewport flies to it on ↵.</p>
+
+    <div class="meta-strip reveal">
+      <div class="meta-card">
+        <h6>Why it's cheap</h6>
+        <p>All node content + summaries are client-side in Zustand. Fuzzy match over a few hundred strings needs no index, no Rust changes.</p>
+      </div>
+      <div class="meta-card">
+        <h6>Key files</h6>
+        <p><code>components/CommandPalette/</code> (new), <code>useGraphStore.ts</code>, <code>Graph/index.tsx</code> (setCenter)</p>
+      </div>
+      <div class="meta-card">
+        <h6>Effort</h6>
+        <div class="effort-dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+        <p style="margin-top:8px">Small — highest value-per-line of the three. Ship search first, commands second.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ IDEA 3 ════════════════ -->
+<section class="idea" id="idea-3" style="--accent: var(--peach)">
+  <div class="wrap">
+    <div class="big-num">03</div>
+    <p class="idea-tag reveal">idea 03 — trust &amp; control</p>
+    <h2 class="reveal">Context Lens <em>&amp; Stop Control</em></h2>
+
+    <p class="prose reveal">
+      In a DAG, "what is the model actually seeing?" is a harder question than in a
+      linear chat — context is the <strong>path</strong> from root to node, and users
+      currently have zero visibility into how big that path has grown or what a deep
+      branch costs. Worse: once generation starts, <strong>there is no stop
+      button</strong> — a wrong prompt on a deep branch runs to completion while its
+      whole lineage is locked from editing.
+    </p>
+    <p class="prose reveal">
+      Proposal: a <strong>Context Lens</strong> in the side panel — a meter showing
+      estimated path tokens vs. context window, a per-node breakdown, and an estimated
+      cost line — plus a <strong>Stop button</strong> wired to ACP's
+      <code>session/cancel</code>. The lens turns branch pruning from guesswork into
+      an informed act; the stop button returns control mid-stream.
+    </p>
+
+    <div class="now-vs reveal">
+      <div class="cell today">
+        <h4>Today</h4>
+        Token counts invisible everywhere. Mis-sent prompt = watch it stream,
+        lineage locked until done. <code style="font-family:var(--mono);font-size:.8em">stop_reason</code> is received and discarded.
+      </div>
+      <div class="cell proposed">
+        <h4>Proposed</h4>
+        Path meter + per-node tokens + est. cost in the panel; ■ Stop (⌘.) aborts
+        the stream, keeps partial text, unlocks lineage.
+      </div>
+    </div>
+
+    <div class="mock reveal">
+      <div class="titlebar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="tt">side panel · node “error recovery strategies”</span>
+      </div>
+      <div class="lens-body">
+        <div class="lens-graph">
+          <div class="gnode">root: parser architecture <span class="badge">1.2k</span></div>
+          <div class="gedge"></div>
+          <div class="gnode">visitor pattern tradeoffs <span class="badge">3.8k</span></div>
+          <div class="gedge"></div>
+          <div class="gnode">borrow checker fights… <span class="badge">7.4k</span></div>
+          <div class="gedge"></div>
+          <div class="gnode streaming">error recovery strategies <span class="badge">streaming</span></div>
+        </div>
+        <div class="lens-panel">
+          <div>
+            <h5>Path context</h5>
+            <div class="meter"><div class="fill"></div></div>
+            <div class="meter-legend">
+              <span><b>~68k</b> / 200k tokens</span>
+              <span>7 nodes deep</span>
+            </div>
+          </div>
+          <div>
+            <h5>This generation</h5>
+            <div class="cost-rows">
+              <div class="row"><span>input (path)</span><span>~68,400 tok</span></div>
+              <div class="row"><span>output (so far)</span><span>1,930 tok</span></div>
+              <div class="row"><span>model</span><span>sonnet-5</span></div>
+              <div class="row total"><span>est. cost</span><span>$0.234</span></div>
+            </div>
+          </div>
+          <div class="stream-box">
+            <h5 style="margin-bottom:10px">Streaming</h5>
+            <div class="streaming-line">Panic-mode recovery skips tokens until a synchron</div>
+            <button class="btn-stop"><span class="sq"></span> Stop generation ⌘.</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="mock-caption">3 — Context Lens: path meter with per-node token badges on the lineage, live cost, and a stop control.</p>
+
+    <div class="meta-strip reveal">
+      <div class="meta-card">
+        <h6>Why it matters</h6>
+        <p>Deep branches silently get slow and expensive. Visibility makes the DAG's economics legible — and teaches users <em>when to branch</em>.</p>
+      </div>
+      <div class="meta-card">
+        <h6>Key files</h6>
+        <p><code>acp/sessions.rs</code> + <code>clients.rs</code> (cancel), <code>SidePanel/</code>, token estimate util (chars/4 v1)</p>
+      </div>
+      <div class="meta-card">
+        <h6>Effort</h6>
+        <div class="effort-dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        <p style="margin-top:8px">Medium — stop button is a small, shippable slice on its own; lens estimates start heuristic, refine with ACP usage data.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ VERDICT ════════════════ -->
+<section class="verdict">
+  <div class="wrap">
+    <h3 class="reveal">Side by side, <em>then in order.</em></h3>
+
+    <table class="reveal">
+      <thead>
+        <tr><th>Idea</th><th>User value</th><th>Effort</th><th>Touches</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="num">01</span>Compare &amp; Synthesis</td>
+          <td>Delivers the README's core promise; makes merge nodes — the app's signature concept — a first-class workflow.</td>
+          <td>Medium</td>
+          <td>Frontend only (<code>ComparePanel</code>, store, graph mutations)</td>
+        </tr>
+        <tr>
+          <td><span class="num">02</span>Palette &amp; Search</td>
+          <td>Removes the scaling ceiling on graph size; keyboard-first navigation; fixes dead ⌘L binding.</td>
+          <td>Small</td>
+          <td>Frontend only (new component + <code>setCenter</code>)</td>
+        </tr>
+        <tr>
+          <td><span class="num">03</span>Context Lens &amp; Stop</td>
+          <td>Cost/context transparency unique to DAG chat; mid-stream abort ends the biggest current frustration.</td>
+          <td>Medium</td>
+          <td>Rust (<code>session/cancel</code>) + side panel UI</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="rec reveal">
+      <strong>Suggested order: 02 → 03 → 01.</strong> The palette is the smallest and
+      pays off daily. The stop button inside 03 is an independently shippable slice
+      worth doing immediately after. Compare &amp; Synthesis is the flagship — worth
+      designing properly (a grilling session, then a PRD in <span style="font-family:var(--mono);font-size:.8em">backlog/</span>) rather than rushing.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:0 32px;">
+    <span>thoughttree · docs/improvement-ideas.html</span>
+    <span>drafted 2026-07-02 · no backlog overlap · nothing implemented yet</span>
+  </div>
+</footer>
+
+<script>
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    }
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal, .mock").forEach(el => io.observe(el));
+</script>
+
+</body>
+</html>

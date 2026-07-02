@@ -25,6 +25,7 @@ export function AgentNode({ id, selected }: NodeProps) {
   );
   const togglePreviewNode = useUIStore((state) => state.togglePreviewNode);
   const setPreviewNode = useUIStore((state) => state.setPreviewNode);
+  const isFlashing = useUIStore((state) => state.flashNodeId === id);
 
   const isStreaming = streamingNodeIds.has(id);
   const isBlocked = isNodeBlocked(id);
@@ -57,7 +58,7 @@ export function AgentNode({ id, selected }: NodeProps) {
 
   return (
     <div
-      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""}`}
+      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} ${isFlashing ? "flash" : ""}`}
       onDoubleClick={handleDoubleClick}
     >
       <Handle type="target" position={Position.Top} />

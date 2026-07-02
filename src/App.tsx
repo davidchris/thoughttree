@@ -7,6 +7,7 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
 import { SidePanel } from './components/SidePanel';
+import { Palette } from './components/Palette';
 import {
   initializeListeners,
   getAvailableProviders,
@@ -166,6 +167,7 @@ function App() {
           <Graph />
           <SidePanel />
         </div>
+        <Palette />
       </ReactFlowProvider>
       <PermissionDialog />
     </div>

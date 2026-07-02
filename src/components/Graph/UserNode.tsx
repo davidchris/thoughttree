@@ -41,6 +41,7 @@ export function UserNode({ id, selected }: NodeProps) {
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const togglePreviewNode = useUIStore((state) => state.togglePreviewNode);
   const setPreviewNode = useUIStore((state) => state.setPreviewNode);
+  const isFlashing = useUIStore((state) => state.flashNodeId === id);
   const triggerSidePanelEditMode = useUIStore((state) => state.triggerSidePanelEditMode);
   const addNodeImage = useGraphStore((state) => state.addNodeImage);
   const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
@@ -259,7 +260,7 @@ export function UserNode({ id, selected }: NodeProps) {
   return (
     <div
       ref={nodeRef}
-      className={`thought-node user-node ${selected ? "selected" : ""} ${isDragOver ? "drag-over" : ""}`}
+      className={`thought-node user-node ${selected ? "selected" : ""} ${isDragOver ? "drag-over" : ""} ${isFlashing ? "flash" : ""}`}
       onDoubleClick={handleDoubleClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

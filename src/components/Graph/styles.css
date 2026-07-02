@@ -703,3 +703,28 @@
 .thought-node .image-thumbnails {
     display: none;
 }
+
+/* Palette jump flash: brief pulse so the jumped-to node stands out in a dense
+   cluster. Duration must stay in sync with FLASH_DURATION_MS in
+   src/store/useUIStore.ts (the timeout that removes this class). */
+.thought-node.flash {
+    animation: palette-flash 1s ease-out;
+}
+
+/* Both classes set `animation`; without this rule the flash would replace the
+   streaming pulse for its duration instead of running alongside it. */
+.agent-node.streaming.flash {
+    animation: palette-flash 1s ease-out, pulse-border 1.5s infinite;
+}
+
+@keyframes palette-flash {
+    0% {
+        box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9), 0 0 24px rgba(250, 204, 21, 0.6);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(250, 204, 21, 0.4), 0 0 32px rgba(250, 204, 21, 0.3);
+    }
+    100% {
+        box-shadow: 0 0 0 3px rgba(250, 204, 21, 0);
+    }
+}
