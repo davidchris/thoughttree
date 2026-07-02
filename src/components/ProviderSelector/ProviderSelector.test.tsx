@@ -115,7 +115,7 @@ describe('ProviderSelector', () => {
         provider: 'codex',
         available: false,
         error_message:
-          'Codex not found. Install adapter: npm install -g @zed-industries/codex-acp — then login: npm install -g @openai/codex && codex login',
+          'Codex not found. Install adapter: npm install -g @agentclientprotocol/codex-acp — then login: npm install -g @openai/codex && codex login',
       },
     ];
 
@@ -134,7 +134,7 @@ describe('ProviderSelector', () => {
     expect(codexOption).toBeDisabled();
     expect(codexOption).toHaveAttribute(
       'title',
-      expect.stringContaining('@zed-industries/codex-acp')
+      expect.stringContaining('@agentclientprotocol/codex-acp')
     );
   });
 

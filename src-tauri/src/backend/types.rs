@@ -27,6 +27,12 @@ pub(crate) struct ProviderDescriptor {
     pub install_hint: &'static str,
     /// Substring expected in `--version` output
     pub version_pattern: &'static str,
+    /// Whether the provider needs the bundled ACP sidecar (see ADR-0001)
+    /// in addition to its CLI to serve sessions
+    pub requires_sidecar: bool,
+    /// Whether the agent reports models via ACP session creation. When
+    /// false, model discovery skips spawning and serves `fallback_models`.
+    pub models_via_acp: bool,
     /// (model_id, display_name) offered when ACP model discovery returns nothing
     pub fallback_models: &'static [(&'static str, &'static str)],
 }
@@ -46,6 +52,8 @@ const CLAUDE_CODE_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     install_hint:
         "Install via: brew install --cask claude-code\nOr: npm install -g @anthropic-ai/claude-code",
     version_pattern: "claude",
+    requires_sidecar: true,
+    models_via_acp: true,
     fallback_models: &[],
 };
 
@@ -58,6 +66,8 @@ const GEMINI_CLI_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     env_override: None,
     install_hint: "Install via: brew install gemini-cli\nOr: bun install -g @google/gemini-cli",
     version_pattern: "gemini",
+    requires_sidecar: false,
+    models_via_acp: false,
     fallback_models: &[
         ("gemini-3", "Gemini 3 (Auto)"),
         ("gemini-2.5", "Gemini 2.5 (Auto)"),
@@ -73,6 +83,8 @@ const CODEX_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     env_override: None,
     install_hint: "Install adapter: npm install -g @agentclientprotocol/codex-acp — then login: npm install -g @openai/codex && codex login",
     version_pattern: "codex",
+    requires_sidecar: false,
+    models_via_acp: false,
     // ACP model discovery returns nothing for codex-acp, so this curated list
     // drives the selector. Ids verified against codex-cli 0.142.5 (2026-07).
     fallback_models: &[
@@ -308,6 +320,19 @@ mod tests {
 
         prefs.set(&AgentProvider::GeminiCli, None);
         assert_eq!(prefs.get(&AgentProvider::GeminiCli), None);
+    }
+
+    #[test]
+    fn test_providers_without_acp_models_declare_fallbacks() {
+        // Discovery short-circuits on models_via_acp = false, so those
+        // providers must ship a curated list or the selector goes empty
+        for provider in AgentProvider::ALL {
+            let descriptor = provider.descriptor();
+            assert!(
+                descriptor.models_via_acp || !descriptor.fallback_models.is_empty(),
+                "{provider:?} reports no models via ACP but has no fallback_models"
+            );
+        }
     }
 
     #[test]

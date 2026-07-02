@@ -15,7 +15,9 @@ import {
   ImageAttachment,
   MessageNodeData,
   ModelPreferences,
+  StoredProviderRecord,
   UserNodeData,
+  withoutNullEntries,
 } from '../types';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
@@ -54,7 +56,8 @@ function scheduleStreamFlush() {
 interface ProjectFileV3 {
   version: 3;
   graph: GraphJSON;
-  projectModelPreferences?: ModelPreferences | null;
+  // On-disk shape: legacy writers stored explicit nulls for unset entries
+  projectModelPreferences?: StoredProviderRecord | null;
 }
 
 interface ProjectFileLegacyV2 {
@@ -62,7 +65,7 @@ interface ProjectFileLegacyV2 {
   nodes: Array<{ id: string; position: { x: number; y: number }; [key: string]: unknown }>;
   edges: Array<{ id: string; source: string; target: string; [key: string]: unknown }>;
   nodeData: Record<string, MessageNodeData>;
-  projectModelPreferences?: ModelPreferences | null;
+  projectModelPreferences?: StoredProviderRecord | null;
 }
 
 type ProjectFile = ProjectFileV3 | ProjectFileLegacyV2;
@@ -527,7 +530,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   getEffectiveModel: (provider) => {
     const { projectModelPreferences } = get();
     const { globalModelPreferences } = useProviderStore.getState();
-    return projectModelPreferences?.[provider] ?? globalModelPreferences[provider] ?? undefined;
+    return projectModelPreferences?.[provider] ?? globalModelPreferences[provider];
   },
 
   setProjectPath: (path) => set({ projectPath: path }),
@@ -569,7 +572,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
 
       if (parsed.version === GRAPH_JSON_VERSION && 'graph' in parsed) {
         graph = GraphSerialize.fromJSON(parsed.graph);
-        projectModelPreferences = parsed.projectModelPreferences ?? null;
+        projectModelPreferences = parsed.projectModelPreferences
+          ? withoutNullEntries(parsed.projectModelPreferences)
+          : null;
       } else {
         const legacy = parsed as ProjectFileLegacyV2;
         const migratedNodeData = migrateLegacyV2NodeData(legacy.nodeData);
@@ -579,7 +584,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
           edges: legacy.edges,
           nodeData: migratedNodeData,
         });
-        projectModelPreferences = legacy.projectModelPreferences ?? null;
+        projectModelPreferences = legacy.projectModelPreferences
+          ? withoutNullEntries(legacy.projectModelPreferences)
+          : null;
       }
 
       set({

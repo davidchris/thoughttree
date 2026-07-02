@@ -114,23 +114,26 @@ pub(crate) fn find_provider_executable(
         .and_then(|var| std::env::var(var).ok());
 
     let home = dirs::home_dir();
-    // nvm-managed npm globals: iterate known Node versions (no globbing)
-    let nvm_node_dirs: Vec<PathBuf> = home
-        .as_deref()
-        .map(|home| home.join(".nvm/versions/node"))
-        .and_then(|nvm_base| std::fs::read_dir(nvm_base).ok())
-        .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
-        .unwrap_or_default();
 
-    let candidates = candidate_paths(
+    let found = candidate_paths(
         descriptor,
         custom_path,
         env_override_value.as_deref(),
         home.as_deref(),
-        &nvm_node_dirs,
-    );
-
-    let found = candidates.into_iter().find(|path| path.exists());
+        &[],
+    )
+    .into_iter()
+    .find(|path| path.exists())
+    .or_else(|| {
+        // nvm-managed npm globals: iterate known Node versions (no globbing).
+        // Listing the versions dir costs a read_dir, so only scan it after
+        // every other candidate missed.
+        std::fs::read_dir(home?.join(".nvm/versions/node"))
+            .ok()?
+            .flatten()
+            .map(|entry| entry.path().join("bin").join(descriptor.executable_name))
+            .find(|path| path.exists())
+    });
     match &found {
         Some(path) => {
             // Log canonical path for debugging, but return original path for execution
@@ -202,33 +205,22 @@ fn resolve_adapter_path(
     })
 }
 
-/// Spawn Gemini CLI in ACP mode
-pub(crate) async fn spawn_gemini_cli_acp(
-    notes_directory: &Path,
-    custom_path: Option<&str>,
-    model_id: Option<&str>,
-) -> anyhow::Result<tokio::process::Child> {
-    let gemini_path = resolve_adapter_path(&AgentProvider::GeminiCli, custom_path)?;
+/// Args putting Gemini CLI in ACP mode. The model must be picked at spawn
+/// time; absent a preference, default to the descriptor's first fallback
+/// model — the same entry the selector offers first.
+fn gemini_cli_args(model_id: Option<&str>) -> Vec<String> {
+    let default_model = AgentProvider::GeminiCli
+        .descriptor()
+        .fallback_models
+        .first()
+        .map(|(id, _)| *id)
+        .unwrap_or_default();
 
-    // Use provided model or default to gemini-3
-    let model = model_id.unwrap_or("gemini-3");
-
-    info!(
-        "Spawning Gemini CLI ACP mode: {:?} in {:?} with model {:?}",
-        gemini_path, notes_directory, model
-    );
-
-    let child = Command::new(&gemini_path)
-        .args(["--experimental-acp", "--model", model])
-        .current_dir(notes_directory)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn Gemini CLI: {e}"))?;
-
-    Ok(child)
+    vec![
+        "--experimental-acp".to_string(),
+        "--model".to_string(),
+        model_id.unwrap_or(default_model).to_string(),
+    ]
 }
 
 /// Args selecting the Codex model via the adapter's standard config-override
@@ -281,7 +273,13 @@ pub(crate) async fn spawn_agent_subprocess(
         AgentProvider::ClaudeCode => spawn_claude_code_acp(notes_directory, custom_path).await,
         AgentProvider::GeminiCli => {
             // Gemini CLI requires model to be specified at spawn time via --model flag
-            spawn_gemini_cli_acp(notes_directory, custom_path, model_id).await
+            spawn_plain_adapter(
+                provider,
+                notes_directory,
+                custom_path,
+                &gemini_cli_args(model_id),
+            )
+            .await
         }
         AgentProvider::Codex => {
             // Codex model is applied at spawn via `-c model=<id>`
@@ -343,16 +341,35 @@ mod tests {
     }
 
     #[test]
-    fn test_candidate_paths_without_custom_starts_with_known() {
+    fn test_candidate_paths_without_custom_or_home_uses_known_paths_only() {
         let paths = candidate_paths(claude_descriptor(), None, None, None, &[]);
         assert_eq!(paths[0], PathBuf::from("/opt/homebrew/bin/claude"));
+        assert_eq!(paths.len(), claude_descriptor().known_paths.len());
     }
 
     #[test]
-    fn test_candidate_paths_without_home_skips_home_relative() {
-        let paths = candidate_paths(claude_descriptor(), None, None, None, &[]);
-        let known_count = claude_descriptor().known_paths.len();
-        assert_eq!(paths.len(), known_count);
+    fn test_gemini_args_default_model_comes_from_descriptor() {
+        let (default_id, _) = AgentProvider::GeminiCli.descriptor().fallback_models[0];
+        assert_eq!(
+            gemini_cli_args(None),
+            vec![
+                "--experimental-acp".to_string(),
+                "--model".to_string(),
+                default_id.to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_gemini_args_pass_model_preference() {
+        assert_eq!(
+            gemini_cli_args(Some("gemini-2.5")),
+            vec![
+                "--experimental-acp".to_string(),
+                "--model".to_string(),
+                "gemini-2.5".to_string()
+            ]
+        );
     }
 
     #[test]

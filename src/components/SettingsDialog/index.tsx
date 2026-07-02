@@ -345,7 +345,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                   {isAvailable ? (
                     <ModelSelector
                       provider={provider}
-                      value={globalModelPreferences[provider] ?? undefined}
+                      value={globalModelPreferences[provider]}
                       onChange={(modelId) => handleGlobalModelChange(provider, modelId)}
                       availableModels={availableModels[provider] ?? []}
                       loading={loadingModels[provider]}
@@ -380,7 +380,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     {isAvailable ? (
                       <ModelSelector
                         provider={provider}
-                        value={projectModelPreferences?.[provider] ?? undefined}
+                        value={projectModelPreferences?.[provider]}
                         onChange={(modelId) => handleProjectModelChange(provider, modelId)}
                         availableModels={availableModels[provider] ?? []}
                         loading={loadingModels[provider]}

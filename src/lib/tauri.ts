@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useUIStore } from '../store/useUIStore';
-import type { AgentProvider, ImageAttachment, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus } from '../types';
+import { withoutNullEntries } from '../types';
+import type { AgentProvider, ImageAttachment, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus, StoredProviderRecord } from '../types';
 
 // Message format with optional images for IPC
 interface MessageWithImages {
@@ -137,7 +138,7 @@ export async function setDefaultProvider(provider: AgentProvider): Promise<void>
 // ============================================================================
 
 export async function getModelPreferences(): Promise<ModelPreferences> {
-  return invoke<ModelPreferences>('get_model_preferences');
+  return withoutNullEntries(await invoke<StoredProviderRecord>('get_model_preferences'));
 }
 
 export async function setModelPreference(
@@ -156,7 +157,7 @@ export async function getAvailableModels(provider: AgentProvider): Promise<Model
 // ============================================================================
 
 export async function getProviderPaths(): Promise<ProviderPaths> {
-  return invoke<ProviderPaths>('get_provider_paths');
+  return withoutNullEntries(await invoke<StoredProviderRecord>('get_provider_paths'));
 }
 
 export async function setProviderPath(

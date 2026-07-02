@@ -197,19 +197,22 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
 
     info!("Session created: {}", session_response.session_id);
 
-    // Switch model if specified and the agent supports it
-    if should_set_session_model(model_id.is_some(), session_response.models.is_some()) {
-        let model = model_id.as_ref().expect("checked by should_set_session_model");
-        info!("Switching to model: {}", model);
-        connection
-            .set_session_model(SetSessionModelRequest::new(
-                session_response.session_id.clone(),
-                agent_client_protocol::ModelId::new(model.clone()),
-            ))
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to set model: {e:?}"))?;
-    } else if let Some(ref model) = model_id {
-        info!("Agent advertises no model state; {model} was applied at spawn");
+    // Switch model if specified and the agent supports it. Agents that
+    // advertise no model state (codex-acp) reject session/set_model with
+    // Method-not-found — their model is applied via spawn args instead.
+    if let Some(ref model) = model_id {
+        if session_response.models.is_some() {
+            info!("Switching to model: {}", model);
+            connection
+                .set_session_model(SetSessionModelRequest::new(
+                    session_response.session_id.clone(),
+                    agent_client_protocol::ModelId::new(model.clone()),
+                ))
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to set model: {e:?}"))?;
+        } else {
+            info!("Agent advertises no model state; {model} was applied at spawn");
+        }
     }
 
     // Get current date and format it
@@ -332,18 +335,18 @@ fn model_id_to_display_name(model_id: &str) -> String {
     }
 }
 
-/// Whether to call `session/set_model` after session creation. Agents that
-/// advertise no model state (codex-acp) reject the method with
-/// Method-not-found — their model is applied via spawn args instead.
-fn should_set_session_model(has_model_preference: bool, agent_advertises_models: bool) -> bool {
-    has_model_preference && agent_advertises_models
-}
-
 pub(crate) async fn run_model_discovery_session(
     notes_directory: PathBuf,
     provider: AgentProvider,
     provider_paths: ProviderPaths,
 ) -> Result<Vec<ModelInfo>, String> {
+    // Providers whose adapters report no models over ACP are served straight
+    // from the curated fallback list — no point spawning a subprocess and
+    // running the handshake just to learn nothing.
+    if !provider.descriptor().models_via_acp {
+        return Ok(with_fallback_models(&provider, vec![]));
+    }
+
     // Spawn the ACP subprocess (model_id is None for discovery - we're just fetching available models)
     let child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
         .await
@@ -526,21 +529,25 @@ mod tests {
 
     #[test]
     fn test_fallback_models_come_from_descriptor_when_discovery_is_empty() {
-        let models = with_fallback_models(&AgentProvider::GeminiCli, vec![]);
+        // Gemini CLI and codex-acp report no models via ACP, so their
+        // descriptors' static lists must reach the selector
+        for provider in [AgentProvider::GeminiCli, AgentProvider::Codex] {
+            let models = with_fallback_models(&provider, vec![]);
 
-        let expected: Vec<(String, String)> = AgentProvider::GeminiCli
-            .descriptor()
-            .fallback_models
-            .iter()
-            .map(|(id, name)| (id.to_string(), name.to_string()))
-            .collect();
-        let actual: Vec<(String, String)> = models
-            .iter()
-            .map(|m| (m.model_id.clone(), m.display_name.clone()))
-            .collect();
+            let expected: Vec<(String, String)> = provider
+                .descriptor()
+                .fallback_models
+                .iter()
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .collect();
+            let actual: Vec<(String, String)> = models
+                .iter()
+                .map(|m| (m.model_id.clone(), m.display_name.clone()))
+                .collect();
 
-        assert!(!models.is_empty(), "Gemini must offer fallback models");
-        assert_eq!(actual, expected);
+            assert!(!models.is_empty(), "{provider:?} must offer fallback models");
+            assert_eq!(actual, expected);
+        }
     }
 
     #[test]
@@ -562,36 +569,4 @@ mod tests {
         assert!(models.is_empty());
     }
 
-    #[test]
-    fn test_model_set_only_when_preference_exists_and_agent_advertises_models() {
-        // codex-acp advertises no model state and returns Method-not-found
-        // for session/set_model — its model is applied at spawn instead
-        assert!(!should_set_session_model(true, false));
-        // Claude/Gemini advertise models and accept the switch
-        assert!(should_set_session_model(true, true));
-        // No preference → never switch
-        assert!(!should_set_session_model(false, true));
-        assert!(!should_set_session_model(false, false));
-    }
-
-    #[test]
-    fn test_codex_fallback_models_drive_selector_when_discovery_is_empty() {
-        // codex-acp reports no models via ACP, so the descriptor's static
-        // list must reach the selector
-        let models = with_fallback_models(&AgentProvider::Codex, vec![]);
-
-        let expected: Vec<(String, String)> = AgentProvider::Codex
-            .descriptor()
-            .fallback_models
-            .iter()
-            .map(|(id, name)| (id.to_string(), name.to_string()))
-            .collect();
-        let actual: Vec<(String, String)> = models
-            .iter()
-            .map(|m| (m.model_id.clone(), m.display_name.clone()))
-            .collect();
-
-        assert!(!models.is_empty(), "Codex must offer fallback models");
-        assert_eq!(actual, expected);
-    }
 }

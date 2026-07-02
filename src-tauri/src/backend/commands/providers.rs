@@ -13,9 +13,11 @@ use crate::backend::types::{
 };
 
 fn check_provider_availability(provider: &AgentProvider, paths: &ProviderPaths) -> ProviderStatus {
-    // Claude Code additionally ships a bundled ACP sidecar (see ADR-0001);
+    let descriptor = provider.descriptor();
+
+    // Some providers additionally ship a bundled ACP sidecar (see ADR-0001);
     // without it the CLI alone can't serve sessions
-    if matches!(provider, AgentProvider::ClaudeCode) && find_sidecar_path().is_none() {
+    if descriptor.requires_sidecar && find_sidecar_path().is_none() {
         return ProviderStatus {
             provider: provider.clone(),
             available: false,
@@ -25,7 +27,6 @@ fn check_provider_availability(provider: &AgentProvider, paths: &ProviderPaths) 
         };
     }
 
-    let descriptor = provider.descriptor();
     let custom_path = paths.get(provider).map(String::as_str);
     let cli_available = find_provider_executable(provider, custom_path).is_some();
 
