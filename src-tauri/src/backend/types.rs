@@ -248,7 +248,10 @@ mod tests {
     #[test]
     fn test_codex_descriptor_targets_acp_adapter() {
         // Availability = adapter binary found, so discovery targets codex-acp
-        assert_eq!(AgentProvider::Codex.descriptor().executable_name, "codex-acp");
+        assert_eq!(
+            AgentProvider::Codex.descriptor().executable_name,
+            "codex-acp"
+        );
     }
 
     #[test]

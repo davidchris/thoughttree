@@ -126,7 +126,8 @@ mod tests {
 
     #[test]
     fn test_version_probe_accepts_normal_version_output() {
-        let result = interpret_version_probe("1.0.35 (Claude Code)\n", "", &AgentProvider::ClaudeCode);
+        let result =
+            interpret_version_probe("1.0.35 (Claude Code)\n", "", &AgentProvider::ClaudeCode);
         assert_eq!(result.unwrap(), "1.0.35 (Claude Code)");
     }
 

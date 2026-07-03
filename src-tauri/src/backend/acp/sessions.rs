@@ -545,7 +545,10 @@ mod tests {
                 .map(|m| (m.model_id.clone(), m.display_name.clone()))
                 .collect();
 
-            assert!(!models.is_empty(), "{provider:?} must offer fallback models");
+            assert!(
+                !models.is_empty(),
+                "{provider:?} must offer fallback models"
+            );
             assert_eq!(actual, expected);
         }
     }
@@ -568,5 +571,4 @@ mod tests {
         let models = with_fallback_models(&AgentProvider::ClaudeCode, vec![]);
         assert!(models.is_empty());
     }
-
 }
