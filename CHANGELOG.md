@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Codex Support - Added Codex as a second agent provider alongside Claude Code, with model selection when starting a session
+- Cmd+K Node Search - Jump straight to any node in large graphs with a searchable command palette
+
 ## 0.3.3
 
 - Faster Streaming - Agent responses now batch rapid token updates, keeping the canvas more responsive during long generations
