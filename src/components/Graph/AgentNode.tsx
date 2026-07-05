@@ -6,6 +6,7 @@ import {
 } from "@xyflow/react";
 import { AgentNodeData, PROVIDER_SHORT_NAMES } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
+import { useUIStore } from "../../store/useUIStore";
 import "./styles.css";
 
 const SUMMARY_THRESHOLD = 100;
@@ -22,8 +23,9 @@ export function AgentNode({ id, selected }: NodeProps) {
   const createUserNodeDownstream = useGraphStore(
     (state) => state.createUserNodeDownstream,
   );
-  const togglePreviewNode = useGraphStore((state) => state.togglePreviewNode);
-  const setPreviewNode = useGraphStore((state) => state.setPreviewNode);
+  const togglePreviewNode = useUIStore((state) => state.togglePreviewNode);
+  const setPreviewNode = useUIStore((state) => state.setPreviewNode);
+  const isFlashing = useUIStore((state) => state.flashNodeId === id);
 
   const isStreaming = streamingNodeIds.has(id);
   const isBlocked = isNodeBlocked(id);
@@ -56,7 +58,7 @@ export function AgentNode({ id, selected }: NodeProps) {
 
   return (
     <div
-      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""}`}
+      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} ${isFlashing ? "flash" : ""}`}
       onDoubleClick={handleDoubleClick}
     >
       <Handle type="target" position={Position.Top} />

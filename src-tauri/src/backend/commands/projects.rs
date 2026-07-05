@@ -8,10 +8,10 @@ use crate::backend::config;
 
 fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, String> {
     let canonical_notes = std::fs::canonicalize(notes_dir)
-        .map_err(|e| format!("Failed to resolve notes directory: {}", e))?;
+        .map_err(|e| format!("Failed to resolve notes directory: {e}"))?;
 
     let canonical_path = if path.exists() {
-        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve path: {}", e))?
+        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve path: {e}"))?
     } else {
         let parent = path
             .parent()
@@ -20,7 +20,7 @@ fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, 
             .file_name()
             .ok_or_else(|| "Invalid path: no filename".to_string())?;
         let canonical_parent = std::fs::canonicalize(parent)
-            .map_err(|e| format!("Failed to resolve parent directory: {}", e))?;
+            .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
         canonical_parent.join(filename)
     };
 
@@ -59,7 +59,7 @@ pub(crate) async fn save_project(app: AppHandle, path: String, data: String) -> 
     let notes_directory = config::get_notes_directory_required(&app)?;
     let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
 
-    std::fs::write(&validated_path, &data).map_err(|e| format!("Failed to save project: {}", e))?;
+    std::fs::write(&validated_path, &data).map_err(|e| format!("Failed to save project: {e}"))?;
     tracing::info!("Project saved to: {:?}", validated_path);
     Ok(())
 }
@@ -70,7 +70,7 @@ pub(crate) async fn load_project(app: AppHandle, path: String) -> Result<String,
     let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
 
     let data = std::fs::read_to_string(&validated_path)
-        .map_err(|e| format!("Failed to load project: {}", e))?;
+        .map_err(|e| format!("Failed to load project: {e}"))?;
     tracing::info!("Project loaded from: {:?}", validated_path);
     Ok(data)
 }
@@ -154,7 +154,7 @@ pub(crate) async fn export_markdown(
     if let Some(path) = dialog.blocking_save_file() {
         let path_str = path.to_string();
         std::fs::write(&path_str, &content)
-            .map_err(|e| format!("Failed to export markdown: {}", e))?;
+            .map_err(|e| format!("Failed to export markdown: {e}"))?;
         tracing::info!("Exported markdown to: {}", path_str);
         Ok(Some(path_str))
     } else {

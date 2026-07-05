@@ -3,7 +3,7 @@ use tauri::AppHandle;
 use crate::backend::acp::sessions::run_summary_session;
 use crate::backend::config;
 use crate::backend::runtime::run_localset_blocking;
-use crate::backend::types::SummaryResult;
+use crate::backend::types::{AgentProvider, SummaryResult};
 
 #[tauri::command]
 pub(crate) async fn generate_summary(
@@ -13,7 +13,7 @@ pub(crate) async fn generate_summary(
 ) -> Result<SummaryResult, String> {
     let notes_directory = config::get_notes_directory_required(&app)?;
     let provider_paths = config::get_provider_paths(&app)?;
-    let custom_path = provider_paths.claude_code;
+    let custom_path = provider_paths.get(&AgentProvider::ClaudeCode).cloned();
 
     tracing::info!("Generating summary for node: {}", node_id);
 

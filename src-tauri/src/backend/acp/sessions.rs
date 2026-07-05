@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_client_protocol::{
-    Agent, ClientSideConnection, ContentBlock, ImageContent, Implementation, InitializeRequest,
-    NewSessionRequest, PromptRequest, ProtocolVersion, SetSessionModelRequest, TextContent,
+    Agent, Client, ClientSideConnection, ContentBlock, ImageContent, Implementation,
+    InitializeRequest, InitializeResponse, NewSessionRequest, PromptRequest, ProtocolVersion,
+    SetSessionModelRequest, TextContent,
 };
 use chrono::Local;
 use futures::lock::Mutex;
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info, warn};
 
@@ -16,28 +19,56 @@ use crate::backend::acp::clients::{ModelDiscoveryClient, StreamingClient, Summar
 use crate::backend::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
 use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths};
 
-/// Run a prompt session with ACP
-pub(crate) async fn run_prompt_session(
-    app_handle: tauri::AppHandle,
-    node_id: String,
-    messages: Vec<Message>,
-    pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
-    notes_directory: PathBuf,
-    provider: AgentProvider,
-    model_id: Option<String>,
-    provider_paths: ProviderPaths,
-) -> anyhow::Result<String> {
-    // Spawn the ACP subprocess in the notes directory so skills are loaded
-    // For Gemini, model_id is passed at spawn time via --model flag
-    let mut child = spawn_agent_subprocess(
-        &provider,
-        &notes_directory,
-        &provider_paths,
-        model_id.as_deref(),
-    )
-    .await?;
+/// How long to wait for the agent subprocess to answer `initialize` before
+/// giving up. A broken sidecar otherwise hangs the request forever.
+const INIT_TIMEOUT: Duration = Duration::from_secs(15);
 
-    // Get stdin/stdout handles
+/// How long to wait for the subprocess to exit on its own after stdin closes,
+/// before killing it.
+const EXIT_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// An ACP agent subprocess together with its stderr-logging and connection
+/// I/O tasks, so teardown can wait for all of them instead of leaking.
+struct AgentProcess {
+    child: tokio::process::Child,
+    stderr_task: Option<JoinHandle<()>>,
+    io_task: JoinHandle<()>,
+}
+
+impl AgentProcess {
+    /// Gracefully shut down: the caller must drop the connection first (which
+    /// closes the subprocess's stdin), then this waits for exit and drains the
+    /// I/O and stderr tasks. Kills the process if it doesn't exit in time.
+    /// On early-error paths where this isn't reached, `kill_on_drop(true)`
+    /// still terminates the subprocess.
+    async fn shutdown(mut self, tag: &str) {
+        match tokio::time::timeout(EXIT_TIMEOUT, self.child.wait()).await {
+            Ok(Ok(status)) => info!("[{}] subprocess exited: {}", tag, status),
+            Ok(Err(e)) => warn!("[{}] failed waiting on subprocess: {}", tag, e),
+            Err(_) => {
+                warn!(
+                    "[{}] subprocess did not exit after stdin close; killing",
+                    tag
+                );
+                if let Err(e) = self.child.kill().await {
+                    warn!("[{}] failed to kill subprocess: {}", tag, e);
+                }
+            }
+        }
+        let _ = self.io_task.await;
+        if let Some(task) = self.stderr_task {
+            let _ = task.await;
+        }
+    }
+}
+
+/// Wire up an ACP connection over the child's stdio and start the stderr
+/// logger and connection I/O tasks.
+fn connect_agent(
+    mut child: tokio::process::Child,
+    client: Arc<impl Client + 'static>,
+    tag: &'static str,
+) -> anyhow::Result<(ClientSideConnection, AgentProcess)> {
     let stdin = child
         .stdin
         .take()
@@ -47,17 +78,91 @@ pub(crate) async fn run_prompt_session(
         .take()
         .ok_or_else(|| anyhow::anyhow!("Failed to get stdout handle"))?;
 
-    // Log stderr
-    if let Some(stderr) = child.stderr.take() {
+    let stderr_task = child.stderr.take().map(|stderr| {
         tokio::task::spawn_local(async move {
             use tokio::io::AsyncBufReadExt;
             let reader = tokio::io::BufReader::new(stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                warn!("[claude-code-acp stderr] {}", line);
+                warn!("[{} stderr] {}", tag, line);
             }
+        })
+    });
+
+    let (connection, io_future) =
+        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
+            tokio::task::spawn_local(f);
         });
-    }
+
+    let io_task = tokio::task::spawn_local(async move {
+        if let Err(e) = io_future.await {
+            error!("[{}] I/O error: {:?}", tag, e);
+        }
+    });
+
+    Ok((
+        connection,
+        AgentProcess {
+            child,
+            stderr_task,
+            io_task,
+        },
+    ))
+}
+
+/// Run `initialize` with a timeout so a wedged subprocess can't hang the UI.
+async fn initialize_with_timeout(
+    connection: &ClientSideConnection,
+    client_info: Implementation,
+) -> anyhow::Result<InitializeResponse> {
+    tokio::time::timeout(
+        INIT_TIMEOUT,
+        connection
+            .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(client_info)),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!(
+            "Agent did not respond to initialize within {}s",
+            INIT_TIMEOUT.as_secs()
+        )
+    })?
+    .map_err(|e| anyhow::anyhow!("Failed to initialize: {e:?}"))
+}
+
+/// Parameters for [`run_prompt_session`]
+pub(crate) struct PromptSessionParams {
+    pub app_handle: tauri::AppHandle,
+    pub node_id: String,
+    pub messages: Vec<Message>,
+    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    pub notes_directory: PathBuf,
+    pub provider: AgentProvider,
+    pub model_id: Option<String>,
+    pub provider_paths: ProviderPaths,
+}
+
+/// Run a prompt session with ACP
+pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::Result<String> {
+    let PromptSessionParams {
+        app_handle,
+        node_id,
+        messages,
+        pending_permissions,
+        notes_directory,
+        provider,
+        model_id,
+        provider_paths,
+    } = params;
+    // Spawn the ACP subprocess in the notes directory so skills are loaded
+    // For Gemini, model_id is passed at spawn time via --model flag
+    let child = spawn_agent_subprocess(
+        &provider,
+        &notes_directory,
+        &provider_paths,
+        model_id.as_deref(),
+    )
+    .await?;
 
     // Create client with notes directory for permission filtering
     let client = Arc::new(StreamingClient::new(
@@ -67,28 +172,16 @@ pub(crate) async fn run_prompt_session(
         notes_directory.clone(),
     ));
 
-    // Create connection
     info!("Creating ACP connection...");
-    let (connection, io_future) =
-        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
-            tokio::task::spawn_local(f);
-        });
-
-    // Run I/O in background
-    tokio::task::spawn_local(async move {
-        if let Err(e) = io_future.await {
-            error!("I/O error: {:?}", e);
-        }
-    });
+    let (connection, process) = connect_agent(child, client, "claude-code-acp")?;
 
     // Initialize
     info!("Initializing connection...");
-    let init_response = connection
-        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-            Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
-        ))
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize: {:?}", e))?;
+    let init_response = initialize_with_timeout(
+        &connection,
+        Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
+    )
+    .await?;
 
     info!(
         "Connected to agent: {:?} (protocol: {})",
@@ -100,25 +193,31 @@ pub(crate) async fn run_prompt_session(
     let session_response = connection
         .new_session(NewSessionRequest::new(notes_directory))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create session: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create session: {e:?}"))?;
 
     info!("Session created: {}", session_response.session_id);
 
-    // Switch model if specified
+    // Switch model if specified and the agent supports it. Agents that
+    // advertise no model state (codex-acp) reject session/set_model with
+    // Method-not-found — their model is applied via spawn args instead.
     if let Some(ref model) = model_id {
-        info!("Switching to model: {}", model);
-        connection
-            .set_session_model(SetSessionModelRequest::new(
-                session_response.session_id.clone(),
-                agent_client_protocol::ModelId::new(model.clone()),
-            ))
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to set model: {:?}", e))?;
+        if session_response.models.is_some() {
+            info!("Switching to model: {}", model);
+            connection
+                .set_session_model(SetSessionModelRequest::new(
+                    session_response.session_id.clone(),
+                    agent_client_protocol::ModelId::new(model.clone()),
+                ))
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to set model: {e:?}"))?;
+        } else {
+            info!("Agent advertises no model state; {model} was applied at spawn");
+        }
     }
 
     // Get current date and format it
     let current_date = Local::now().format("%B %d, %Y").to_string();
-    let date_prefix = format!("Current date: {}\n\n", current_date);
+    let date_prefix = format!("Current date: {current_date}\n\n");
 
     // Build prompt from conversation messages
     let prompt_text = messages
@@ -128,7 +227,7 @@ pub(crate) async fn run_prompt_session(
         .join("\n\n");
 
     // Prepend current date to the prompt
-    let prompt_text = format!("{}{}", date_prefix, prompt_text);
+    let prompt_text = format!("{date_prefix}{prompt_text}");
 
     // Build content blocks: images first, then text
     // Claude processes images before text for better understanding
@@ -172,13 +271,14 @@ pub(crate) async fn run_prompt_session(
             content_blocks,
         ))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to send prompt: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to send prompt: {e:?}"))?;
 
     info!("Stop reason: {:?}", prompt_response.stop_reason);
 
-    // Clean shutdown - just drop the child, kill_on_drop(true) will terminate it
+    // Dropping the connection closes the subprocess's stdin; shutdown then
+    // waits for exit and drains the I/O and stderr tasks.
     drop(connection);
-    drop(child);
+    process.shutdown("claude-code-acp").await;
 
     Ok(format!("{:?}", prompt_response.stop_reason))
 }
@@ -240,51 +340,37 @@ pub(crate) async fn run_model_discovery_session(
     provider: AgentProvider,
     provider_paths: ProviderPaths,
 ) -> Result<Vec<ModelInfo>, String> {
+    // Providers whose adapters report no models over ACP are served straight
+    // from the curated fallback list — no point spawning a subprocess and
+    // running the handshake just to learn nothing.
+    if !provider.descriptor().models_via_acp {
+        return Ok(with_fallback_models(&provider, vec![]));
+    }
+
     // Spawn the ACP subprocess (model_id is None for discovery - we're just fetching available models)
-    let mut child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
+    let child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
         .await
-        .map_err(|e| format!("Failed to spawn agent: {}", e))?;
-
-    // Get stdin/stdout handles
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| "Failed to get stdin handle".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to get stdout handle".to_string())?;
-
-    // Drop stderr - we don't need it for discovery
-    drop(child.stderr.take());
+        .map_err(|e| format!("Failed to spawn agent: {e}"))?;
 
     // Create minimal client
     let client = Arc::new(ModelDiscoveryClient);
 
-    // Create connection
-    let (connection, io_future) =
-        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
-            tokio::task::spawn_local(f);
-        });
-
-    // Run I/O in background
-    tokio::task::spawn_local(async move {
-        let _ = io_future.await;
-    });
+    let (connection, process) =
+        connect_agent(child, client, "model-discovery").map_err(|e| e.to_string())?;
 
     // Initialize
-    let _init_response = connection
-        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-            Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
-        ))
-        .await
-        .map_err(|e| format!("Failed to initialize: {:?}", e))?;
+    let _init_response = initialize_with_timeout(
+        &connection,
+        Implementation::new("thoughttree", env!("CARGO_PKG_VERSION")).title("ThoughtTree"),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Create session to get models
     let session_response = connection
         .new_session(NewSessionRequest::new(&notes_directory))
         .await
-        .map_err(|e| format!("Failed to create session: {:?}", e))?;
+        .map_err(|e| format!("Failed to create session: {e:?}"))?;
 
     // Extract models from response
     let models: Vec<ModelInfo> = session_response
@@ -300,23 +386,7 @@ pub(crate) async fn run_model_discovery_session(
         })
         .unwrap_or_default();
 
-    // Gemini CLI doesn't expose models via ACP, so provide fallback options
-    // These correspond to the --model flag values for `gemini` CLI
-    let models = if models.is_empty() && matches!(provider, AgentProvider::GeminiCli) {
-        info!("Gemini CLI returned no models via ACP, using fallback model list");
-        vec![
-            ModelInfo {
-                model_id: "gemini-3".to_string(),
-                display_name: "Gemini 3 (Auto)".to_string(),
-            },
-            ModelInfo {
-                model_id: "gemini-2.5".to_string(),
-                display_name: "Gemini 2.5 (Auto)".to_string(),
-            },
-        ]
-    } else {
-        models
-    };
+    let models = with_fallback_models(&provider, models);
 
     info!(
         "Discovered {} models for {:?}: {:?}",
@@ -325,8 +395,31 @@ pub(crate) async fn run_model_discovery_session(
         models.iter().map(|m| &m.model_id).collect::<Vec<_>>()
     );
 
-    // Child process will be dropped and killed here
+    drop(connection);
+    process.shutdown("model-discovery").await;
+
     Ok(models)
+}
+
+/// Some providers (e.g. Gemini CLI) don't expose models via ACP; offer the
+/// descriptor's fallback list, which mirrors the CLI's `--model` flag values.
+fn with_fallback_models(provider: &AgentProvider, models: Vec<ModelInfo>) -> Vec<ModelInfo> {
+    let fallback = provider.descriptor().fallback_models;
+    if !models.is_empty() || fallback.is_empty() {
+        return models;
+    }
+
+    info!(
+        "{} returned no models via ACP, using fallback model list",
+        provider.display_name()
+    );
+    fallback
+        .iter()
+        .map(|(model_id, display_name)| ModelInfo {
+            model_id: model_id.to_string(),
+            display_name: display_name.to_string(),
+        })
+        .collect()
 }
 
 /// Run a summarization session with Haiku model
@@ -336,56 +429,21 @@ pub(crate) async fn run_summary_session(
     custom_path: Option<String>,
 ) -> anyhow::Result<String> {
     // Spawn ACP subprocess
-    let mut child = spawn_claude_code_acp(&notes_directory, custom_path.as_deref()).await?;
-
-    let stdin = child
-        .stdin
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdin handle"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to get stdout handle"))?;
-
-    // Log stderr for debugging
-    if let Some(stderr) = child.stderr.take() {
-        tokio::task::spawn_local(async move {
-            use tokio::io::AsyncBufReadExt;
-            let reader = tokio::io::BufReader::new(stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                warn!("[summary-acp stderr] {}", line);
-            }
-        });
-    }
-
-    // Small delay to ensure subprocess is ready
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    let child = spawn_claude_code_acp(&notes_directory, custom_path.as_deref()).await?;
 
     let client = Arc::new(SummaryClient::new());
     let response_text = client.response_text.clone();
 
-    // Create connection
-    let (connection, io_future) =
-        ClientSideConnection::new(client, stdin.compat_write(), stdout.compat(), |f| {
-            tokio::task::spawn_local(f);
-        });
+    let (connection, process) = connect_agent(child, client, "summary-acp")?;
 
-    // Run I/O in background
-    tokio::task::spawn_local(async move {
-        if let Err(e) = io_future.await {
-            error!("[summary] I/O error: {:?}", e);
-        }
-    });
-
-    // Initialize
+    // Initialize. This doubles as the readiness handshake: stdin writes are
+    // buffered by the pipe, so no startup delay is needed.
     info!("Summary session: initializing connection...");
-    let init_response = connection
-        .initialize(InitializeRequest::new(ProtocolVersion::LATEST).client_info(
-            Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
-        ))
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to initialize summary session: {:?}", e))?;
+    let init_response = initialize_with_timeout(
+        &connection,
+        Implementation::new("thoughttree-summarizer", env!("CARGO_PKG_VERSION")),
+    )
+    .await?;
 
     info!(
         "Summary session connected to: {:?}",
@@ -396,7 +454,7 @@ pub(crate) async fn run_summary_session(
     let session_response = connection
         .new_session(NewSessionRequest::new(&notes_directory))
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to create session: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to create session: {e:?}"))?;
 
     // Try to switch to Haiku if available
     if let Some(models) = &session_response.models {
@@ -432,8 +490,7 @@ pub(crate) async fn run_summary_session(
     // Build summarization prompt
     let prompt_text = format!(
         "Write a 3-5 word heading that describes what this text is about. \
-         Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{}",
-        truncated_content
+         Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{truncated_content}"
     );
 
     // Send prompt and wait for completion
@@ -450,7 +507,7 @@ pub(crate) async fn run_summary_session(
 
     // Clean up
     drop(connection);
-    drop(child);
+    process.shutdown("summary-acp").await;
 
     // Get result and clean it up
     let result = response_text.lock().await.trim().to_string();
@@ -463,5 +520,55 @@ pub(crate) async fn run_summary_session(
         Ok(format!("{}…", &result[..37]))
     } else {
         Ok(result.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fallback_models_come_from_descriptor_when_discovery_is_empty() {
+        // Gemini CLI and codex-acp report no models via ACP, so their
+        // descriptors' static lists must reach the selector
+        for provider in [AgentProvider::GeminiCli, AgentProvider::Codex] {
+            let models = with_fallback_models(&provider, vec![]);
+
+            let expected: Vec<(String, String)> = provider
+                .descriptor()
+                .fallback_models
+                .iter()
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .collect();
+            let actual: Vec<(String, String)> = models
+                .iter()
+                .map(|m| (m.model_id.clone(), m.display_name.clone()))
+                .collect();
+
+            assert!(
+                !models.is_empty(),
+                "{provider:?} must offer fallback models"
+            );
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn test_discovered_models_are_kept_when_present() {
+        let discovered = vec![ModelInfo {
+            model_id: "gemini-9".to_string(),
+            display_name: "Gemini 9".to_string(),
+        }];
+
+        let models = with_fallback_models(&AgentProvider::GeminiCli, discovered.clone());
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].model_id, "gemini-9");
+    }
+
+    #[test]
+    fn test_provider_without_fallbacks_returns_empty_when_discovery_is_empty() {
+        let models = with_fallback_models(&AgentProvider::ClaudeCode, vec![]);
+        assert!(models.is_empty());
     }
 }

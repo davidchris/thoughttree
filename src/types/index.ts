@@ -2,7 +2,7 @@
 // Agent Provider Types
 // ============================================================================
 
-export type AgentProvider = 'claude-code' | 'gemini-cli';
+export type AgentProvider = 'claude-code' | 'gemini-cli' | 'codex';
 
 export interface ProviderStatus {
   provider: AgentProvider;
@@ -10,15 +10,33 @@ export interface ProviderStatus {
   error_message: string | null;
 }
 
-export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = {
-  'claude-code': 'Claude Code',
-  'gemini-cli': 'Gemini CLI',
-};
+/// Static per-provider data, mirroring the Rust ProviderDescriptor table
+/// (src-tauri/src/backend/types.rs). Adding a Provider means adding one entry.
+export interface ProviderDescriptor {
+  id: AgentProvider;
+  displayName: string;
+  shortName: string;
+}
 
-export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = {
-  'claude-code': 'Claude',
-  'gemini-cli': 'Gemini',
-};
+export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
+  { id: 'claude-code', displayName: 'Claude Code', shortName: 'Claude' },
+  { id: 'gemini-cli', displayName: 'Gemini CLI', shortName: 'Gemini' },
+  { id: 'codex', displayName: 'Codex', shortName: 'Codex' },
+];
+
+export const ALL_PROVIDERS: readonly AgentProvider[] = PROVIDER_DESCRIPTORS.map((d) => d.id);
+
+const byProvider = (pick: (d: ProviderDescriptor) => string): Record<AgentProvider, string> =>
+  Object.fromEntries(PROVIDER_DESCRIPTORS.map((d) => [d.id, pick(d)])) as Record<
+    AgentProvider,
+    string
+  >;
+
+export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = byProvider(
+  (d) => d.displayName
+);
+
+export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = byProvider((d) => d.shortName);
 
 export const DEFAULT_PROVIDER: AgentProvider = 'claude-code';
 
@@ -31,14 +49,21 @@ export interface ModelInfo {
   display_name: string;
 }
 
-export interface ModelPreferences {
-  'claude-code'?: string;
-  'gemini-cli'?: string;
-}
+export type ModelPreferences = Partial<Record<AgentProvider, string>>;
 
-export interface ProviderPaths {
-  'claude-code'?: string;
-  'gemini-cli'?: string;
+export type ProviderPaths = Partial<Record<AgentProvider, string>>;
+
+/** Wire/on-disk shape: the backend and legacy project files store explicit
+ * nulls for unset entries. The UI treats null and missing identically, so
+ * strip nulls at the boundary with {@link withoutNullEntries}. */
+export type StoredProviderRecord = Partial<Record<AgentProvider, string | null>>;
+
+export function withoutNullEntries(
+  record: StoredProviderRecord
+): Partial<Record<AgentProvider, string>> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value != null)
+  ) as Partial<Record<AgentProvider, string>>;
 }
 
 // ============================================================================

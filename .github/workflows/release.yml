@@ -17,7 +17,7 @@ jobs:
             args: '--target aarch64-apple-darwin'
             sidecar_target: 'darwin-arm64'
           - platform: ubuntu-22.04
-            args: ''
+            args: '--bundles deb,rpm'
             sidecar_target: 'linux-x64'
           - platform: windows-latest
             args: ''

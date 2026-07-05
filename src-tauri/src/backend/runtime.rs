@@ -10,11 +10,11 @@ where
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| format!("Failed to create runtime: {}", e))?;
+            .map_err(|e| format!("Failed to create runtime: {e}"))?;
 
         let local = tokio::task::LocalSet::new();
         local.block_on(&rt, task())
     })
     .await
-    .map_err(|e| format!("Task join error: {}", e))?
+    .map_err(|e| format!("Task join error: {e}"))?
 }

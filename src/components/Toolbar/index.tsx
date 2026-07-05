@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useGraphStore } from '../../store/useGraphStore';
+import { useUIStore } from '../../store/useUIStore';
 import { SettingsDialog } from '../SettingsDialog';
 import { logger } from '../../lib/logger';
 import './Toolbar.css';
@@ -23,7 +24,9 @@ export function Toolbar() {
   const getConversationPathNodeIds = useGraphStore((state) => state.getConversationPathNodeIds);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  // In the UI store (not local state) so the Palette can suppress ⌘K while open.
+  const showSettings = useUIStore((state) => state.settingsOpen);
+  const setShowSettings = useUIStore((state) => state.setSettingsOpen);
 
   // Check if selected node is an agent node (can reply)
   const selectedNodeData = selectedNodeId ? nodeData.get(selectedNodeId) : null;

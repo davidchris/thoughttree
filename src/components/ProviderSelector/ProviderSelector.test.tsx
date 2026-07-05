@@ -108,6 +108,56 @@ describe('ProviderSelector', () => {
     expect(screen.getByText(/unavailable/i)).toBeInTheDocument();
   });
 
+  it('offers Codex and disables it with the install hint when the adapter is missing', () => {
+    const codexUnavailable: ProviderStatus[] = [
+      { provider: 'claude-code', available: true, error_message: null },
+      {
+        provider: 'codex',
+        available: false,
+        error_message:
+          'Codex not found. Install adapter: npm install -g @agentclientprotocol/codex-acp — then login: npm install -g @openai/codex && codex login',
+      },
+    ];
+
+    render(
+      <ProviderSelector
+        value="claude-code"
+        onChange={mockOnChange}
+        availableProviders={codexUnavailable}
+      />
+    );
+
+    const codexOption = screen
+      .getAllByRole('option')
+      .find((opt) => opt.textContent?.includes('Codex'));
+
+    expect(codexOption).toBeDisabled();
+    expect(codexOption).toHaveAttribute(
+      'title',
+      expect.stringContaining('@agentclientprotocol/codex-acp')
+    );
+  });
+
+  it('lets the user select Codex when the adapter is available', async () => {
+    const user = userEvent.setup();
+    const codexAvailable: ProviderStatus[] = [
+      { provider: 'claude-code', available: true, error_message: null },
+      { provider: 'codex', available: true, error_message: null },
+    ];
+
+    render(
+      <ProviderSelector
+        value="claude-code"
+        onChange={mockOnChange}
+        availableProviders={codexAvailable}
+      />
+    );
+
+    await user.selectOptions(screen.getByRole('combobox'), 'codex');
+
+    expect(mockOnChange).toHaveBeenCalledWith('codex');
+  });
+
   it('applies compact styling when compact prop is true', () => {
     render(
       <ProviderSelector

@@ -4,7 +4,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
 
-use crate::backend::types::{AgentProvider, ProviderPaths};
+use crate::backend::types::{AgentProvider, ProviderDescriptor, ProviderPaths};
 
 /// Find the bundled claude-code-acp sidecar binary
 pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
@@ -33,7 +33,7 @@ pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
         for _ in 0..10 {
             let dev_sidecar = current
                 .join("src-tauri/binaries")
-                .join(format!("claude-code-acp-{}", target_triple));
+                .join(format!("claude-code-acp-{target_triple}"));
             if dev_sidecar.exists() {
                 return Some(dev_sidecar);
             }
@@ -58,203 +58,101 @@ pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
     None
 }
 
-/// Find the Claude Code CLI executable
-/// Security: Only checks known installation paths
-/// If custom_path is provided, it's checked first (after env var)
-pub(crate) fn find_claude_code_executable(custom_path: Option<&str>) -> Option<PathBuf> {
-    // Highest priority: explicit override via environment variable
-    if let Ok(env_path) = std::env::var("CLAUDE_CODE_EXECUTABLE") {
-        let candidate = PathBuf::from(env_path);
-        if candidate.exists() {
-            if let Ok(canonical) = std::fs::canonicalize(&candidate) {
-                info!(
-                    "Using CLAUDE_CODE_EXECUTABLE override at {:?} (resolves to: {:?})",
-                    candidate, canonical
-                );
-            } else {
-                info!("Using CLAUDE_CODE_EXECUTABLE override at {:?}", candidate);
-            }
-            return Some(candidate);
-        } else {
-            warn!(
-                "CLAUDE_CODE_EXECUTABLE override does not exist at {:?}",
-                candidate
-            );
-        }
+/// Ordered executable candidates for a provider. Pure: environment inputs
+/// (env override value, home dir, nvm node dirs) are passed in, existence is
+/// checked by the caller.
+///
+/// Precedence: env override > custom path > known paths > home-relative
+/// paths > nvm-managed node bins.
+pub(crate) fn candidate_paths(
+    descriptor: &ProviderDescriptor,
+    custom_path: Option<&str>,
+    env_override_value: Option<&str>,
+    home: Option<&Path>,
+    nvm_node_dirs: &[PathBuf],
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Some(env_path) = env_override_value {
+        candidates.push(PathBuf::from(env_path));
     }
 
-    // Second priority: user-configured custom path from settings
     if let Some(custom) = custom_path {
-        let candidate = PathBuf::from(custom);
-        if candidate.exists() {
-            if let Ok(canonical) = std::fs::canonicalize(&candidate) {
-                info!(
-                    "Using custom Claude CLI path at {:?} (resolves to: {:?})",
-                    candidate, canonical
-                );
-            } else {
-                info!("Using custom Claude CLI path at {:?}", candidate);
-            }
-            return Some(candidate);
-        } else {
-            warn!("Custom Claude CLI path does not exist at {:?}", candidate);
-        }
+        candidates.push(PathBuf::from(custom));
     }
 
-    // Known installation paths (in order of preference)
-    let known_paths = [
-        // Homebrew on Apple Silicon
-        "/opt/homebrew/bin/claude",
-        // Homebrew on Intel Mac
-        "/usr/local/bin/claude",
-    ];
+    candidates.extend(descriptor.known_paths.iter().map(PathBuf::from));
 
-    for path_str in known_paths {
-        let path = PathBuf::from(path_str);
-        if path.exists() {
-            // Log canonical path for debugging, but return original path for execution
-            // (Homebrew symlinks point to wrapper scripts that must be executed directly)
-            if let Ok(canonical) = std::fs::canonicalize(&path) {
-                info!(
-                    "Found Claude CLI at {:?} (resolves to: {:?})",
-                    path, canonical
-                );
-            } else {
-                info!("Found Claude CLI at {:?}", path);
-            }
-            return Some(path);
-        }
+    if let Some(home) = home {
+        candidates.extend(
+            descriptor
+                .home_relative_paths
+                .iter()
+                .map(|relative| home.join(relative)),
+        );
+        candidates.extend(
+            nvm_node_dirs
+                .iter()
+                .map(|node_dir| node_dir.join("bin").join(descriptor.executable_name)),
+        );
     }
 
-    // Native install script location and common user-local installs
-    // Use dirs crate pattern for home directory (more reliable than HOME env var)
-    if let Some(home) = dirs::home_dir() {
-        let native_install = home.join(".claude/local/claude");
-        let local_bin = home.join(".local/bin/claude"); // XDG-style local bin
-        let bun_install = home.join(".bun/bin/claude");
-        let npm_global = home.join(".npm-global/bin/claude");
-
-        for path in [native_install, local_bin, bun_install, npm_global] {
-            if path.exists() {
-                if let Ok(canonical) = std::fs::canonicalize(&path) {
-                    info!(
-                        "Found Claude CLI at {:?} (resolves to: {:?})",
-                        path, canonical
-                    );
-                } else {
-                    info!("Found Claude CLI at {:?}", path);
-                }
-                return Some(path);
-            }
-        }
-
-        // nvm-managed npm globals: iterate known Node versions (no globbing)
-        let nvm_base = home.join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-            for entry in entries.flatten() {
-                let candidate = entry.path().join("bin/claude");
-                if candidate.exists() {
-                    if let Ok(canonical) = std::fs::canonicalize(&candidate) {
-                        info!(
-                            "Found Claude CLI in nvm path {:?} (resolves to: {:?})",
-                            candidate, canonical
-                        );
-                    } else {
-                        info!("Found Claude CLI in nvm path {:?}", candidate);
-                    }
-                    return Some(candidate);
-                }
-            }
-        }
-    }
-
-    // Security: We intentionally do NOT fall back to PATH lookup via `which`
-    // This prevents PATH injection attacks where a malicious binary could be executed
-    warn!("Claude Code CLI not found in any known location");
-    None
+    candidates
 }
 
-/// Find the Gemini CLI executable
-/// Security: Only checks known installation paths
-/// If custom_path is provided, it's checked first
-pub(crate) fn find_gemini_cli_executable(custom_path: Option<&str>) -> Option<PathBuf> {
-    // First priority: user-configured custom path from settings
-    if let Some(custom) = custom_path {
-        let candidate = PathBuf::from(custom);
-        if candidate.exists() {
-            if let Ok(canonical) = std::fs::canonicalize(&candidate) {
-                info!(
-                    "Using custom Gemini CLI path at {:?} (resolves to: {:?})",
-                    candidate, canonical
-                );
-            } else {
-                info!("Using custom Gemini CLI path at {:?}", candidate);
-            }
-            return Some(candidate);
-        } else {
-            warn!("Custom Gemini CLI path does not exist at {:?}", candidate);
-        }
-    }
+/// Find a provider's executable: first candidate path that exists.
+/// Security: Only checks known installation paths — no PATH/`which` lookup,
+/// which prevents PATH injection attacks.
+pub(crate) fn find_provider_executable(
+    provider: &AgentProvider,
+    custom_path: Option<&str>,
+) -> Option<PathBuf> {
+    let descriptor = provider.descriptor();
 
-    // Known installation paths (in order of preference)
-    let known_paths = [
-        // Homebrew on Apple Silicon
-        "/opt/homebrew/bin/gemini",
-        // Homebrew on Intel Mac
-        "/usr/local/bin/gemini",
-    ];
+    let env_override_value = descriptor
+        .env_override
+        .and_then(|var| std::env::var(var).ok());
 
-    for path_str in known_paths {
-        let path = PathBuf::from(path_str);
-        if path.exists() {
+    let home = dirs::home_dir();
+
+    let found = candidate_paths(
+        descriptor,
+        custom_path,
+        env_override_value.as_deref(),
+        home.as_deref(),
+        &[],
+    )
+    .into_iter()
+    .find(|path| path.exists())
+    .or_else(|| {
+        // nvm-managed npm globals: iterate known Node versions (no globbing).
+        // Listing the versions dir costs a read_dir, so only scan it after
+        // every other candidate missed.
+        std::fs::read_dir(home?.join(".nvm/versions/node"))
+            .ok()?
+            .flatten()
+            .map(|entry| entry.path().join("bin").join(descriptor.executable_name))
+            .find(|path| path.exists())
+    });
+    match &found {
+        Some(path) => {
             // Log canonical path for debugging, but return original path for execution
             // (Homebrew symlinks point to wrapper scripts that must be executed directly)
-            if let Ok(canonical) = std::fs::canonicalize(&path) {
+            if let Ok(canonical) = std::fs::canonicalize(path) {
                 info!(
-                    "Found Gemini CLI at {:?} (resolves to: {:?})",
-                    path, canonical
+                    "Found {} executable at {:?} (resolves to: {:?})",
+                    descriptor.display_name, path, canonical
                 );
             } else {
-                info!("Found Gemini CLI at {:?}", path);
-            }
-            return Some(path);
-        }
-    }
-
-    // Check user-local installation paths
-    if let Some(home) = dirs::home_dir() {
-        let user_paths = [
-            // bun global install
-            home.join(".bun/bin/gemini"),
-            // npm global install (standard location)
-            home.join(".npm-global/bin/gemini"),
-            // nvm-managed npm global
-            home.join(".nvm/versions/node").join("*/bin/gemini"),
-        ];
-
-        for path in user_paths {
-            // Skip glob patterns (nvm path) - would need expansion
-            if path.to_string_lossy().contains('*') {
-                continue;
-            }
-            if path.exists() {
-                if let Ok(canonical) = std::fs::canonicalize(&path) {
-                    info!(
-                        "Found Gemini CLI at {:?} (resolves to: {:?})",
-                        path, canonical
-                    );
-                } else {
-                    info!("Found Gemini CLI at {:?}", path);
-                }
-                return Some(path);
+                info!("Found {} executable at {:?}", descriptor.display_name, path);
             }
         }
+        None => warn!(
+            "{} executable not found in any known location",
+            descriptor.display_name
+        ),
     }
-
-    // Security: We intentionally do NOT fall back to PATH lookup via `which`
-    // This prevents PATH injection attacks where a malicious binary could be executed
-    warn!("Gemini CLI not found in any known location");
-    None
+    found
 }
 
 /// Spawn the claude-code-acp sidecar
@@ -271,13 +169,7 @@ pub(crate) async fn spawn_claude_code_acp(
     })?;
 
     // Find Claude Code CLI for the sidecar to use
-    let claude_cli_path = find_claude_code_executable(custom_path).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Claude Code CLI not found.\n\
-             Please install it: brew install --cask claude-code\n\
-             Or: npm install -g @anthropic-ai/claude-code"
-        )
-    })?;
+    let claude_cli_path = resolve_adapter_path(&AgentProvider::ClaudeCode, custom_path)?;
 
     info!(
         "Spawning claude-code-acp sidecar: {:?} in {:?}",
@@ -293,42 +185,78 @@ pub(crate) async fn spawn_claude_code_acp(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {e}"))?;
 
     Ok(child)
 }
 
-/// Spawn Gemini CLI in ACP mode
-pub(crate) async fn spawn_gemini_cli_acp(
+/// Resolve a provider's adapter executable, or fail with its install hint
+fn resolve_adapter_path(
+    provider: &AgentProvider,
+    custom_path: Option<&str>,
+) -> anyhow::Result<PathBuf> {
+    let descriptor = provider.descriptor();
+    find_provider_executable(provider, custom_path).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} not found.\n{}",
+            descriptor.display_name,
+            descriptor.install_hint
+        )
+    })
+}
+
+/// Args putting Gemini CLI in ACP mode. The model must be picked at spawn
+/// time; absent a preference, default to the descriptor's first fallback
+/// model — the same entry the selector offers first.
+fn gemini_cli_args(model_id: Option<&str>) -> Vec<String> {
+    let default_model = AgentProvider::GeminiCli
+        .descriptor()
+        .fallback_models
+        .first()
+        .map(|(id, _)| *id)
+        .unwrap_or_default();
+
+    vec![
+        "--experimental-acp".to_string(),
+        "--model".to_string(),
+        model_id.unwrap_or(default_model).to_string(),
+    ]
+}
+
+/// Args selecting the Codex model via the adapter's standard config-override
+/// flag (`codex-acp -c model=<id>`). No preference → no flag, so the user's
+/// own codex config default applies.
+fn codex_config_args(model_id: Option<&str>) -> Vec<String> {
+    model_id
+        .map(|id| vec!["-c".to_string(), format!("model={id}")])
+        .unwrap_or_default()
+}
+
+/// Spawn a provider's ACP adapter over stdio — no sidecar. Extra args carry
+/// per-spawn config such as the model override.
+pub(crate) async fn spawn_plain_adapter(
+    provider: &AgentProvider,
     notes_directory: &Path,
     custom_path: Option<&str>,
-    model_id: Option<&str>,
+    args: &[String],
 ) -> anyhow::Result<tokio::process::Child> {
-    let gemini_path = find_gemini_cli_executable(custom_path).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Gemini CLI not found.\n\
-             Install via: brew install gemini-cli\n\
-             Or: bun install -g @google/gemini-cli"
-        )
-    })?;
-
-    // Use provided model or default to gemini-3
-    let model = model_id.unwrap_or("gemini-3");
+    let descriptor = provider.descriptor();
+    let adapter_path = resolve_adapter_path(provider, custom_path)?;
 
     info!(
-        "Spawning Gemini CLI ACP mode: {:?} in {:?} with model {:?}",
-        gemini_path, notes_directory, model
+        "Spawning {} adapter: {:?} in {:?} with args {:?}",
+        descriptor.display_name, adapter_path, notes_directory, args
     );
 
-    let child = Command::new(&gemini_path)
-        .args(["--experimental-acp", "--model", model])
+    let child = Command::new(&adapter_path)
+        .args(args)
         .current_dir(notes_directory)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn Gemini CLI: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to spawn {}: {e}", descriptor.display_name))?;
 
     Ok(child)
 }
@@ -340,13 +268,145 @@ pub(crate) async fn spawn_agent_subprocess(
     paths: &ProviderPaths,
     model_id: Option<&str>,
 ) -> anyhow::Result<tokio::process::Child> {
+    let custom_path = paths.get(provider).map(String::as_str);
     match provider {
-        AgentProvider::ClaudeCode => {
-            spawn_claude_code_acp(notes_directory, paths.claude_code.as_deref()).await
-        }
+        AgentProvider::ClaudeCode => spawn_claude_code_acp(notes_directory, custom_path).await,
         AgentProvider::GeminiCli => {
             // Gemini CLI requires model to be specified at spawn time via --model flag
-            spawn_gemini_cli_acp(notes_directory, paths.gemini_cli.as_deref(), model_id).await
+            spawn_plain_adapter(
+                provider,
+                notes_directory,
+                custom_path,
+                &gemini_cli_args(model_id),
+            )
+            .await
         }
+        AgentProvider::Codex => {
+            // Codex model is applied at spawn via `-c model=<id>`
+            spawn_plain_adapter(
+                provider,
+                notes_directory,
+                custom_path,
+                &codex_config_args(model_id),
+            )
+            .await
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn claude_descriptor() -> &'static crate::backend::types::ProviderDescriptor {
+        AgentProvider::ClaudeCode.descriptor()
+    }
+
+    #[test]
+    fn test_candidate_paths_full_precedence() {
+        let home = PathBuf::from("/home/tester");
+        let nvm_dirs = vec![PathBuf::from("/home/tester/.nvm/versions/node/v20.0.0")];
+
+        let paths = candidate_paths(
+            claude_descriptor(),
+            Some("/custom/claude"),
+            Some("/env/claude"),
+            Some(&home),
+            &nvm_dirs,
+        );
+
+        let expected: Vec<PathBuf> = [
+            "/env/claude",
+            "/custom/claude",
+            "/opt/homebrew/bin/claude",
+            "/usr/local/bin/claude",
+            "/home/tester/.claude/local/claude",
+            "/home/tester/.local/bin/claude",
+            "/home/tester/.bun/bin/claude",
+            "/home/tester/.npm-global/bin/claude",
+            "/home/tester/.nvm/versions/node/v20.0.0/bin/claude",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+
+        assert_eq!(paths, expected);
+    }
+
+    #[test]
+    fn test_candidate_paths_without_env_override_starts_with_custom() {
+        let paths = candidate_paths(claude_descriptor(), Some("/custom/claude"), None, None, &[]);
+        assert_eq!(paths[0], PathBuf::from("/custom/claude"));
+        assert_eq!(paths[1], PathBuf::from("/opt/homebrew/bin/claude"));
+    }
+
+    #[test]
+    fn test_candidate_paths_without_custom_or_home_uses_known_paths_only() {
+        let paths = candidate_paths(claude_descriptor(), None, None, None, &[]);
+        assert_eq!(paths[0], PathBuf::from("/opt/homebrew/bin/claude"));
+        assert_eq!(paths.len(), claude_descriptor().known_paths.len());
+    }
+
+    #[test]
+    fn test_gemini_args_default_model_comes_from_descriptor() {
+        let (default_id, _) = AgentProvider::GeminiCli.descriptor().fallback_models[0];
+        assert_eq!(
+            gemini_cli_args(None),
+            vec![
+                "--experimental-acp".to_string(),
+                "--model".to_string(),
+                default_id.to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_gemini_args_pass_model_preference() {
+        assert_eq!(
+            gemini_cli_args(Some("gemini-2.5")),
+            vec![
+                "--experimental-acp".to_string(),
+                "--model".to_string(),
+                "gemini-2.5".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_codex_args_pass_model_as_config_override() {
+        let args = codex_config_args(Some("gpt-5.5"));
+        assert_eq!(args, vec!["-c".to_string(), "model=gpt-5.5".to_string()]);
+    }
+
+    #[test]
+    fn test_codex_args_empty_without_model_so_adapter_default_applies() {
+        assert!(codex_config_args(None).is_empty());
+    }
+
+    #[test]
+    fn test_codex_candidate_paths_target_adapter_binary() {
+        let home = PathBuf::from("/home/tester");
+        let nvm_dirs = vec![PathBuf::from("/home/tester/.nvm/versions/node/v20.0.0")];
+
+        let paths = candidate_paths(
+            AgentProvider::Codex.descriptor(),
+            None,
+            None,
+            Some(&home),
+            &nvm_dirs,
+        );
+
+        let expected: Vec<PathBuf> = [
+            "/opt/homebrew/bin/codex-acp",
+            "/usr/local/bin/codex-acp",
+            "/home/tester/.bun/bin/codex-acp",
+            "/home/tester/.npm-global/bin/codex-acp",
+            "/home/tester/.nvm/versions/node/v20.0.0/bin/codex-acp",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+
+        assert_eq!(paths, expected);
     }
 }

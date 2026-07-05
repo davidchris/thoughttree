@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
+import { useProviderStore } from '../../store/useProviderStore';
 import {
   getAvailableModels,
   getAvailableProviders,
@@ -11,7 +12,12 @@ import {
   validateProviderPath,
 } from '../../lib/tauri';
 import { ModelSelector } from '../ModelSelector';
-import { PROVIDER_DISPLAY_NAMES, type AgentProvider, type ProviderPaths } from '../../types';
+import {
+  ALL_PROVIDERS,
+  PROVIDER_DISPLAY_NAMES,
+  type AgentProvider,
+  type ProviderPaths,
+} from '../../types';
 import { logger } from '../../lib/logger';
 import './styles.css';
 
@@ -20,37 +26,40 @@ interface SettingsDialogProps {
   onClose: () => void;
 }
 
-const PROVIDERS: AgentProvider[] = ['claude-code', 'gemini-cli'];
-
 interface PathValidationState {
   status: 'idle' | 'validating' | 'valid' | 'invalid';
   message?: string;
 }
 
+function perProviderRecord<T>(value: T): Record<AgentProvider, T> {
+  return Object.fromEntries(ALL_PROVIDERS.map((provider) => [provider, value])) as Record<
+    AgentProvider,
+    T
+  >;
+}
+
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const projectPath = useGraphStore((state) => state.projectPath);
-  const availableProviders = useGraphStore((state) => state.availableProviders);
-  const setAvailableProviders = useGraphStore((state) => state.setAvailableProviders);
-  const globalModelPreferences = useGraphStore((state) => state.globalModelPreferences);
   const projectModelPreferences = useGraphStore((state) => state.projectModelPreferences);
-  const setGlobalModelPreferences = useGraphStore((state) => state.setGlobalModelPreferences);
-  const setGlobalModelPreference = useGraphStore((state) => state.setGlobalModelPreference);
   const setProjectModelPreference = useGraphStore((state) => state.setProjectModelPreference);
-  const availableModels = useGraphStore((state) => state.availableModels);
-  const setAvailableModels = useGraphStore((state) => state.setAvailableModels);
+  const availableProviders = useProviderStore((state) => state.availableProviders);
+  const setAvailableProviders = useProviderStore((state) => state.setAvailableProviders);
+  const globalModelPreferences = useProviderStore((state) => state.globalModelPreferences);
+  const setGlobalModelPreferences = useProviderStore((state) => state.setGlobalModelPreferences);
+  const setGlobalModelPreference = useProviderStore((state) => state.setGlobalModelPreference);
+  const availableModels = useProviderStore((state) => state.availableModels);
+  const setAvailableModels = useProviderStore((state) => state.setAvailableModels);
 
-  const [loadingModels, setLoadingModels] = useState<Record<AgentProvider, boolean>>({
-    'claude-code': false,
-    'gemini-cli': false,
-  });
+  const [loadingModels, setLoadingModels] = useState<Record<AgentProvider, boolean>>(
+    perProviderRecord(false)
+  );
 
   // Provider path state
   const [providerPaths, setProviderPathsState] = useState<ProviderPaths>({});
   const [pathInputs, setPathInputs] = useState<ProviderPaths>({});
-  const [pathValidation, setPathValidation] = useState<Record<AgentProvider, PathValidationState>>({
-    'claude-code': { status: 'idle' },
-    'gemini-cli': { status: 'idle' },
-  });
+  const [pathValidation, setPathValidation] = useState<Record<AgentProvider, PathValidationState>>(
+    perProviderRecord<PathValidationState>({ status: 'idle' })
+  );
 
   // Load global preferences and provider paths on mount
   useEffect(() => {
@@ -62,7 +71,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         setProviderPathsState(paths);
         setPathInputs(paths);
         // Set validation status based on current availability
-        PROVIDERS.forEach((provider) => {
+        ALL_PROVIDERS.forEach((provider) => {
           const isAvailable = availableProviders.some(
             (p) => p.provider === provider && p.available
           );
@@ -100,7 +109,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   useEffect(() => {
     if (!isOpen) return;
 
-    PROVIDERS.forEach((provider) => {
+    ALL_PROVIDERS.forEach((provider) => {
       const isAvailable = availableProviders.some(
         (p) => p.provider === provider && p.available
       );
@@ -252,7 +261,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           </p>
 
           <div className="settings-grid">
-            {PROVIDERS.map((provider) => {
+            {ALL_PROVIDERS.map((provider) => {
               const validation = pathValidation[provider];
               const hasCustomPath = !!pathInputs[provider];
 
@@ -323,7 +332,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           </p>
 
           <div className="settings-grid">
-            {PROVIDERS.map((provider) => {
+            {ALL_PROVIDERS.map((provider) => {
               const isAvailable = availableProviders.some(
                 (p) => p.provider === provider && p.available
               );
@@ -358,7 +367,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             </p>
 
             <div className="settings-grid">
-              {PROVIDERS.map((provider) => {
+              {ALL_PROVIDERS.map((provider) => {
                 const isAvailable = availableProviders.some(
                   (p) => p.provider === provider && p.available
                 );

@@ -24,10 +24,12 @@ export function ContextMenu({ x, y, nodeId, onClose }: ContextMenuProps) {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('click', handleClick);
-    window.addEventListener('keydown', handleEscape);
+    // Capture phase: the Palette stops propagation of Escape, but same-node
+    // capture listeners still run, so the menu dismisses alongside it.
+    window.addEventListener('keydown', handleEscape, true);
     return () => {
       window.removeEventListener('click', handleClick);
-      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('keydown', handleEscape, true);
     };
   }, [onClose]);
 
