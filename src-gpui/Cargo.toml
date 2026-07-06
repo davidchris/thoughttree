@@ -1,0 +1,44 @@
+[package]
+name = "thoughttree-gpui"
+version = "0.0.1"
+edition = "2024"
+description = "ThoughtTree front-end prototype using Zed's GPUI framework"
+publish = false
+
+# GPUI is not published on crates.io. The Zed monorepo is the source of truth.
+# Pin a specific commit so the prototype keeps building when Zed's main moves.
+# Update the rev when intentionally tracking newer GPUI APIs.
+#
+# Pinned: zed-industries/zed @ 6e9ff7a (HEAD as of 2026-07-06).
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "6e9ff7a4f31ad4baa467058765f5fee00e4c2bc7" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "6e9ff7a4f31ad4baa467058765f5fee00e4c2bc7", features = ["font-kit", "runtime_shaders"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+smol = "2"
+unicode-segmentation = "1"
+
+# ACP client — same stack as the standalone harness in `src-tauri/acp/`.
+# tokio runs on its own thread; GPUI keeps using smol on the main thread.
+agent-client-protocol = { version = "0.9", features = ["unstable"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "process", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+async-trait = "0.1"
+async-channel = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Markdown — CommonMark parser. Render layer is hand-rolled in `markdown.rs`
+# on top of pulldown-cmark events. See PR #7 README for why GPUI doesn't get
+# Markdown for free.
+pulldown-cmark = { version = "0.12", default-features = false }
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

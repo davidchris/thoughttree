@@ -1,0 +1,44 @@
+//! GPUI front-end prototype for ThoughtTree.
+//!
+//! Run with `cargo run` from `src-gpui/`. See README.md for build prerequisites
+//! (GPUI is a git dependency from zed-industries/zed and needs Metal/Vulkan).
+
+mod acp;
+mod app;
+mod graph;
+mod markdown;
+mod state;
+mod theme;
+mod views;
+
+use app::AppView;
+use gpui::{prelude::*, px, size, App, Bounds, WindowBounds, WindowOptions};
+use gpui_platform::application;
+use tracing_subscriber::EnvFilter;
+use views::text_input;
+
+fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .try_init();
+
+    application().run(|cx: &mut App| {
+        text_input::bind_keys(cx);
+        let bounds = Bounds::centered(None, size(px(1280.0), px(800.0)), cx);
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(gpui::TitlebarOptions {
+                    title: Some("ThoughtTree (GPUI prototype)".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            |window, cx| cx.new(|cx| AppView::new(window, cx)),
+        )
+        .unwrap();
+        cx.activate(true);
+    });
+}
