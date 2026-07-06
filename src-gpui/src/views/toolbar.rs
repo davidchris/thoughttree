@@ -57,7 +57,7 @@ impl Render for ToolbarView {
                     .text_size(px(12.0))
                     .child(project_label),
             )
-            .child(div().flex_grow())
+            .child(div().flex_grow(1.0))
             .child(
                 div()
                     .text_color(theme::TEXT_DIM)

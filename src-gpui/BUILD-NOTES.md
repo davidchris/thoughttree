@@ -1,9 +1,10 @@
 ## Status
 
-- **Pinned rev:** `ae08089` (zed-industries/zed HEAD as of 2026-05-04).
-- **`cargo check`:** clean, 0 errors.
-- **`cargo build --release`:** clean.
-- **`cargo run --release`:** boots, ACP handshake completes, window opens.
+- **Pinned rev:** `6e9ff7a` (zed-industries/zed HEAD as of 2026-07-06).
+- **`cargo check`:** clean, 0 errors (8 existing warnings).
+- **`cargo build --release`:** clean, 0 errors (8 existing warnings).
+- **`cargo test`:** clean, 16 passed.
+- **`cargo run --release`:** not re-smoked for the 2026-07-06 bump.
 
 ## Bump history
 
@@ -11,6 +12,14 @@
 |-----|------|--------------|-------|
 | `main` → `9155bf4` | 2026-05-02 | 14 errors, all listed under "First-bump fixups" below | Metal Toolchain missing on host; runtime blocked. |
 | `9155bf4` → `ae08089` | 2026-05-04 | none | Drift-free bump. Metal Toolchain now present; runtime confirmed. |
+| `ae08089` → `6e9ff7a` | 2026-07-06 | 2 fixups, listed under "2026-07-06 bump fixups" below | Verified with offline Cargo cache; host `xcrun metal` again reports missing Metal Toolchain. |
+
+## 2026-07-06 bump fixups
+
+| File | Error | Fix |
+|------|-------|-----|
+| `Cargo.toml` | `gpui_macos` build script failed compiling shaders: `xcrun -sdk macosx metal` reports missing Metal Toolchain. | Kept the git pin and `font-kit`; added GPUI's `runtime_shaders` feature on `gpui_platform` so Cargo does not require build-time Metal shader compilation. |
+| `src/views/toolbar.rs` | `flex_grow()` now requires a `f32` grow factor (E0061). | Changed the spacer to `.flex_grow(1.0)`. |
 
 ## First-bump fixups (`rev = "main"` → pinned)
 
@@ -38,7 +47,7 @@ cargo build --release
 cargo run --release
 ```
 
-Empirically, bumps within `main` are usually drift-free (the `9155bf4` →
+Empirically, bumps within `main` are often drift-free (the `9155bf4` →
 `ae08089` bump touched zero source). If `cargo check` does flag drift,
 the categories in the first-bump table cover the recurring patterns.
 
@@ -66,4 +75,6 @@ xcodebuild -downloadComponent MetalToolchain
 xcrun -sdk macosx metal --version
 ```
 
-No longer blocks `cargo run --release` on this host.
+On 2026-07-06, `xcrun -sdk macosx metal --version` again reported the
+missing Metal Toolchain inside the sandbox. The current pin enables
+`gpui_platform/runtime_shaders`, which avoids build-time shader compilation.

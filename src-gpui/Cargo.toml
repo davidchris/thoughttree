@@ -9,10 +9,10 @@ publish = false
 # Pin a specific commit so the prototype keeps building when Zed's main moves.
 # Update the rev when intentionally tracking newer GPUI APIs.
 #
-# Pinned: zed-industries/zed @ ae08089 (HEAD as of 2026-05-04).
+# Pinned: zed-industries/zed @ 6e9ff7a (HEAD as of 2026-07-06).
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", rev = "ae08089415c525783eb48fc8ee53a8bc23a410bd" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "ae08089415c525783eb48fc8ee53a8bc23a410bd", features = ["font-kit"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "6e9ff7a4f31ad4baa467058765f5fee00e4c2bc7" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "6e9ff7a4f31ad4baa467058765f5fee00e4c2bc7", features = ["font-kit", "runtime_shaders"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
