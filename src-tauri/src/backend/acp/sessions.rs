@@ -32,6 +32,14 @@ const INIT_TIMEOUT: Duration = Duration::from_secs(15);
 /// before killing it.
 const EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 
+fn should_set_session_model(
+    model_id: Option<&str>,
+    agent_advertises_models: bool,
+    provider: &AgentProvider,
+) -> bool {
+    model_id.is_some() && agent_advertises_models && matches!(provider, AgentProvider::ClaudeCode)
+}
+
 /// An ACP agent subprocess together with its stderr-logging and connection
 /// I/O tasks, so teardown can wait for all of them instead of leaking.
 struct AgentProcess {
@@ -205,11 +213,14 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
 
     info!("Session created: {}", session_response.session_id);
 
-    // Switch model if specified and the agent supports it. Agents that
-    // advertise no model state (codex-acp) reject session/set_model with
-    // Method-not-found — their model is applied via spawn args instead.
+    // Switch model if specified and this provider's model selection belongs
+    // to ACP session state. Gemini and Codex are configured at spawn time.
     if let Some(ref model) = model_id {
-        if session_response.models.is_some() {
+        if should_set_session_model(
+            model_id.as_deref(),
+            session_response.models.is_some(),
+            &provider,
+        ) {
             info!("Switching to model: {}", model);
             connection
                 .set_session_model(SetSessionModelRequest::new(
@@ -219,7 +230,10 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to set model: {e:?}"))?;
         } else {
-            info!("Agent advertises no model state; {model} was applied at spawn");
+            info!(
+                "Skipping session model switch for {:?}; {model} was applied at spawn",
+                provider
+            );
         }
     }
 
@@ -589,5 +603,46 @@ mod tests {
     fn test_provider_without_fallbacks_returns_empty_when_discovery_is_empty() {
         let models = with_fallback_models(&AgentProvider::ClaudeCode, vec![]);
         assert!(models.is_empty());
+    }
+
+    #[test]
+    fn test_codex_model_is_not_set_via_session_even_when_adapter_advertises_models() {
+        assert!(!should_set_session_model(
+            Some("gpt-5.5"),
+            true,
+            &AgentProvider::Codex
+        ));
+    }
+
+    #[test]
+    fn test_gemini_model_is_not_set_via_session_even_when_adapter_advertises_models() {
+        assert!(!should_set_session_model(
+            Some("gemini-3"),
+            true,
+            &AgentProvider::GeminiCli
+        ));
+    }
+
+    #[test]
+    fn test_claude_model_is_set_via_session_when_adapter_advertises_models() {
+        assert!(should_set_session_model(
+            Some("sonnet"),
+            true,
+            &AgentProvider::ClaudeCode
+        ));
+    }
+
+    #[test]
+    fn test_session_model_is_not_set_without_model_or_model_state() {
+        assert!(!should_set_session_model(
+            None,
+            true,
+            &AgentProvider::ClaudeCode
+        ));
+        assert!(!should_set_session_model(
+            Some("sonnet"),
+            false,
+            &AgentProvider::ClaudeCode
+        ));
     }
 }
