@@ -3,6 +3,7 @@
 // ============================================================================
 
 export type AgentProvider = 'claude-code' | 'gemini-cli' | 'codex';
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface ProviderStatus {
   provider: AgentProvider;
@@ -16,20 +17,31 @@ export interface ProviderDescriptor {
   id: AgentProvider;
   displayName: string;
   shortName: string;
+  supportedEfforts: readonly ReasoningEffort[];
 }
 
 export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
-  { id: 'claude-code', displayName: 'Claude Code', shortName: 'Claude' },
-  { id: 'gemini-cli', displayName: 'Gemini CLI', shortName: 'Gemini' },
-  { id: 'codex', displayName: 'Codex', shortName: 'Codex' },
+  {
+    id: 'claude-code',
+    displayName: 'Claude Code',
+    shortName: 'Claude',
+    supportedEfforts: ['low', 'medium', 'high', 'xhigh'],
+  },
+  { id: 'gemini-cli', displayName: 'Gemini CLI', shortName: 'Gemini', supportedEfforts: [] },
+  {
+    id: 'codex',
+    displayName: 'Codex',
+    shortName: 'Codex',
+    supportedEfforts: ['low', 'medium', 'high', 'xhigh'],
+  },
 ];
 
 export const ALL_PROVIDERS: readonly AgentProvider[] = PROVIDER_DESCRIPTORS.map((d) => d.id);
 
-const byProvider = (pick: (d: ProviderDescriptor) => string): Record<AgentProvider, string> =>
+const byProvider = <T>(pick: (d: ProviderDescriptor) => T): Record<AgentProvider, T> =>
   Object.fromEntries(PROVIDER_DESCRIPTORS.map((d) => [d.id, pick(d)])) as Record<
     AgentProvider,
-    string
+    T
   >;
 
 export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = byProvider(
@@ -37,6 +49,11 @@ export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = byProvider(
 );
 
 export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = byProvider((d) => d.shortName);
+
+export const PROVIDER_SUPPORTED_EFFORTS: Record<
+  AgentProvider,
+  readonly ReasoningEffort[]
+> = byProvider((d) => d.supportedEfforts);
 
 export const DEFAULT_PROVIDER: AgentProvider = 'claude-code';
 
@@ -50,20 +67,23 @@ export interface ModelInfo {
 }
 
 export type ModelPreferences = Partial<Record<AgentProvider, string>>;
+export type EffortPreferences = Partial<Record<AgentProvider, ReasoningEffort>>;
 
 export type ProviderPaths = Partial<Record<AgentProvider, string>>;
 
 /** Wire/on-disk shape: the backend and legacy project files store explicit
  * nulls for unset entries. The UI treats null and missing identically, so
  * strip nulls at the boundary with {@link withoutNullEntries}. */
-export type StoredProviderRecord = Partial<Record<AgentProvider, string | null>>;
+export type StoredProviderRecord<V extends string = string> = Partial<
+  Record<AgentProvider, V | null>
+>;
 
-export function withoutNullEntries(
-  record: StoredProviderRecord
-): Partial<Record<AgentProvider, string>> {
+export function withoutNullEntries<V extends string>(
+  record: StoredProviderRecord<V>
+): Partial<Record<AgentProvider, V>> {
   return Object.fromEntries(
     Object.entries(record).filter(([, value]) => value != null)
-  ) as Partial<Record<AgentProvider, string>>;
+  ) as Partial<Record<AgentProvider, V>>;
 }
 
 // ============================================================================

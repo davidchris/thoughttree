@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { sendPrompt } from '../lib/tauri';
 import { useGraphStore } from '../store/useGraphStore';
+import { useProviderStore } from '../store/useProviderStore';
 import type { AgentProvider, UserNodeData } from '../types';
 import { logger } from '../lib/logger';
 
@@ -18,6 +19,8 @@ export function useNodeGeneration() {
   const appendToNode = useGraphStore((state) => state.appendToNode);
   const stopStreaming = useGraphStore((state) => state.stopStreaming);
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
+  const getEffectiveEffort = useGraphStore((state) => state.getEffectiveEffort);
+  const defaultProvider = useProviderStore((state) => state.defaultProvider);
 
   return useCallback(
     async ({ userNodeId, provider, modelId, onAgentNodeCreated }: GenerateNodeOptions): Promise<string | null> => {
@@ -35,6 +38,7 @@ export function useNodeGeneration() {
       onAgentNodeCreated?.(agentNodeId);
 
       const context = buildConversationContext(userNodeId);
+      const effort = getEffectiveEffort(provider ?? defaultProvider);
 
       try {
         await sendPrompt(
@@ -42,7 +46,8 @@ export function useNodeGeneration() {
           context,
           (chunk) => appendToNode(agentNodeId, chunk),
           provider,
-          modelId
+          modelId,
+          effort
         );
       } catch (error) {
         logger.error('Generation failed:', error);
@@ -53,6 +58,15 @@ export function useNodeGeneration() {
 
       return agentNodeId;
     },
-    [appendToNode, buildConversationContext, createAgentNodeDownstream, isNodeBlocked, nodeData, stopStreaming]
+    [
+      appendToNode,
+      buildConversationContext,
+      createAgentNodeDownstream,
+      defaultProvider,
+      getEffectiveEffort,
+      isNodeBlocked,
+      nodeData,
+      stopStreaming,
+    ]
   );
 }

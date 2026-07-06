@@ -4,7 +4,7 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
 
-use crate::backend::types::{AgentProvider, ProviderDescriptor, ProviderPaths};
+use crate::backend::types::{AgentProvider, ProviderDescriptor, ProviderPaths, ReasoningEffort};
 
 /// Find the bundled claude-code-acp sidecar binary
 pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
@@ -159,6 +159,7 @@ pub(crate) fn find_provider_executable(
 pub(crate) async fn spawn_claude_code_acp(
     notes_directory: &Path,
     custom_path: Option<&str>,
+    effort: Option<ReasoningEffort>,
 ) -> anyhow::Result<tokio::process::Child> {
     let sidecar_path = find_sidecar_path().ok_or_else(|| {
         anyhow::anyhow!(
@@ -177,9 +178,15 @@ pub(crate) async fn spawn_claude_code_acp(
     );
     info!("Using Claude Code CLI at: {:?}", claude_cli_path);
 
-    let child = Command::new(&sidecar_path)
+    let mut command = Command::new(&sidecar_path);
+    command
         .current_dir(notes_directory)
-        .env("CLAUDE_CODE_EXECUTABLE", &claude_cli_path)
+        .env("CLAUDE_CODE_EXECUTABLE", &claude_cli_path);
+    if let Some(effort) = effort {
+        command.env("CLAUDE_CODE_EFFORT_LEVEL", effort.as_str());
+    }
+
+    let child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -223,13 +230,24 @@ fn gemini_cli_args(model_id: Option<&str>) -> Vec<String> {
     ]
 }
 
-/// Args selecting the Codex model via the adapter's standard config-override
-/// flag (`codex-acp -c model=<id>`). No preference → no flag, so the user's
+/// Args selecting Codex config via the adapter's standard config-override
+/// flag (`codex-acp -c key=value`). No preference → no flag, so the user's
 /// own codex config default applies.
-fn codex_config_args(model_id: Option<&str>) -> Vec<String> {
-    model_id
-        .map(|id| vec!["-c".to_string(), format!("model={id}")])
-        .unwrap_or_default()
+fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) -> Vec<String> {
+    let mut args = Vec::new();
+
+    if let Some(id) = model_id {
+        args.extend(["-c".to_string(), format!("model={id}")]);
+    }
+
+    if let Some(effort) = effort {
+        args.extend([
+            "-c".to_string(),
+            format!("model_reasoning_effort={}", effort.as_str()),
+        ]);
+    }
+
+    args
 }
 
 /// Spawn a provider's ACP adapter over stdio — no sidecar. Extra args carry
@@ -267,10 +285,13 @@ pub(crate) async fn spawn_agent_subprocess(
     notes_directory: &Path,
     paths: &ProviderPaths,
     model_id: Option<&str>,
+    effort: Option<ReasoningEffort>,
 ) -> anyhow::Result<tokio::process::Child> {
     let custom_path = paths.get(provider).map(String::as_str);
     match provider {
-        AgentProvider::ClaudeCode => spawn_claude_code_acp(notes_directory, custom_path).await,
+        AgentProvider::ClaudeCode => {
+            spawn_claude_code_acp(notes_directory, custom_path, effort).await
+        }
         AgentProvider::GeminiCli => {
             // Gemini CLI requires model to be specified at spawn time via --model flag
             spawn_plain_adapter(
@@ -287,7 +308,7 @@ pub(crate) async fn spawn_agent_subprocess(
                 provider,
                 notes_directory,
                 custom_path,
-                &codex_config_args(model_id),
+                &codex_config_args(model_id, effort),
             )
             .await
         }
@@ -374,13 +395,39 @@ mod tests {
 
     #[test]
     fn test_codex_args_pass_model_as_config_override() {
-        let args = codex_config_args(Some("gpt-5.5"));
+        let args = codex_config_args(Some("gpt-5.5"), None);
         assert_eq!(args, vec!["-c".to_string(), "model=gpt-5.5".to_string()]);
     }
 
     #[test]
+    fn test_codex_args_pass_model_and_effort_as_config_overrides() {
+        let args = codex_config_args(Some("gpt-5.5"), Some(ReasoningEffort::XHigh));
+        assert_eq!(
+            args,
+            vec![
+                "-c".to_string(),
+                "model=gpt-5.5".to_string(),
+                "-c".to_string(),
+                "model_reasoning_effort=xhigh".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_codex_args_pass_effort_without_model_as_config_override() {
+        let args = codex_config_args(None, Some(ReasoningEffort::Medium));
+        assert_eq!(
+            args,
+            vec![
+                "-c".to_string(),
+                "model_reasoning_effort=medium".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn test_codex_args_empty_without_model_so_adapter_default_applies() {
-        assert!(codex_config_args(None).is_empty());
+        assert!(codex_config_args(None, None).is_empty());
     }
 
     #[test]

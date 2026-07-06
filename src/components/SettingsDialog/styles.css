@@ -98,6 +98,14 @@
   font-style: italic;
 }
 
+.settings-preference-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .settings-dialog-footer {
   display: flex;
   justify-content: flex-end;

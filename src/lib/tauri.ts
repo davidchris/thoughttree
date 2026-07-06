@@ -2,7 +2,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useUIStore } from '../store/useUIStore';
 import { withoutNullEntries } from '../types';
-import type { AgentProvider, ImageAttachment, ModelInfo, ModelPreferences, PermissionRequest, ProviderPaths, ProviderStatus, StoredProviderRecord } from '../types';
+import type {
+  AgentProvider,
+  EffortPreferences,
+  ImageAttachment,
+  ModelInfo,
+  ModelPreferences,
+  PermissionRequest,
+  ProviderPaths,
+  ProviderStatus,
+  ReasoningEffort,
+  StoredProviderRecord,
+} from '../types';
 
 // Message format with optional images for IPC
 interface MessageWithImages {
@@ -61,7 +72,8 @@ export async function sendPrompt(
   messages: MessageWithImages[],
   onChunk: (chunk: string) => void,
   provider?: AgentProvider,
-  modelId?: string
+  modelId?: string,
+  effort?: ReasoningEffort
 ): Promise<string> {
   // Set up listener for streaming chunks
   const unlisten = await listen<ChunkPayload>('stream-chunk', (event) => {
@@ -94,6 +106,7 @@ export async function sendPrompt(
       messages: backendMessages,
       provider: provider || null,
       modelId: modelId || null,
+      effort: effort || null,
     });
 
     return result;
@@ -146,6 +159,19 @@ export async function setModelPreference(
   modelId: string | null
 ): Promise<void> {
   await invoke('set_model_preference', { provider, modelId });
+}
+
+export async function getEffortPreferences(): Promise<EffortPreferences> {
+  return withoutNullEntries(
+    await invoke<StoredProviderRecord<ReasoningEffort>>('get_effort_preferences')
+  );
+}
+
+export async function setEffortPreference(
+  provider: AgentProvider,
+  effort: ReasoningEffort | null
+): Promise<void> {
+  await invoke('set_effort_preference', { provider, effort });
 }
 
 export async function getAvailableModels(provider: AgentProvider): Promise<ModelInfo[]> {

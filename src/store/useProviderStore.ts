@@ -2,9 +2,11 @@ import { create } from 'zustand';
 import {
   AgentProvider,
   DEFAULT_PROVIDER,
+  EffortPreferences,
   ModelInfo,
   ModelPreferences,
   ProviderStatus,
+  ReasoningEffort,
 } from '../types';
 
 /**
@@ -16,12 +18,15 @@ interface ProviderState {
   defaultProvider: AgentProvider;
   availableProviders: ProviderStatus[];
   globalModelPreferences: ModelPreferences;
+  globalEffortPreferences: EffortPreferences;
   availableModels: Record<AgentProvider, ModelInfo[]>;
 
   setDefaultProvider: (provider: AgentProvider) => void;
   setAvailableProviders: (providers: ProviderStatus[]) => void;
   setGlobalModelPreferences: (preferences: ModelPreferences) => void;
   setGlobalModelPreference: (provider: AgentProvider, modelId: string | null) => void;
+  setGlobalEffortPreferences: (preferences: EffortPreferences) => void;
+  setGlobalEffortPreference: (provider: AgentProvider, effort: ReasoningEffort | null) => void;
   setAvailableModels: (provider: AgentProvider, models: ModelInfo[]) => void;
 }
 
@@ -29,17 +34,28 @@ export const useProviderStore = create<ProviderState>()((set) => ({
   defaultProvider: DEFAULT_PROVIDER,
   availableProviders: [],
   globalModelPreferences: {},
+  globalEffortPreferences: {},
   availableModels: {} as Record<AgentProvider, ModelInfo[]>,
 
   setDefaultProvider: (provider) => set({ defaultProvider: provider }),
   setAvailableProviders: (providers) => set({ availableProviders: providers }),
   setGlobalModelPreferences: (preferences) => set({ globalModelPreferences: preferences }),
+  setGlobalEffortPreferences: (preferences) => set({ globalEffortPreferences: preferences }),
 
   setGlobalModelPreference: (provider, modelId) => {
     set((state) => ({
       globalModelPreferences: {
         ...state.globalModelPreferences,
         [provider]: modelId ?? undefined,
+      },
+    }));
+  },
+
+  setGlobalEffortPreference: (provider, effort) => {
+    set((state) => ({
+      globalEffortPreferences: {
+        ...state.globalEffortPreferences,
+        [provider]: effort ?? undefined,
       },
     }));
   },

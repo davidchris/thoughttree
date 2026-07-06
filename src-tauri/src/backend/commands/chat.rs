@@ -5,7 +5,7 @@ use crate::backend::acp::sessions::{run_prompt_session, PromptSessionParams};
 use crate::backend::config;
 use crate::backend::runtime::run_localset_blocking;
 use crate::backend::state::AppState;
-use crate::backend::types::{AgentProvider, Message};
+use crate::backend::types::{AgentProvider, Message, ReasoningEffort};
 
 #[tauri::command]
 pub(crate) async fn send_prompt(
@@ -15,6 +15,7 @@ pub(crate) async fn send_prompt(
     messages: Vec<Message>,
     provider: Option<AgentProvider>,
     model_id: Option<String>,
+    effort: Option<ReasoningEffort>,
 ) -> Result<String, String> {
     let pending_permissions = state.pending_permissions.clone();
 
@@ -39,6 +40,7 @@ pub(crate) async fn send_prompt(
             notes_directory,
             provider: active_provider,
             model_id,
+            effort,
             provider_paths,
         })
         .await

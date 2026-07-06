@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
-use crate::backend::types::{AgentProvider, ModelPreferences, ProviderPaths};
+use crate::backend::types::{AgentProvider, EffortPreferences, ModelPreferences, ProviderPaths};
 
 const CONFIG_STORE: &str = "config.json";
 
@@ -24,6 +25,20 @@ fn save_serialized_value<T: Serialize + ?Sized>(
     store
         .save()
         .map_err(|e| format!("Failed to save config: {e}"))
+}
+
+fn get_deserialized_value<T: DeserializeOwned + Default>(
+    app: &AppHandle,
+    key: &str,
+) -> Result<T, String> {
+    let store = app
+        .store(CONFIG_STORE)
+        .map_err(|e| format!("Failed to open config store: {e}"))?;
+
+    Ok(store
+        .get(key)
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default())
 }
 
 pub(crate) fn get_notes_directory_optional(app: &AppHandle) -> Result<Option<String>, String> {
@@ -47,14 +62,7 @@ pub(crate) fn set_notes_directory(app: &AppHandle, path: &str) -> Result<(), Str
 }
 
 pub(crate) fn get_default_provider(app: &AppHandle) -> Result<AgentProvider, String> {
-    let store = app
-        .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {e}"))?;
-
-    Ok(store
-        .get("default_provider")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default())
+    get_deserialized_value(app, "default_provider")
 }
 
 pub(crate) fn set_default_provider(
@@ -65,14 +73,7 @@ pub(crate) fn set_default_provider(
 }
 
 pub(crate) fn get_model_preferences(app: &AppHandle) -> Result<ModelPreferences, String> {
-    let store = app
-        .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {e}"))?;
-
-    Ok(store
-        .get("model_preferences")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default())
+    get_deserialized_value(app, "model_preferences")
 }
 
 pub(crate) fn set_model_preferences(
@@ -82,15 +83,19 @@ pub(crate) fn set_model_preferences(
     save_serialized_value(app, "model_preferences", preferences)
 }
 
-pub(crate) fn get_provider_paths(app: &AppHandle) -> Result<ProviderPaths, String> {
-    let store = app
-        .store(CONFIG_STORE)
-        .map_err(|e| format!("Failed to open config store: {e}"))?;
+pub(crate) fn get_effort_preferences(app: &AppHandle) -> Result<EffortPreferences, String> {
+    get_deserialized_value(app, "effort_preferences")
+}
 
-    Ok(store
-        .get("provider_paths")
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default())
+pub(crate) fn set_effort_preferences(
+    app: &AppHandle,
+    preferences: &EffortPreferences,
+) -> Result<(), String> {
+    save_serialized_value(app, "effort_preferences", preferences)
+}
+
+pub(crate) fn get_provider_paths(app: &AppHandle) -> Result<ProviderPaths, String> {
+    get_deserialized_value(app, "provider_paths")
 }
 
 pub(crate) fn set_provider_paths(app: &AppHandle, paths: &ProviderPaths) -> Result<(), String> {

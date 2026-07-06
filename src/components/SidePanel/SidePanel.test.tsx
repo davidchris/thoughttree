@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SidePanel } from "./index";
 import { useGraphStore } from "../../store/useGraphStore";
 import { useUIStore } from "../../store/useUIStore";
 import { useProviderStore } from "../../store/useProviderStore";
+import { sendPrompt } from "../../lib/tauri";
 
 // Mock the stores
 vi.mock("../../store/useGraphStore");
@@ -37,6 +38,7 @@ describe("SidePanel", () => {
   });
 
   const mockGetEffectiveModel = vi.fn(() => undefined);
+  const mockGetEffectiveEffort = vi.fn(() => "high");
   const mockSetAvailableModels = vi.fn();
 
   const setupMockStore = (overrides: Record<string, unknown> = {}) => {
@@ -82,6 +84,7 @@ describe("SidePanel", () => {
         "gemini-cli": [{ model_id: "gemini-3", display_name: "Gemini 3" }],
       },
       getEffectiveModel: mockGetEffectiveModel,
+      getEffectiveEffort: mockGetEffectiveEffort,
       setAvailableModels: mockSetAvailableModels,
       triggerSidePanelEdit: false,
       clearSidePanelEditTrigger: vi.fn(),
@@ -158,6 +161,25 @@ describe("SidePanel", () => {
 
       // Takes parentId, provider, and model
       expect(mockCreateAgentNodeDownstream).toHaveBeenCalledWith("user-node-1", "claude-code", undefined);
+    });
+
+    it("passes resolved reasoning effort to prompt generation", async () => {
+      setupMockStore();
+      render(<SidePanel />);
+
+      await userEvent.click(screen.getByRole("button", { name: /generate/i }));
+
+      await waitFor(() => {
+        expect(sendPrompt).toHaveBeenCalledWith(
+          "new-agent-node-id",
+          [{ role: "user", content: "Hello" }],
+          expect.any(Function),
+          "claude-code",
+          undefined,
+          "high"
+        );
+      });
+      expect(mockGetEffectiveEffort).toHaveBeenCalledWith("claude-code");
     });
   });
 

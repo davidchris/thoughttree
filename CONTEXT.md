@@ -84,6 +84,10 @@ _Avoid_: callback, promise.
 The `run_localset_blocking` helper in `src-tauri/src/backend/runtime.rs`. Spawns a current-thread Tokio runtime + `LocalSet` on a blocking pool, used because ACP futures are `?Send`.
 _Avoid_: worker thread, executor.
 
+**Reasoning effort**:
+How hard a Provider's model thinks before answering: a single discrete scale `low | medium | high | xhigh`, uniform across Providers. Each Provider maps the scale to its native mechanism, and may support only a subset (or none — Gemini today). Configured per Provider at global and project scope, like model preferences.
+_Avoid_: thinking budget (numeric, provider-internal), thinking mode, effort level (redundant — "effort" suffices).
+
 **Config store**:
 The `tauri_plugin_store` instance keyed `config.json`, holding notes directory, default provider, model preferences, provider paths, and recent projects. Wrapped by `src-tauri/src/backend/config.rs`.
 _Avoid_: settings, preferences (use these for user-facing concepts, not the persisted store).
@@ -100,7 +104,8 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - An **ACP session** is spawned per **Provider** and bound to one streaming **GraphNode** at a time
 - An **ACP session** drives an **ACP client**; user-permission prompts during the session use a **Permission channel** routed back through a **Tauri command**
 - All **ACP session**s and model-discovery runs execute on a **LocalSet runtime**
-- The **Config store** persists **Provider** paths, model preferences, default **Provider**, recent project files, and the notes directory
+- The **Config store** persists **Provider** paths, model preferences, **Reasoning effort** preferences, default **Provider**, recent project files, and the notes directory
+- A **Reasoning effort** preference is resolved per **Provider** — project scope overrides global scope, absence means the Provider's CLI default
 
 ## Example dialogue
 

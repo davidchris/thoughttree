@@ -17,6 +17,11 @@ bun run build         # TypeScript check + Vite build
 # Testing
 bun test              # Run tests in watch mode
 bun test:run          # Run tests once
+
+# Before committing Rust changes (CI enforces all three)
+cargo fmt --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
 ## Architecture Summary
@@ -48,6 +53,7 @@ Structural search: `sg -lang rust -p 'pattern'` for syntax-aware matching across
 
 - **Test-Driven Development:** Use TDD where beneficial—write tests before implementation for complex logic, edge cases, and critical paths.
 - **Security First:** All changes must improve security or maintain the current level. Never introduce vulnerabilities (XSS, path traversal, command injection, etc.).
+- Boy-scout rule: leave the code better than you found it
 
 ## Key Files
 

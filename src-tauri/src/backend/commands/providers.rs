@@ -9,7 +9,8 @@ use crate::backend::acp::sessions::run_model_discovery_session;
 use crate::backend::config;
 use crate::backend::runtime::run_localset_blocking;
 use crate::backend::types::{
-    AgentProvider, ModelInfo, ModelPreferences, ProviderPaths, ProviderStatus,
+    AgentProvider, EffortPreferences, ModelInfo, ModelPreferences, ProviderPaths, ProviderStatus,
+    ReasoningEffort,
 };
 
 fn check_provider_availability(provider: &AgentProvider, paths: &ProviderPaths) -> ProviderStatus {
@@ -179,6 +180,25 @@ pub(crate) async fn set_model_preference(
     config::set_model_preferences(&app, &preferences)?;
 
     tracing::info!("Model preference for {:?} set to: {:?}", provider, model_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) async fn get_effort_preferences(app: AppHandle) -> Result<EffortPreferences, String> {
+    config::get_effort_preferences(&app)
+}
+
+#[tauri::command]
+pub(crate) async fn set_effort_preference(
+    app: AppHandle,
+    provider: AgentProvider,
+    effort: Option<ReasoningEffort>,
+) -> Result<(), String> {
+    let mut preferences = config::get_effort_preferences(&app)?;
+    preferences.set(&provider, effort);
+    config::set_effort_preferences(&app, &preferences)?;
+
+    tracing::info!("Effort preference for {:?} set to: {:?}", provider, effort);
     Ok(())
 }
 

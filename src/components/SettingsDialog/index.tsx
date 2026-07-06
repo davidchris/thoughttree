@@ -4,19 +4,23 @@ import { useProviderStore } from '../../store/useProviderStore';
 import {
   getAvailableModels,
   getAvailableProviders,
+  getEffortPreferences,
   getModelPreferences,
   getProviderPaths,
   pickProviderExecutable,
+  setEffortPreference,
   setModelPreference,
   setProviderPath,
   validateProviderPath,
 } from '../../lib/tauri';
+import { EffortSelector } from '../EffortSelector';
 import { ModelSelector } from '../ModelSelector';
 import {
   ALL_PROVIDERS,
   PROVIDER_DISPLAY_NAMES,
   type AgentProvider,
   type ProviderPaths,
+  type ReasoningEffort,
 } from '../../types';
 import { logger } from '../../lib/logger';
 import './styles.css';
@@ -41,12 +45,17 @@ function perProviderRecord<T>(value: T): Record<AgentProvider, T> {
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const projectPath = useGraphStore((state) => state.projectPath);
   const projectModelPreferences = useGraphStore((state) => state.projectModelPreferences);
+  const projectEffortPreferences = useGraphStore((state) => state.projectEffortPreferences);
   const setProjectModelPreference = useGraphStore((state) => state.setProjectModelPreference);
+  const setProjectEffortPreference = useGraphStore((state) => state.setProjectEffortPreference);
   const availableProviders = useProviderStore((state) => state.availableProviders);
   const setAvailableProviders = useProviderStore((state) => state.setAvailableProviders);
   const globalModelPreferences = useProviderStore((state) => state.globalModelPreferences);
   const setGlobalModelPreferences = useProviderStore((state) => state.setGlobalModelPreferences);
   const setGlobalModelPreference = useProviderStore((state) => state.setGlobalModelPreference);
+  const globalEffortPreferences = useProviderStore((state) => state.globalEffortPreferences);
+  const setGlobalEffortPreferences = useProviderStore((state) => state.setGlobalEffortPreferences);
+  const setGlobalEffortPreference = useProviderStore((state) => state.setGlobalEffortPreference);
   const availableModels = useProviderStore((state) => state.availableModels);
   const setAvailableModels = useProviderStore((state) => state.setAvailableModels);
 
@@ -66,6 +75,9 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     if (isOpen) {
       getModelPreferences().then(setGlobalModelPreferences).catch((error) => {
         logger.error('Failed to load model preferences:', error);
+      });
+      getEffortPreferences().then(setGlobalEffortPreferences).catch((error) => {
+        logger.error('Failed to load effort preferences:', error);
       });
       getProviderPaths().then((paths) => {
         setProviderPathsState(paths);
@@ -88,7 +100,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         logger.error('Failed to load provider paths:', error);
       });
     }
-  }, [isOpen, setGlobalModelPreferences, availableProviders]);
+  }, [isOpen, setGlobalModelPreferences, setGlobalEffortPreferences, availableProviders]);
 
   // Fetch models for a provider
   const fetchModels = useCallback(async (provider: AgentProvider) => {
@@ -132,6 +144,25 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const handleProjectModelChange = (provider: AgentProvider, modelId: string) => {
     const newModelId = modelId || null;
     setProjectModelPreference(provider, newModelId);
+  };
+
+  const handleGlobalEffortChange = async (
+    provider: AgentProvider,
+    effort: ReasoningEffort | null
+  ) => {
+    setGlobalEffortPreference(provider, effort);
+    try {
+      await setEffortPreference(provider, effort);
+    } catch (error) {
+      logger.error('Failed to save effort preference:', error);
+    }
+  };
+
+  const handleProjectEffortChange = (
+    provider: AgentProvider,
+    effort: ReasoningEffort | null
+  ) => {
+    setProjectEffortPreference(provider, effort);
   };
 
   // Path management handlers
@@ -343,13 +374,20 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     {PROVIDER_DISPLAY_NAMES[provider]}
                   </label>
                   {isAvailable ? (
-                    <ModelSelector
-                      provider={provider}
-                      value={globalModelPreferences[provider]}
-                      onChange={(modelId) => handleGlobalModelChange(provider, modelId)}
-                      availableModels={availableModels[provider] ?? []}
-                      loading={loadingModels[provider]}
-                    />
+                    <div className="settings-preference-controls">
+                      <ModelSelector
+                        provider={provider}
+                        value={globalModelPreferences[provider]}
+                        onChange={(modelId) => handleGlobalModelChange(provider, modelId)}
+                        availableModels={availableModels[provider] ?? []}
+                        loading={loadingModels[provider]}
+                      />
+                      <EffortSelector
+                        provider={provider}
+                        value={globalEffortPreferences[provider]}
+                        onChange={(effort) => handleGlobalEffortChange(provider, effort)}
+                      />
+                    </div>
                   ) : (
                     <span className="settings-unavailable">Not installed</span>
                   )}
@@ -378,13 +416,20 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                       {PROVIDER_DISPLAY_NAMES[provider]}
                     </label>
                     {isAvailable ? (
-                      <ModelSelector
-                        provider={provider}
-                        value={projectModelPreferences?.[provider]}
-                        onChange={(modelId) => handleProjectModelChange(provider, modelId)}
-                        availableModels={availableModels[provider] ?? []}
-                        loading={loadingModels[provider]}
-                      />
+                      <div className="settings-preference-controls">
+                        <ModelSelector
+                          provider={provider}
+                          value={projectModelPreferences?.[provider]}
+                          onChange={(modelId) => handleProjectModelChange(provider, modelId)}
+                          availableModels={availableModels[provider] ?? []}
+                          loading={loadingModels[provider]}
+                        />
+                        <EffortSelector
+                          provider={provider}
+                          value={projectEffortPreferences?.[provider]}
+                          onChange={(effort) => handleProjectEffortChange(provider, effort)}
+                        />
+                      </div>
                     ) : (
                       <span className="settings-unavailable">Not installed</span>
                     )}

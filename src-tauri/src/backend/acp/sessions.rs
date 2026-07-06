@@ -17,7 +17,12 @@ use tracing::{error, info, warn};
 
 use crate::backend::acp::clients::{ModelDiscoveryClient, StreamingClient, SummaryClient};
 use crate::backend::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
-use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths};
+use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths, ReasoningEffort};
+
+/// Effort for housekeeping sessions (summaries, model discovery): the lowest
+/// on the scale, universally supported — these calls must stay fast and cheap
+/// and are deliberately not user-configurable.
+const HOUSEKEEPING_EFFORT: ReasoningEffort = ReasoningEffort::Low;
 
 /// How long to wait for the agent subprocess to answer `initialize` before
 /// giving up. A broken sidecar otherwise hangs the request forever.
@@ -139,6 +144,7 @@ pub(crate) struct PromptSessionParams {
     pub notes_directory: PathBuf,
     pub provider: AgentProvider,
     pub model_id: Option<String>,
+    pub effort: Option<ReasoningEffort>,
     pub provider_paths: ProviderPaths,
 }
 
@@ -152,6 +158,7 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
         notes_directory,
         provider,
         model_id,
+        effort,
         provider_paths,
     } = params;
     // Spawn the ACP subprocess in the notes directory so skills are loaded
@@ -161,6 +168,7 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
         &notes_directory,
         &provider_paths,
         model_id.as_deref(),
+        effort,
     )
     .await?;
 
@@ -348,9 +356,15 @@ pub(crate) async fn run_model_discovery_session(
     }
 
     // Spawn the ACP subprocess (model_id is None for discovery - we're just fetching available models)
-    let child = spawn_agent_subprocess(&provider, &notes_directory, &provider_paths, None)
-        .await
-        .map_err(|e| format!("Failed to spawn agent: {e}"))?;
+    let child = spawn_agent_subprocess(
+        &provider,
+        &notes_directory,
+        &provider_paths,
+        None,
+        Some(HOUSEKEEPING_EFFORT),
+    )
+    .await
+    .map_err(|e| format!("Failed to spawn agent: {e}"))?;
 
     // Create minimal client
     let client = Arc::new(ModelDiscoveryClient);
@@ -429,7 +443,12 @@ pub(crate) async fn run_summary_session(
     custom_path: Option<String>,
 ) -> anyhow::Result<String> {
     // Spawn ACP subprocess
-    let child = spawn_claude_code_acp(&notes_directory, custom_path.as_deref()).await?;
+    let child = spawn_claude_code_acp(
+        &notes_directory,
+        custom_path.as_deref(),
+        Some(HOUSEKEEPING_EFFORT),
+    )
+    .await?;
 
     let client = Arc::new(SummaryClient::new());
     let response_text = client.response_text.clone();

@@ -10,8 +10,8 @@ pub(crate) use projects::{
     save_project, search_files, set_notes_directory,
 };
 pub(crate) use providers::{
-    get_available_models, get_available_providers, get_default_provider, get_model_preferences,
-    get_provider_paths, pick_provider_executable, set_default_provider, set_model_preference,
-    set_provider_path, validate_provider_path,
+    get_available_models, get_available_providers, get_default_provider, get_effort_preferences,
+    get_model_preferences, get_provider_paths, pick_provider_executable, set_default_provider,
+    set_effort_preference, set_model_preference, set_provider_path, validate_provider_path,
 };
 pub(crate) use summary::generate_summary;

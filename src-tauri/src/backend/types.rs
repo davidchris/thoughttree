@@ -136,9 +136,15 @@ pub(crate) struct ModelInfo {
 /// on-disk shape stays a plain JSON object; `Option<T>` values keep legacy
 /// `null` entries, and String keys keep unknown provider keys from newer
 /// app versions.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub(crate) struct PerProvider<T>(std::collections::BTreeMap<String, Option<T>>);
+
+impl<T> Default for PerProvider<T> {
+    fn default() -> Self {
+        Self(std::collections::BTreeMap::new())
+    }
+}
 
 impl<T> PerProvider<T> {
     pub(crate) fn get(&self, provider: &AgentProvider) -> Option<&T> {
@@ -152,8 +158,33 @@ impl<T> PerProvider<T> {
     }
 }
 
+/// Unified reasoning-effort scale (see ADR-0002). Serde strings are the
+/// cross-language contract with the TS `ReasoningEffort` type.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum ReasoningEffort {
+    Low,
+    Medium,
+    High,
+    XHigh,
+}
+
+impl ReasoningEffort {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::XHigh => "xhigh",
+        }
+    }
+}
+
 /// User's preferred model per provider (stores model_id strings)
 pub(crate) type ModelPreferences = PerProvider<String>;
+
+/// User's preferred reasoning effort per provider
+pub(crate) type EffortPreferences = PerProvider<ReasoningEffort>;
 
 /// Custom executable paths for providers (user-configured overrides)
 pub(crate) type ProviderPaths = PerProvider<String>;
@@ -348,5 +379,40 @@ mod tests {
                 "descriptor id drifted from serde representation for {provider:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_reasoning_effort_serde_contract() {
+        let cases = ["low", "medium", "high", "xhigh"];
+
+        for expected in cases {
+            let effort =
+                serde_json::from_str::<ReasoningEffort>(&format!("\"{expected}\"")).unwrap();
+            assert_eq!(effort.as_str(), expected);
+            assert_eq!(
+                serde_json::to_string(&effort).unwrap(),
+                format!("\"{expected}\"")
+            );
+        }
+
+        assert!(serde_json::from_str::<ReasoningEffort>("\"minimal\"").is_err());
+        assert!(serde_json::from_str::<ReasoningEffort>("\"max\"").is_err());
+
+        let json =
+            r#"{"claude-code":"low","codex":"xhigh","gemini-cli":null,"future-provider":"high"}"#;
+        let preferences: EffortPreferences = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            preferences.get(&AgentProvider::ClaudeCode),
+            Some(&ReasoningEffort::Low)
+        );
+        assert_eq!(
+            preferences.get(&AgentProvider::Codex),
+            Some(&ReasoningEffort::XHigh)
+        );
+        assert_eq!(preferences.get(&AgentProvider::GeminiCli), None);
+        assert_eq!(
+            serde_json::to_string(&preferences).unwrap(),
+            r#"{"claude-code":"low","codex":"xhigh","future-provider":"high","gemini-cli":null}"#
+        );
     }
 }

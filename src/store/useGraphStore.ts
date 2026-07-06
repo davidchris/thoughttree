@@ -12,9 +12,11 @@ import {
   AgentNodeData,
   AgentProvider,
   DEFAULT_PROVIDER,
+  EffortPreferences,
   ImageAttachment,
   MessageNodeData,
   ModelPreferences,
+  ReasoningEffort,
   StoredProviderRecord,
   UserNodeData,
   withoutNullEntries,
@@ -58,6 +60,7 @@ interface ProjectFileV3 {
   graph: GraphJSON;
   // On-disk shape: legacy writers stored explicit nulls for unset entries
   projectModelPreferences?: StoredProviderRecord | null;
+  projectEffortPreferences?: StoredProviderRecord<ReasoningEffort> | null;
 }
 
 interface ProjectFileLegacyV2 {
@@ -87,6 +90,7 @@ interface GraphState {
   // Persisted with the project file, unlike global preferences
   // (see useProviderStore)
   projectModelPreferences: ModelPreferences | null;
+  projectEffortPreferences: EffortPreferences | null;
 
   // Selection and streaming feed the graph projection, so they live here
   // rather than in useUIStore
@@ -130,6 +134,9 @@ interface GraphState {
   setProjectModelPreferences: (preferences: ModelPreferences | null) => void;
   setProjectModelPreference: (provider: AgentProvider, modelId: string | null) => void;
   getEffectiveModel: (provider: AgentProvider) => string | undefined;
+  setProjectEffortPreferences: (preferences: EffortPreferences | null) => void;
+  setProjectEffortPreference: (provider: AgentProvider, effort: ReasoningEffort | null) => void;
+  getEffectiveEffort: (provider: AgentProvider) => ReasoningEffort | undefined;
 
   // Project actions
   setProjectPath: (path: string | null) => void;
@@ -204,6 +211,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   lastSavedAt: null,
   isDirty: false,
   projectModelPreferences: null,
+  projectEffortPreferences: null,
   selectedNodeId: null,
   streamingNodeIds: new Set<string>(),
 
@@ -533,11 +541,29 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     return projectModelPreferences?.[provider] ?? globalModelPreferences[provider];
   },
 
+  setProjectEffortPreferences: (preferences) => set({ projectEffortPreferences: preferences }),
+
+  setProjectEffortPreference: (provider, effort) => {
+    set((state) => ({
+      projectEffortPreferences: {
+        ...(state.projectEffortPreferences ?? {}),
+        [provider]: effort ?? undefined,
+      },
+      isDirty: true,
+    }));
+  },
+
+  getEffectiveEffort: (provider) => {
+    const { projectEffortPreferences } = get();
+    const { globalEffortPreferences } = useProviderStore.getState();
+    return projectEffortPreferences?.[provider] ?? globalEffortPreferences[provider];
+  },
+
   setProjectPath: (path) => set({ projectPath: path }),
 
   saveProject: async () => {
     get().flushStreamingChunks();
-    const { projectPath, graph, projectModelPreferences } = get();
+    const { projectPath, graph, projectModelPreferences, projectEffortPreferences } = get();
     if (!projectPath) {
       logger.warn('No project path set, cannot save');
       return;
@@ -547,6 +573,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       version: GRAPH_JSON_VERSION,
       graph: GraphSerialize.toJSON(graph),
       projectModelPreferences,
+      projectEffortPreferences,
     };
 
     try {
@@ -569,11 +596,15 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
 
       let graph: Graph;
       let projectModelPreferences: ModelPreferences | null = null;
+      let projectEffortPreferences: EffortPreferences | null = null;
 
       if (parsed.version === GRAPH_JSON_VERSION && 'graph' in parsed) {
         graph = GraphSerialize.fromJSON(parsed.graph);
         projectModelPreferences = parsed.projectModelPreferences
           ? withoutNullEntries(parsed.projectModelPreferences)
+          : null;
+        projectEffortPreferences = parsed.projectEffortPreferences
+          ? withoutNullEntries(parsed.projectEffortPreferences)
           : null;
       } else {
         const legacy = parsed as ProjectFileLegacyV2;
@@ -587,12 +618,14 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         projectModelPreferences = legacy.projectModelPreferences
           ? withoutNullEntries(legacy.projectModelPreferences)
           : null;
+        projectEffortPreferences = null;
       }
 
       set({
         graph,
         ...projectGraph(graph, [], null),
         projectModelPreferences,
+        projectEffortPreferences,
         projectPath: path,
         lastSavedAt: Date.now(),
         isDirty: false,
@@ -622,6 +655,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       edges: [],
       nodeData: graph.nodes,
       projectModelPreferences: null,
+      projectEffortPreferences: null,
       projectPath: null,
       lastSavedAt: null,
       isDirty: false,

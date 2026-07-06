@@ -5,6 +5,10 @@ import {
   PROVIDER_DESCRIPTORS,
   PROVIDER_DISPLAY_NAMES,
   PROVIDER_SHORT_NAMES,
+  PROVIDER_SUPPORTED_EFFORTS,
+  withoutNullEntries,
+  type ReasoningEffort,
+  type StoredProviderRecord,
 } from './index';
 
 describe('provider descriptors', () => {
@@ -27,5 +31,34 @@ describe('provider descriptors', () => {
 
   it('keeps the default provider in the descriptor table', () => {
     expect(ALL_PROVIDERS).toContain(DEFAULT_PROVIDER);
+  });
+
+  it('declares supported reasoning efforts per provider', () => {
+    expect(PROVIDER_DESCRIPTORS.find((d) => d.id === 'claude-code')?.supportedEfforts).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+    expect(PROVIDER_DESCRIPTORS.find((d) => d.id === 'codex')?.supportedEfforts).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ]);
+    expect(PROVIDER_DESCRIPTORS.find((d) => d.id === 'gemini-cli')?.supportedEfforts).toEqual([]);
+
+    for (const descriptor of PROVIDER_DESCRIPTORS) {
+      expect(PROVIDER_SUPPORTED_EFFORTS[descriptor.id]).toBe(descriptor.supportedEfforts);
+    }
+  });
+
+  it('strips null entries from stored effort records', () => {
+    const stored: StoredProviderRecord<ReasoningEffort> = {
+      'claude-code': 'high',
+      codex: null,
+    };
+
+    expect(withoutNullEntries(stored)).toEqual({ 'claude-code': 'high' });
   });
 });

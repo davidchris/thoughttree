@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
+import { invoke } from '@tauri-apps/api/core';
+import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '../lib/graph';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
+import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
 import { hasFreshSummary } from '../hooks/useSummaryGeneration';
 
@@ -12,12 +15,19 @@ function resetStore() {
     streamingNodeIds: new Set<string>(),
     isDirty: false,
   });
+  useProviderStore.setState({
+    globalModelPreferences: {},
+    globalEffortPreferences: {},
+  });
   useUIStore.getState().reset();
 }
+
+const mockedInvoke = vi.mocked(invoke);
 
 describe('useGraphStore', () => {
   beforeEach(() => {
     vi.useRealTimers();
+    mockedInvoke.mockReset();
     resetStore();
   });
 
@@ -90,6 +100,63 @@ describe('useGraphStore', () => {
     const exported = state.exportSubgraph(pathToBranch);
     expect(exported).toContain('## User');
     expect(exported).not.toContain('## Assistant');
+  });
+
+  it('resolves project reasoning effort before global without touching model preferences', () => {
+    useProviderStore.getState().setGlobalEffortPreferences({ codex: 'medium' });
+    useProviderStore.getState().setGlobalModelPreferences({ codex: 'gpt-5.5' });
+
+    expect(useGraphStore.getState().getEffectiveEffort('codex')).toBe('medium');
+    expect(useGraphStore.getState().getEffectiveEffort('claude-code')).toBeUndefined();
+
+    useGraphStore.getState().setProjectEffortPreference('codex', 'xhigh');
+
+    expect(useGraphStore.getState().getEffectiveEffort('codex')).toBe('xhigh');
+    expect(useGraphStore.getState().getEffectiveModel('codex')).toBe('gpt-5.5');
+  });
+
+  it('round-trips project reasoning effort preferences in V3 files', async () => {
+    mockedInvoke.mockResolvedValue(undefined);
+    useGraphStore.setState({ projectPath: '/tmp/project.thoughttree' });
+    useGraphStore.getState().setProjectEffortPreference('claude-code', 'high');
+
+    await useGraphStore.getState().saveProject();
+
+    const saveCall = mockedInvoke.mock.calls.find(([command]) => command === 'save_project');
+    expect(saveCall).toBeDefined();
+    const saved = JSON.parse((saveCall?.[1] as { data: string }).data);
+    expect(saved.version).toBe(3);
+    expect(saved.projectEffortPreferences).toEqual({ 'claude-code': 'high' });
+
+    const graph = GraphSerialize.toJSON(GraphMutations.empty());
+    mockedInvoke.mockImplementation(async (command) => {
+      if (command === 'load_project') {
+        return JSON.stringify({
+          version: GRAPH_JSON_VERSION,
+          graph,
+          projectEffortPreferences: { codex: 'xhigh', 'claude-code': null },
+        });
+      }
+      return undefined;
+    });
+
+    await useGraphStore.getState().loadProject('/tmp/project.thoughttree');
+
+    expect(useGraphStore.getState().projectEffortPreferences).toEqual({ codex: 'xhigh' });
+
+    mockedInvoke.mockImplementation(async (command) => {
+      if (command === 'load_project') {
+        return JSON.stringify({ version: GRAPH_JSON_VERSION, graph });
+      }
+      return undefined;
+    });
+
+    await useGraphStore.getState().loadProject('/tmp/project-without-effort.thoughttree');
+    expect(useGraphStore.getState().projectEffortPreferences).toBeNull();
+
+    useGraphStore.getState().setProjectEffortPreference('codex', 'low');
+    useGraphStore.getState().newProject();
+    expect(useGraphStore.getState().projectEffortPreferences).toBeNull();
   });
 });
 
