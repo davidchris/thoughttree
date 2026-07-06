@@ -28,6 +28,26 @@ _Avoid_: merge node, join node.
 The ordered sequence of GraphNodes used as LLM context for a target node. For multi-parent targets, all ancestors are included, topologically sorted by `timestamp`, with consecutive same-role messages merged (concat content).
 _Avoid_: history, thread, lineage (lineage means ancestor *set*, not *ordered path*).
 
+**Lineage subgraph**:
+The sub-DAG induced by a target GraphNode's ancestors plus the target itself — those nodes and the edges among them. The hard boundary of what an agent may ever see about the Graph; siblings and other non-ancestors are never exposed. The Conversation path is its topological linearization.
+_Avoid_: subtree (it's a DAG), context graph, whole graph.
+
+**Node marker**:
+An inline tag wrapping one GraphNode's content inside a Conversation path message, binding that text to its GraphNode id for the agent. Survives same-role merging, so merged messages stay attributable node-by-node.
+_Avoid_: label, tag (too generic).
+
+**Structure annotation**:
+A one-line in-flow note placed before a user GraphNode's text where the Lineage subgraph has a topology event (fork or merge), describing that event in place. Invisible in the UI; exists only in agent context.
+_Avoid_: preamble, header.
+
+**Lineage map**:
+A compact adjacency summary of the Lineage subgraph — one line per node: short id, role, parent ids — attached once to the final user message. Topology only; never repeats node content.
+_Avoid_: graph dump, structure block, preamble.
+
+**Structure gate**:
+The rule deciding whether Node markers, Structure annotations, and the Lineage map ship at all: only when the Lineage subgraph is non-linear (some node has more than one parent or more than one child within it). A purely topological predicate — never inferred from prompt wording. Linear conversations pay zero overhead.
+_Avoid_: intent detection, heuristic.
+
 **Layout**:
 Per-node spatial position `{x, y}` used to render the Graph in ReactFlow. Stored inside Graph (persisted with project file) but semantically separate from node content.
 _Avoid_: position (ambiguous), coords.
@@ -97,6 +117,9 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - A **Graph** contains many **GraphNodes** and many **GraphEdges**
 - A **GraphNode** has zero, one, or many parent **GraphEdges** — multiple parents = **Synthesizer node**
 - A **Conversation path** is derived from a **Graph** and a target **GraphNode**
+- A **Lineage subgraph** is derived from a **Graph** and a target **GraphNode**; the **Conversation path** is its linearization
+- **Node marker**s bind **Conversation path** content to **GraphNode**s; **Structure annotation**s and the **Lineage map** describe the **Lineage subgraph**'s topology; all three are controlled by the **Structure gate**
+- Cross-branch operations (contrast, synthesis across branches) require a **Synthesizer node** — the agent never sees non-ancestors, so merging branches is the only way to bring them into scope
 - The **GraphModel** operates on a **Graph**; the Zustand store holds a **Graph** value and calls **GraphModel** for mutations
 - The **ReactFlow projection** consumes a **Graph** plus UI state; ReactFlow itself never sees **GraphNode** directly
 - The **Palette** searches a **Corpus snapshot** of the **Graph**'s **GraphNodes**; each **Search hit** references one **GraphNode**
