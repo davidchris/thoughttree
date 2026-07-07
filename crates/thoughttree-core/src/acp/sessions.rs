@@ -12,11 +12,11 @@ use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info, warn};
 
-use crate::backend::acp::clients::{ModelDiscoveryClient, StreamingClient, SummaryClient};
-use crate::backend::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
-use crate::backend::events::SessionEventSink;
-use crate::backend::permissions::PermissionBroker;
-use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths, ReasoningEffort};
+use crate::acp::clients::{ModelDiscoveryClient, StreamingClient, SummaryClient};
+use crate::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
+use crate::events::SessionEventSink;
+use crate::permissions::PermissionBroker;
+use crate::types::{AgentProvider, Message, ModelInfo, ProviderPaths, ReasoningEffort};
 
 /// Effort for housekeeping sessions (summaries, model discovery): the lowest
 /// on the scale, universally supported — these calls must stay fast and cheap
@@ -143,7 +143,7 @@ async fn initialize_with_timeout(
 }
 
 /// Parameters for [`run_prompt_session`]
-pub(crate) struct PromptSessionParams<S> {
+pub struct PromptSessionParams<S> {
     pub sink: S,
     pub node_id: String,
     pub messages: Vec<Message>,
@@ -156,7 +156,7 @@ pub(crate) struct PromptSessionParams<S> {
 }
 
 /// Run a prompt session with ACP
-pub(crate) async fn run_prompt_session<S: SessionEventSink>(
+pub async fn run_prompt_session<S: SessionEventSink>(
     params: PromptSessionParams<S>,
 ) -> anyhow::Result<String> {
     let PromptSessionParams {
@@ -358,7 +358,7 @@ fn model_id_to_display_name(model_id: &str) -> String {
     }
 }
 
-pub(crate) async fn run_model_discovery_session(
+pub async fn run_model_discovery_session(
     notes_directory: PathBuf,
     provider: AgentProvider,
     provider_paths: ProviderPaths,
@@ -452,7 +452,7 @@ fn with_fallback_models(provider: &AgentProvider, models: Vec<ModelInfo>) -> Vec
 }
 
 /// Run a summarization session with Haiku model
-pub(crate) async fn run_summary_session(
+pub async fn run_summary_session(
     content: String,
     notes_directory: PathBuf,
     custom_path: Option<String>,

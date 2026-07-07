@@ -1,12 +1,12 @@
 use tauri::{AppHandle, State};
+use thoughttree_core::acp::process::find_sidecar_path;
+use thoughttree_core::acp::sessions::{run_prompt_session, PromptSessionParams};
+use thoughttree_core::runtime::run_localset_blocking;
+use thoughttree_core::types::{AgentProvider, Message, ReasoningEffort};
 
-use crate::backend::acp::process::find_sidecar_path;
-use crate::backend::acp::sessions::{run_prompt_session, PromptSessionParams};
 use crate::backend::config;
 use crate::backend::events::TauriEventSink;
-use crate::backend::runtime::run_localset_blocking;
 use crate::backend::state::AppState;
-use crate::backend::types::{AgentProvider, Message, ReasoningEffort};
 
 #[tauri::command]
 pub(crate) async fn send_prompt(

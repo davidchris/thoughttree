@@ -4,10 +4,10 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tracing::{info, warn};
 
-use crate::backend::types::{AgentProvider, ProviderDescriptor, ProviderPaths, ReasoningEffort};
+use crate::types::{AgentProvider, ProviderDescriptor, ProviderPaths, ReasoningEffort};
 
 /// Find the bundled claude-code-acp sidecar binary
-pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
+pub fn find_sidecar_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
 
@@ -38,7 +38,8 @@ pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
                 return Some(dev_sidecar);
             }
 
-            // Also check Cargo build outputs in dev workflows
+            // Also check Cargo build outputs in dev workflows. In a workspace,
+            // `target/` lives at the repo root instead of `src-tauri/target/`.
             let dev_target = current.join("src-tauri/target");
             let dev_debug = dev_target.join("debug/claude-code-acp");
             if dev_debug.exists() {
@@ -47,6 +48,16 @@ pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
             let dev_release = dev_target.join("release/claude-code-acp");
             if dev_release.exists() {
                 return Some(dev_release);
+            }
+
+            let workspace_target = current.join("target");
+            let workspace_debug = workspace_target.join("debug/claude-code-acp");
+            if workspace_debug.exists() {
+                return Some(workspace_debug);
+            }
+            let workspace_release = workspace_target.join("release/claude-code-acp");
+            if workspace_release.exists() {
+                return Some(workspace_release);
             }
 
             if !current.pop() {
@@ -64,7 +75,7 @@ pub(crate) fn find_sidecar_path() -> Option<PathBuf> {
 ///
 /// Precedence: env override > custom path > known paths > home-relative
 /// paths > nvm-managed node bins.
-pub(crate) fn candidate_paths(
+pub fn candidate_paths(
     descriptor: &ProviderDescriptor,
     custom_path: Option<&str>,
     env_override_value: Option<&str>,
@@ -103,7 +114,7 @@ pub(crate) fn candidate_paths(
 /// Find a provider's executable: first candidate path that exists.
 /// Security: Only checks known installation paths — no PATH/`which` lookup,
 /// which prevents PATH injection attacks.
-pub(crate) fn find_provider_executable(
+pub fn find_provider_executable(
     provider: &AgentProvider,
     custom_path: Option<&str>,
 ) -> Option<PathBuf> {
@@ -156,7 +167,7 @@ pub(crate) fn find_provider_executable(
 }
 
 /// Spawn the claude-code-acp sidecar
-pub(crate) async fn spawn_claude_code_acp(
+pub async fn spawn_claude_code_acp(
     notes_directory: &Path,
     custom_path: Option<&str>,
     effort: Option<ReasoningEffort>,
@@ -252,7 +263,7 @@ fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) ->
 
 /// Spawn a provider's ACP adapter over stdio — no sidecar. Extra args carry
 /// per-spawn config such as the model override.
-pub(crate) async fn spawn_plain_adapter(
+pub async fn spawn_plain_adapter(
     provider: &AgentProvider,
     notes_directory: &Path,
     custom_path: Option<&str>,
@@ -280,7 +291,7 @@ pub(crate) async fn spawn_plain_adapter(
 }
 
 /// Spawn an ACP-compatible agent subprocess based on provider
-pub(crate) async fn spawn_agent_subprocess(
+pub async fn spawn_agent_subprocess(
     provider: &AgentProvider,
     notes_directory: &Path,
     paths: &ProviderPaths,
@@ -319,7 +330,7 @@ pub(crate) async fn spawn_agent_subprocess(
 mod tests {
     use super::*;
 
-    fn claude_descriptor() -> &'static crate::backend::types::ProviderDescriptor {
+    fn claude_descriptor() -> &'static crate::types::ProviderDescriptor {
         AgentProvider::ClaudeCode.descriptor()
     }
 
