@@ -16,7 +16,7 @@ verification:
         - name: build
           argv: [bash, -lc, "bun run build"]
 runPolicy:
-    idleTimeout: 10m
+    idleTimeout: 30m
     maxRuntime: 2h
 cleanup:
     sandbox: onFailure
