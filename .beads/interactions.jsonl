@@ -1,1 +1,2 @@
 {"id":"int-0d359c6618fbdd18ee5fef3d9bd36857","kind":"field_change","created_at":"2026-07-07T13:36:02.197988Z","actor":"David Wilde","issue_id":"thoughttree-25c","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-fc84ffe538ee0dadb9f1e1e6982d3557","kind":"field_change","created_at":"2026-07-07T13:39:24.538661Z","actor":"David Wilde","issue_id":"thoughttree-1gm","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
