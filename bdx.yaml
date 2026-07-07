@@ -1,0 +1,23 @@
+version: 1
+beads:
+    path: .beads
+sbx:
+    template: ""
+codex:
+    model: gpt-5.4
+    reasoningEffort: high
+worktreeRoot:
+    policy: sibling
+    path: ../thoughttree-bdx-worktrees
+verification:
+    commands:
+        - name: test
+          argv: [bun, run, test:run]
+        - name: build
+          argv: [bun, run, build]
+runPolicy:
+    idleTimeout: 10m
+    maxRuntime: 2h
+cleanup:
+    sandbox: onFailure
+    worktree: onSuccess

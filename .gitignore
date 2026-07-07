@@ -39,3 +39,6 @@ learnings/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+
+# bdx local run artifacts
+.bdx/
