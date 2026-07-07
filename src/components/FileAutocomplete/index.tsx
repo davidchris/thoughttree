@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { createPortal } from 'react-dom';
-import { searchFiles } from '../../lib/tauri';
+import { getBackendTransport } from '../../lib/transport';
 import { logger } from '../../lib/logger';
 import './styles.css';
 
@@ -35,7 +35,7 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
       setIsLoading(true);
       const timeoutId = setTimeout(async () => {
         try {
-          const results = await searchFiles(query, 15);
+          const results = await getBackendTransport().searchFiles(query, 15);
           setFiles(results);
           setSelectedIndex(0);
         } catch (error) {

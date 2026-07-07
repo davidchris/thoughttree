@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useGraphStore } from '../store/useGraphStore';
 import type { MessageNodeData } from '../types';
 import { logger } from '../lib/logger';
+import { getBackendTransport } from '../lib/transport';
 
 const SUMMARY_THRESHOLD = 100; // Characters - content shorter than this uses content directly
 const DEBOUNCE_MS = 1500;      // Wait for content to stabilize before generating
@@ -29,11 +29,12 @@ async function processQueue() {
   if (isProcessingQueue || summaryQueue.length === 0) return;
 
   isProcessingQueue = true;
+  const transport = getBackendTransport();
 
   while (summaryQueue.length > 0) {
     const item = summaryQueue.shift()!;
     try {
-      const result = await invoke<SummaryResult>('generate_summary', {
+      const result = await transport.generateSummary({
         nodeId: item.nodeId,
         content: item.content,
       });

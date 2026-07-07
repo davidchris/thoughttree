@@ -4,30 +4,48 @@ import userEvent from '@testing-library/user-event';
 import { SettingsDialog } from './index';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useProviderStore } from '../../store/useProviderStore';
-import {
-  getAvailableModels,
-  getEffortPreferences,
-  getModelPreferences,
-  getProviderPaths,
-  setEffortPreference,
-} from '../../lib/tauri';
+import type { BackendTransport } from '../../lib/transport';
+import { getProviderPaths } from '../../lib/desktop';
+import { setBackendTransport } from '../../lib/transport';
 
-vi.mock('../../lib/tauri', () => ({
-  getAvailableModels: vi.fn(),
-  getAvailableProviders: vi.fn(),
-  getEffortPreferences: vi.fn(),
-  getModelPreferences: vi.fn(),
+vi.mock('../../lib/desktop', () => ({
   getProviderPaths: vi.fn(),
   pickProviderExecutable: vi.fn(),
-  setEffortPreference: vi.fn(),
-  setModelPreference: vi.fn(),
   setProviderPath: vi.fn(),
   validateProviderPath: vi.fn(),
 }));
 
+function createMockTransport(): BackendTransport {
+  return {
+    capabilities: { nativeDialogs: true },
+    loadProject: vi.fn(),
+    saveProject: vi.fn(),
+    listProjects: vi.fn(),
+    sendPrompt: vi.fn(),
+    respondToPermission: vi.fn(),
+    checkAcpAvailable: vi.fn(),
+    searchFiles: vi.fn(),
+    getAvailableProviders: vi.fn(),
+    getDefaultProvider: vi.fn(),
+    setDefaultProvider: vi.fn(),
+    getModelPreferences: vi.fn(),
+    setModelPreference: vi.fn(),
+    getEffortPreferences: vi.fn(),
+    setEffortPreference: vi.fn(),
+    getAvailableModels: vi.fn(),
+    generateSummary: vi.fn(),
+    onStreamChunk: vi.fn(() => () => {}),
+    onPermissionRequest: vi.fn(() => () => {}),
+  };
+}
+
 describe('SettingsDialog reasoning effort controls', () => {
+  let transport: BackendTransport;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    transport = createMockTransport();
+    setBackendTransport(transport);
     useGraphStore.getState().newProject();
     useGraphStore.setState({ projectPath: '/tmp/project.thoughttree' });
     useProviderStore.setState({
@@ -45,11 +63,11 @@ describe('SettingsDialog reasoning effort controls', () => {
       },
     });
 
-    vi.mocked(getModelPreferences).mockResolvedValue({});
-    vi.mocked(getEffortPreferences).mockResolvedValue({});
     vi.mocked(getProviderPaths).mockResolvedValue({});
-    vi.mocked(getAvailableModels).mockResolvedValue([]);
-    vi.mocked(setEffortPreference).mockResolvedValue();
+    vi.mocked(transport.getModelPreferences).mockResolvedValue({});
+    vi.mocked(transport.getEffortPreferences).mockResolvedValue({});
+    vi.mocked(transport.getAvailableModels).mockResolvedValue([]);
+    vi.mocked(transport.setEffortPreference).mockResolvedValue();
   });
 
   it('renders supported efforts and persists global/project selections', async () => {
@@ -68,7 +86,7 @@ describe('SettingsDialog reasoning effort controls', () => {
     await user.selectOptions(codexEffortSelects[0], 'high');
 
     await waitFor(() => {
-      expect(setEffortPreference).toHaveBeenCalledWith('codex', 'high');
+      expect(transport.setEffortPreference).toHaveBeenCalledWith('codex', 'high');
     });
     expect(useProviderStore.getState().globalEffortPreferences.codex).toBe('high');
 

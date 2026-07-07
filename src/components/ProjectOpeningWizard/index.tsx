@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { addRecentProject, getRecentProjects, removeRecentProject } from '../../lib/desktop';
+import { getBackendTransport } from '../../lib/transport';
 import { logger } from '../../lib/logger';
 import './ProjectOpeningWizard.css';
 
@@ -7,34 +8,37 @@ interface ProjectOpeningWizardProps {
   onProjectSelected: (path: string) => void;
   onOpenDialog: () => void;
   onNewProject: () => void;
+  nativeDialogsEnabled: boolean;
 }
 
 export function ProjectOpeningWizard({
   onProjectSelected,
   onOpenDialog,
   onNewProject,
+  nativeDialogsEnabled,
 }: ProjectOpeningWizardProps) {
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!nativeDialogsEnabled) {
+      setIsLoading(false);
+      return;
+    }
+
     const loadRecentProjects = async () => {
       try {
-        const projects = await invoke<string[]>('get_recent_projects');
-        // Filter out projects that no longer exist
+        const projects = await getRecentProjects();
         const validProjects = await Promise.all(
           projects.map(async (path) => {
             try {
-              // Try to read the file to verify it exists
-              await invoke('load_project', { path });
+              await getBackendTransport().loadProject(path);
               return path;
             } catch {
-              // File doesn't exist, remove it from recent projects
               try {
-                await invoke('remove_recent_project', { path });
+                await removeRecentProject(path);
               } catch {
-                // Ignore errors when removing
               }
               return null;
             }
@@ -49,11 +53,11 @@ export function ProjectOpeningWizard({
     };
 
     loadRecentProjects();
-  }, []);
+  }, [nativeDialogsEnabled]);
 
   const handleProjectClick = async (path: string) => {
     try {
-      await invoke('add_recent_project', { path });
+      await addRecentProject(path);
       onProjectSelected(path);
     } catch (e) {
       logger.error('Failed to update recent projects:', e);
@@ -65,7 +69,7 @@ export function ProjectOpeningWizard({
   const handleRemoveProject = async (e: React.MouseEvent, path: string) => {
     e.stopPropagation();
     try {
-      await invoke('remove_recent_project', { path });
+      await removeRecentProject(path);
       setRecentProjects((prev) => prev.filter((p) => p !== path));
     } catch (e) {
       logger.error('Failed to remove project from recent:', e);
@@ -131,12 +135,16 @@ export function ProjectOpeningWizard({
             )}
 
             <div className="wizard-actions">
-              <button onClick={onOpenDialog} className="action-button secondary">
-                Open Project...
-              </button>
-              <button onClick={onNewProject} className="action-button primary">
-                New Project
-              </button>
+              {nativeDialogsEnabled && (
+                <>
+                  <button onClick={onOpenDialog} className="action-button secondary">
+                    Open Project...
+                  </button>
+                  <button onClick={onNewProject} className="action-button primary">
+                    New Project
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
