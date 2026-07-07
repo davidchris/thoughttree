@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import type { GraphNode } from '@thoughttree/graph-model';
 import { PaletteSearch } from './search';
-import type { GraphNode } from '../graph';
 import type { UserNodeData, AgentNodeData } from '../../types';
 
 function userNode(id: string, overrides: Partial<UserNodeData> = {}): GraphNode {

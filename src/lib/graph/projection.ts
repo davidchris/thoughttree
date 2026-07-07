@@ -1,5 +1,5 @@
 import type { Edge, Node } from '@xyflow/react';
-import type { Graph, NodeId } from './types';
+import type { Graph, NodeId } from '@thoughttree/graph-model';
 
 export interface FlowNodeData extends Record<string, unknown> {
   id: NodeId;

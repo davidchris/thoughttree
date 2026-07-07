@@ -65,7 +65,6 @@ describe('GraphModel.ancestors / descendants', () => {
   });
 
   it('walks all parent paths in DAG (multi-parent)', () => {
-    // a → c, b → c, c → d
     const a = userNode('a', '', 1);
     const b = userNode('b', '', 2);
     const c = userNode('c', '', 3);
@@ -75,7 +74,6 @@ describe('GraphModel.ancestors / descendants', () => {
   });
 
   it('handles diamond DAG without duplication', () => {
-    // a → b, a → c, b → d, c → d
     const a = userNode('a', '', 1);
     const b = userNode('b', '', 2);
     const c = userNode('c', '', 3);
@@ -120,7 +118,6 @@ describe('GraphModel.conversationPathIds', () => {
   });
 
   it('falls back to timestamp order when ancestor subgraph contains a cycle', () => {
-    // a → b, b → a — cycle. Target b: ancestors include both a and b.
     const a = userNode('a', '', 1);
     const b = userNode('b', '', 2);
     const g = graphOf([a, b], [edge('a', 'b'), edge('b', 'a')]);
@@ -128,7 +125,6 @@ describe('GraphModel.conversationPathIds', () => {
   });
 
   it('topo-sorts synthesizer ancestors by timestamp, dedupes shared ancestors', () => {
-    // root → a, root → b, a → synth, b → synth   (timestamps in creation order)
     const root = userNode('root', '', 1);
     const a = agentNode('a', '', 2);
     const b = agentNode('b', '', 3);
@@ -303,9 +299,7 @@ describe('GraphModel.conversationPath', () => {
     expect(path[0].content).toBe(
       '<node id="abcd">\nfirst\n</node>\n\n<node id="abcd-">\nsecond\n</node>',
     );
-    expect(path[1].content).toContain(
-      '<graph: this message merges branches abcd, abcd->',
-    );
+    expect(path[1].content).toContain('<graph: this message merges branches abcd, abcd->');
     expect(path[1].content).toContain('done (user) <- abcd, abcd- [current]');
   });
 
@@ -323,18 +317,14 @@ describe('GraphModel.conversationPath', () => {
   });
 
   it('skips empty-content nodes and merges remaining same-role neighbours', () => {
-    // Empty agent in the middle gets dropped; surrounding user nodes merge.
     const a = userNode('a', 'first', 1);
     const b = agentNode('b', '   ', 2);
     const c = userNode('c', 'last', 3);
     const g = graphOf([a, b, c], [edge('a', 'b'), edge('b', 'c')]);
-    expect(GraphModel.conversationPath(g, 'c')).toEqual([
-      { role: 'user', content: 'first\n\nlast' },
-    ]);
+    expect(GraphModel.conversationPath(g, 'c')).toEqual([{ role: 'user', content: 'first\n\nlast' }]);
   });
 
   it('merges consecutive same-role messages by concatenating content', () => {
-    // Linear same-role GraphNodes still merge while the Structure gate is closed.
     const a = userNode('a', 'one', 1);
     const b = userNode('b', 'two', 2);
     const synth = userNode('synth', 'three', 3);

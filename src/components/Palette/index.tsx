@@ -3,7 +3,7 @@ import { useReactFlow } from '@xyflow/react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { PaletteSearch, type HighlightedText } from '../../lib/palette';
-import type { GraphNode } from '../../lib/graph';
+import type { GraphNode } from '@thoughttree/graph-model';
 import { PROVIDER_SHORT_NAMES } from '../../types';
 import './styles.css';
 

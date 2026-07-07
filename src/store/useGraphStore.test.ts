@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
-import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '../lib/graph';
+import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '@thoughttree/graph-model';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
