@@ -189,28 +189,6 @@ pub(crate) type EffortPreferences = PerProvider<ReasoningEffort>;
 /// Custom executable paths for providers (user-configured overrides)
 pub(crate) type ProviderPaths = PerProvider<String>;
 
-// Types for frontend communication
-#[derive(Clone, Serialize)]
-pub(crate) struct ChunkPayload {
-    pub node_id: String,
-    pub chunk: String,
-}
-
-#[derive(Clone, Serialize)]
-pub(crate) struct PermissionPayload {
-    pub id: String,
-    pub tool_type: String,
-    pub tool_name: String,
-    pub description: String,
-    pub options: Vec<PermissionOption>,
-}
-
-#[derive(Clone, Serialize)]
-pub(crate) struct PermissionOption {
-    pub id: String,
-    pub label: String,
-}
-
 // Message types from frontend (with optional images)
 #[derive(Clone, Deserialize)]
 pub(crate) struct MessageImage {

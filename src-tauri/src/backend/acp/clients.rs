@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -8,31 +7,32 @@ use agent_client_protocol::{
 };
 use async_trait::async_trait;
 use futures::lock::Mutex;
-use tauri::{AppHandle, Emitter};
-use tokio::sync::oneshot;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
-use crate::backend::types::{ChunkPayload, PermissionOption, PermissionPayload};
+use crate::backend::events::{
+    PermissionRequestEvent, PermissionRequestOption, SessionEventSink, StreamChunkEvent,
+};
+use crate::backend::permissions::PermissionBroker;
 
 /// ACP Client that streams to frontend and handles permissions via UI
-pub(crate) struct StreamingClient {
-    app_handle: AppHandle,
+pub(crate) struct StreamingClient<S> {
+    sink: S,
     node_id: String,
-    pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    broker: PermissionBroker,
     notes_directory: PathBuf,
 }
 
-impl StreamingClient {
+impl<S: SessionEventSink> StreamingClient<S> {
     pub(crate) fn new(
-        app_handle: AppHandle,
+        sink: S,
         node_id: String,
-        pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+        broker: PermissionBroker,
         notes_directory: PathBuf,
     ) -> Self {
         Self {
-            app_handle,
+            sink,
             node_id,
-            pending_permissions,
+            broker,
             notes_directory,
         }
     }
@@ -44,15 +44,6 @@ impl StreamingClient {
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
         // Generate unique request ID
         let request_id = uuid::Uuid::new_v4().to_string();
-
-        // Create channel for response
-        let (tx, rx) = oneshot::channel();
-
-        // Store sender for later
-        {
-            let mut pending = self.pending_permissions.lock().await;
-            pending.insert(request_id.clone(), tx);
-        }
 
         // Build description from tool call
         let tool_type = args.tool_call.tool_call_id.0.to_string();
@@ -79,35 +70,25 @@ impl StreamingClient {
         };
 
         // Build options
-        let options: Vec<PermissionOption> = args
+        let options: Vec<PermissionRequestOption> = args
             .options
             .iter()
-            .map(|opt| PermissionOption {
+            .map(|opt| PermissionRequestOption {
                 id: opt.option_id.0.to_string(),
                 label: opt.name.clone(),
             })
             .collect();
 
-        // Emit permission request to frontend
-        let payload = PermissionPayload {
-            id: request_id.clone(),
+        let event = PermissionRequestEvent::new(
+            request_id.clone(),
+            self.node_id.clone(),
             tool_type,
             tool_name,
             description,
             options,
-        };
+        );
 
-        if let Err(e) = self.app_handle.emit("permission-request", payload) {
-            error!("Failed to emit permission request: {:?}", e);
-            let mut pending = self.pending_permissions.lock().await;
-            pending.remove(&request_id);
-            return Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ));
-        }
-
-        // Wait for response from frontend
-        match rx.await {
+        match self.broker.request(event, &self.sink).await {
             Ok(option_id_str) => {
                 info!("Permission response received: {}", option_id_str);
                 Ok(RequestPermissionResponse::new(
@@ -116,8 +97,8 @@ impl StreamingClient {
                     )),
                 ))
             }
-            Err(_) => {
-                warn!("Permission request cancelled (channel dropped)");
+            Err(err) => {
+                warn!("Permission request cancelled: {err}");
                 Ok(RequestPermissionResponse::new(
                     RequestPermissionOutcome::Cancelled,
                 ))
@@ -127,7 +108,7 @@ impl StreamingClient {
 }
 
 #[async_trait(?Send)]
-impl Client for StreamingClient {
+impl<S: SessionEventSink> Client for StreamingClient<S> {
     async fn request_permission(
         &self,
         args: RequestPermissionRequest,
@@ -240,14 +221,10 @@ impl Client for StreamingClient {
         match args.update {
             SessionUpdate::AgentMessageChunk(chunk) => {
                 if let ContentBlock::Text(text) = chunk.content {
-                    // Send chunk to frontend
-                    let payload = ChunkPayload {
+                    self.sink.stream_chunk(StreamChunkEvent {
                         node_id: self.node_id.clone(),
                         chunk: text.text,
-                    };
-                    if let Err(e) = self.app_handle.emit("stream-chunk", payload) {
-                        error!("Failed to emit chunk: {:?}", e);
-                    }
+                    });
                 }
             }
             SessionUpdate::AgentThoughtChunk(chunk) => {
@@ -362,7 +339,55 @@ impl Client for SummaryClient {
 
 #[cfg(test)]
 mod tests {
-    use super::is_allowed_summary_tool;
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex as StdMutex};
+
+    use agent_client_protocol::{
+        Client, ContentBlock, ContentChunk, PermissionOption, PermissionOptionKind,
+        RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
+        TextContent, ToolCallUpdate, ToolCallUpdateFields,
+    };
+
+    use super::{is_allowed_summary_tool, StreamingClient};
+    use crate::backend::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
+    use crate::backend::permissions::PermissionBroker;
+
+    #[derive(Clone, Default)]
+    struct RecordingSink {
+        stream_chunks: Arc<StdMutex<Vec<StreamChunkEvent>>>,
+        permission_requests: Arc<StdMutex<Vec<PermissionRequestEvent>>>,
+    }
+
+    impl RecordingSink {
+        fn stream_chunks(&self) -> Vec<StreamChunkEvent> {
+            self.stream_chunks.lock().unwrap().clone()
+        }
+    }
+
+    impl SessionEventSink for RecordingSink {
+        fn stream_chunk(&self, event: StreamChunkEvent) {
+            self.stream_chunks.lock().unwrap().push(event);
+        }
+
+        fn permission_request(&self, event: PermissionRequestEvent) {
+            self.permission_requests.lock().unwrap().push(event);
+        }
+    }
+
+    fn permission_request() -> RequestPermissionRequest {
+        let tool_call =
+            ToolCallUpdate::new("tool-call-1", ToolCallUpdateFields::new().title("WebFetch"));
+
+        RequestPermissionRequest::new(
+            "session-1",
+            tool_call,
+            vec![PermissionOption::new(
+                "allow",
+                "Allow",
+                PermissionOptionKind::AllowOnce,
+            )],
+        )
+    }
 
     #[test]
     fn test_summary_tool_allowlist_only_allows_read_tools() {
@@ -372,5 +397,85 @@ mod tests {
         assert!(!is_allowed_summary_tool("Bash"));
         assert!(!is_allowed_summary_tool("Write"));
         assert!(!is_allowed_summary_tool("WebFetch"));
+    }
+
+    #[test]
+    fn streaming_client_forwards_message_chunks_to_sink() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let sink = RecordingSink::default();
+            let client = StreamingClient::new(
+                sink.clone(),
+                "node-42".to_string(),
+                PermissionBroker::new(),
+                PathBuf::from("/tmp"),
+            );
+
+            client
+                .session_notification(SessionNotification::new(
+                    "session-1",
+                    SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                        TextContent::new("hello world"),
+                    ))),
+                ))
+                .await
+                .unwrap();
+
+            assert_eq!(
+                sink.stream_chunks(),
+                vec![StreamChunkEvent {
+                    node_id: "node-42".to_string(),
+                    chunk: "hello world".to_string(),
+                }]
+            );
+        });
+    }
+
+    #[test]
+    fn streaming_client_permission_request_uses_broker_response() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let local = tokio::task::LocalSet::new();
+
+        local.block_on(&runtime, async {
+            let broker = PermissionBroker::new();
+            let sink = RecordingSink::default();
+            let client = Arc::new(StreamingClient::new(
+                sink,
+                "node-42".to_string(),
+                broker.clone(),
+                PathBuf::from("/tmp"),
+            ));
+
+            let request = permission_request();
+            let request_task = {
+                let client = client.clone();
+                tokio::task::spawn_local(async move { client.request_permission(request).await })
+            };
+
+            tokio::task::yield_now().await;
+
+            let pending = broker.pending().await;
+            assert_eq!(pending.len(), 1);
+
+            broker
+                .respond(&pending[0].request_id, "allow".to_string())
+                .await
+                .unwrap();
+
+            let response = request_task.await.unwrap().unwrap();
+            match response.outcome {
+                RequestPermissionOutcome::Selected(selected) => {
+                    assert_eq!(selected.option_id.0.as_ref(), "allow");
+                }
+                other => panic!("expected selected permission outcome, got {other:?}"),
+            }
+        });
     }
 }
