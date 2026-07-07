@@ -4,7 +4,7 @@ beads:
 sbx:
     template: docker.io/library/bdx-codex-bun-rust:v1
 codex:
-    model: gpt-5.4
+    model: gpt-5.5
     reasoningEffort: high
 worktreeRoot:
     policy: sibling
