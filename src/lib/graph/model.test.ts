@@ -141,7 +141,64 @@ describe('GraphModel.conversationPathIds', () => {
   });
 });
 
+describe('GraphModel.hasNonLinearLineage', () => {
+  it('keeps the Structure gate closed for a linear Lineage subgraph', () => {
+    const a = userNode('a', '', 1);
+    const b = agentNode('b', '', 2);
+    const c = userNode('c', '', 3);
+    const g = graphOf([a, b, c], [edge('a', 'b'), edge('b', 'c')]);
+    expect(GraphModel.hasNonLinearLineage(g, 'c')).toBe(false);
+  });
+
+  it('opens the Structure gate when the target has two parents in its Lineage subgraph', () => {
+    const a = userNode('a', '', 1);
+    const b = agentNode('b', '', 2);
+    const c = userNode('c', '', 3);
+    const g = graphOf([a, b, c], [edge('a', 'c'), edge('b', 'c')]);
+    expect(GraphModel.hasNonLinearLineage(g, 'c')).toBe(true);
+  });
+
+  it('opens the Structure gate for a diamond Lineage subgraph', () => {
+    const a = userNode('a', '', 1);
+    const b = agentNode('b', '', 2);
+    const c = userNode('c', '', 3);
+    const d = userNode('d', '', 4);
+    const g = graphOf(
+      [a, b, c, d],
+      [edge('a', 'b'), edge('a', 'c'), edge('b', 'd'), edge('c', 'd')],
+    );
+    expect(GraphModel.hasNonLinearLineage(g, 'd')).toBe(true);
+  });
+
+  it('keeps the Structure gate closed when a sibling branch is outside the Lineage subgraph', () => {
+    const a = userNode('a', '', 1);
+    const b = agentNode('b', '', 2);
+    const c = userNode('c', '', 3);
+    const d = userNode('d', '', 4);
+    const g = graphOf(
+      [a, b, c, d],
+      [edge('a', 'b'), edge('a', 'c'), edge('b', 'd')],
+    );
+    expect(GraphModel.hasNonLinearLineage(g, 'd')).toBe(false);
+  });
+});
+
 describe('GraphModel.conversationPath', () => {
+  it('keeps linear Conversation path messages byte-identical with no graph structure', () => {
+    const a = userNode('a', 'hello', 1);
+    const b = agentNode('b', 'hi', 2);
+    const c = userNode('c', 'follow up', 3);
+    const g = graphOf([a, b, c], [edge('a', 'b'), edge('b', 'c')]);
+    const path = GraphModel.conversationPath(g, 'c');
+    expect(path).toEqual([
+      { role: 'user', content: 'hello' },
+      { role: 'assistant', content: 'hi' },
+      { role: 'user', content: 'follow up' },
+    ]);
+    expect(path.map((m) => m.content).join('\n')).not.toContain('<node');
+    expect(path.map((m) => m.content).join('\n')).not.toContain('<graph-map>');
+  });
+
   it('emits ordered messages for linear chain', () => {
     const a = userNode('a', 'hello', 1);
     const b = agentNode('b', 'hi', 2);
@@ -152,6 +209,117 @@ describe('GraphModel.conversationPath', () => {
       { role: 'assistant', content: 'hi' },
       { role: 'user', content: 'follow up' },
     ]);
+  });
+
+  it('wraps a non-linear Conversation path with Node markers, merge annotation, and Lineage map', () => {
+    const a = agentNode('a', 'left branch', 1);
+    const b = agentNode('b', 'right branch', 2);
+    const synth = userNode('synth', 'synthesize them', 3);
+    const g = graphOf([a, b, synth], [edge('a', 'synth'), edge('b', 'synth')]);
+    expect(GraphModel.conversationPath(g, 'synth')).toEqual([
+      {
+        role: 'assistant',
+        content: '<node id="a">\nleft branch\n</node>\n\n<node id="b">\nright branch\n</node>',
+      },
+      {
+        role: 'user',
+        content:
+          '<node id="synt">\n' +
+          '<graph: this message merges branches a, b>\n' +
+          'synthesize them\n' +
+          '</node>\n\n' +
+          '<graph-map>\n' +
+          "This conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\n" +
+          'a (assistant) <- (root)\n' +
+          'b (assistant) <- (root)\n' +
+          'synt (user) <- a, b [current]\n' +
+          '</graph-map>',
+      },
+    ]);
+  });
+
+  it('annotates user branch heads and maps both branches in a diamond Lineage subgraph', () => {
+    const root = agentNode('root', 'base answer', 1);
+    const left = userNode('left', 'follow left', 2);
+    const righ = userNode('righ', 'follow right', 3);
+    const done = agentNode('done', 'combined answer', 4);
+    const g = graphOf(
+      [root, left, righ, done],
+      [edge('root', 'left'), edge('root', 'righ'), edge('left', 'done'), edge('righ', 'done')],
+    );
+    expect(GraphModel.conversationPath(g, 'done')).toEqual([
+      {
+        role: 'assistant',
+        content: '<node id="root">\nbase answer\n</node>',
+      },
+      {
+        role: 'user',
+        content:
+          '<node id="left">\n' +
+          '<graph: this message starts a new branch from root>\n' +
+          'follow left\n' +
+          '</node>\n\n' +
+          '<node id="righ">\n' +
+          '<graph: this message starts a new branch from root>\n' +
+          'follow right\n' +
+          '</node>',
+      },
+      {
+        role: 'assistant',
+        content:
+          '<node id="done">\ncombined answer\n</node>\n\n' +
+          '<graph-map>\n' +
+          "This conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\n" +
+          'root (assistant) <- (root)\n' +
+          'left (user) <- root\n' +
+          'righ (user) <- root\n' +
+          'done (assistant) <- left, righ [current]\n' +
+          '</graph-map>',
+      },
+    ]);
+  });
+
+  it('merges consecutive same-role GraphNodes under an open Structure gate as complete Node markers', () => {
+    const left = agentNode('left', 'left answer', 1);
+    const righ = agentNode('righ', 'right answer', 2);
+    const done = userNode('done', 'compare', 3);
+    const g = graphOf([left, righ, done], [edge('left', 'done'), edge('righ', 'done')]);
+    const [message] = GraphModel.conversationPath(g, 'done');
+    expect(message).toEqual({
+      role: 'assistant',
+      content: '<node id="left">\nleft answer\n</node>\n\n<node id="righ">\nright answer\n</node>',
+    });
+  });
+
+  it('extends Short ids when Lineage subgraph GraphNode ids share a four-character prefix', () => {
+    const first = agentNode('abcd-left', 'first', 1);
+    const second = agentNode('abcd-right', 'second', 2);
+    const done = userNode('done', 'merge', 3);
+    const g = graphOf(
+      [first, second, done],
+      [edge('abcd-left', 'done'), edge('abcd-right', 'done')],
+    );
+    const path = GraphModel.conversationPath(g, 'done');
+    expect(path[0].content).toBe(
+      '<node id="abcd">\nfirst\n</node>\n\n<node id="abcd-">\nsecond\n</node>',
+    );
+    expect(path[1].content).toContain(
+      '<graph: this message merges branches abcd, abcd->',
+    );
+    expect(path[1].content).toContain('done (user) <- abcd, abcd- [current]');
+  });
+
+  it('omits empty-content GraphNodes from messages but keeps them in the Lineage map', () => {
+    const left = agentNode('left', 'visible', 1);
+    const empt = agentNode('empt', '   ', 2);
+    const done = userNode('done', 'merge visible and empty', 3);
+    const g = graphOf([left, empt, done], [edge('left', 'done'), edge('empt', 'done')]);
+    const path = GraphModel.conversationPath(g, 'done');
+    const content = path.map((message) => message.content).join('\n\n');
+    expect(content).toContain('<node id="left">\nvisible\n</node>');
+    expect(content).not.toContain('<node id="empt">');
+    expect(content).toContain('empt (assistant) <- (root)');
+    expect(content).toContain('done (user) <- left, empt [current]');
   });
 
   it('skips empty-content nodes and merges remaining same-role neighbours', () => {
@@ -166,12 +334,11 @@ describe('GraphModel.conversationPath', () => {
   });
 
   it('merges consecutive same-role messages by concatenating content', () => {
-    // Two user parents converge into a synthesizer user node.
-    // After topo-sort: user(a) → user(b) → user(synth) — three consecutive user roles.
+    // Linear same-role GraphNodes still merge while the Structure gate is closed.
     const a = userNode('a', 'one', 1);
     const b = userNode('b', 'two', 2);
     const synth = userNode('synth', 'three', 3);
-    const g = graphOf([a, b, synth], [edge('a', 'synth'), edge('b', 'synth')]);
+    const g = graphOf([a, b, synth], [edge('a', 'b'), edge('b', 'synth')]);
     expect(GraphModel.conversationPath(g, 'synth')).toEqual([
       { role: 'user', content: 'one\n\ntwo\n\nthree' },
     ]);
