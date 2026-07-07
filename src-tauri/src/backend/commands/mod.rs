@@ -5,9 +5,9 @@ pub(crate) mod summary;
 
 pub(crate) use chat::{check_acp_available, respond_to_permission, send_prompt};
 pub(crate) use projects::{
-    add_recent_project, export_markdown, get_notes_directory, get_recent_projects, load_project,
-    new_project_dialog, open_project_dialog, pick_notes_directory, remove_recent_project,
-    save_project, search_files, set_notes_directory,
+    add_recent_project, export_markdown, get_notes_directory, get_recent_projects, list_projects,
+    load_project, new_project_dialog, open_project_dialog, pick_notes_directory,
+    remove_recent_project, save_project, search_files, set_notes_directory,
 };
 pub(crate) use providers::{
     get_available_models, get_available_providers, get_default_provider, get_effort_preferences,
