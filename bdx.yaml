@@ -12,9 +12,9 @@ worktreeRoot:
 verification:
     commands:
         - name: test
-          argv: [bun, run, test:run]
+          argv: [bash, -lc, "bun install && bun run test:run"]
         - name: build
-          argv: [bun, run, build]
+          argv: [bash, -lc, "bun run build"]
 runPolicy:
     idleTimeout: 10m
     maxRuntime: 2h
