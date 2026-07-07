@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
 import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '@thoughttree/graph-model';
 import type { BackendTransport } from '../lib/transport';
-import { setBackendTransport } from '../lib/transport';
+import { setBackendTransport, StaleRevisionError } from '../lib/transport';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
@@ -185,6 +185,37 @@ describe('useGraphStore', () => {
     useGraphStore.getState().newProject();
     expect(useGraphStore.getState().projectEffortPreferences).toBeNull();
     expect(useGraphStore.getState().projectRevision).toBeNull();
+  });
+
+  it('surfaces stale saves in UI state and force-saves with a null base revision', async () => {
+    vi.mocked(transport.saveProject).mockRejectedValueOnce(new StaleRevisionError('rev-2'));
+    useGraphStore.setState({
+      projectPath: '/tmp/project.thoughttree',
+      projectRevision: 'rev-1',
+    });
+
+    await expect(useGraphStore.getState().saveProject()).rejects.toBeInstanceOf(StaleRevisionError);
+
+    expect(transport.saveProject).toHaveBeenCalledWith(
+      '/tmp/project.thoughttree',
+      expect.any(String),
+      'rev-1'
+    );
+    expect(useUIStore.getState().staleProjectSave).toEqual({
+      path: '/tmp/project.thoughttree',
+      currentRevision: 'rev-2',
+    });
+
+    vi.mocked(transport.saveProject).mockResolvedValueOnce('rev-3');
+    await useGraphStore.getState().saveProject({ force: true });
+
+    expect(transport.saveProject).toHaveBeenLastCalledWith(
+      '/tmp/project.thoughttree',
+      expect.any(String),
+      null
+    );
+    expect(useGraphStore.getState().projectRevision).toBe('rev-3');
+    expect(useUIStore.getState().staleProjectSave).toBeNull();
   });
 });
 

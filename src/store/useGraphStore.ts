@@ -24,7 +24,7 @@ import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 import { logger } from '../lib/logger';
-import { getBackendTransport } from '../lib/transport';
+import { getBackendTransport, StaleRevisionError } from '../lib/transport';
 import {
   GRAPH_JSON_VERSION,
   GraphModel,
@@ -139,7 +139,7 @@ interface GraphState {
 
   // Project actions
   setProjectPath: (path: string | null) => void;
-  saveProject: () => Promise<void>;
+  saveProject: (options?: { force?: boolean }) => Promise<void>;
   loadProject: (path: string) => Promise<void>;
   newProject: () => void;
   exportSubgraph: (nodeIds: string[]) => string;
@@ -199,6 +199,20 @@ function migrateLegacyV2NodeData(
     }
   }
   return migrated;
+}
+
+function serializeProjectFile(
+  graph: Graph,
+  projectModelPreferences: ModelPreferences | null,
+  projectEffortPreferences: EffortPreferences | null
+): string {
+  const projectFile: ProjectFileV3 = {
+    version: GRAPH_JSON_VERSION,
+    graph: GraphSerialize.toJSON(graph),
+    projectModelPreferences,
+    projectEffortPreferences,
+  };
+  return JSON.stringify(projectFile, null, 2);
 }
 
 export const useGraphStore = create<GraphState>()((set, get) => ({
@@ -565,7 +579,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       projectRevision: state.projectPath === path ? state.projectRevision : null,
     })),
 
-  saveProject: async () => {
+  saveProject: async (options) => {
     get().flushStreamingChunks();
     const transport = getBackendTransport();
     const { projectPath, projectRevision, graph, projectModelPreferences, projectEffortPreferences } = get();
@@ -573,23 +587,21 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       logger.warn('No project path set, cannot save');
       return;
     }
-
-    const projectFile: ProjectFileV3 = {
-      version: GRAPH_JSON_VERSION,
-      graph: GraphSerialize.toJSON(graph),
-      projectModelPreferences,
-      projectEffortPreferences,
-    };
+    const content = serializeProjectFile(graph, projectModelPreferences, projectEffortPreferences);
+    const baseRevision = options?.force ? null : projectRevision;
 
     try {
-      const revision = await transport.saveProject(
-        projectPath,
-        JSON.stringify(projectFile, null, 2),
-        projectRevision
-      );
+      const revision = await transport.saveProject(projectPath, content, baseRevision);
       set({ projectRevision: revision, lastSavedAt: Date.now(), isDirty: false });
+      useUIStore.getState().setStaleProjectSave(null);
       logger.info('Project saved to:', projectPath);
     } catch (error) {
+      if (error instanceof StaleRevisionError) {
+        useUIStore.getState().setStaleProjectSave({
+          path: projectPath,
+          currentRevision: error.currentRevision,
+        });
+      }
       logger.error('Failed to save project:', error);
       throw error;
     }

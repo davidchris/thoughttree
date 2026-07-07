@@ -23,6 +23,7 @@ import type {
   SummaryResult,
   Unsubscribe,
 } from './types';
+import { StaleRevisionError } from './types';
 
 interface BackendMessageImage {
   data: string;
@@ -48,7 +49,16 @@ interface PermissionPayload {
   options: Array<{ id: string; label: string }>;
 }
 
-const UNGUARDED_REVISION = 'tauri-unguarded';
+interface LoadProjectPayload {
+  content: string;
+  revision: string;
+}
+
+interface ProjectCommandErrorPayload {
+  kind: 'message' | 'stale_revision';
+  message?: string;
+  current_revision?: string;
+}
 
 function toBackendMessages(messages: PromptMessage[]): BackendMessage[] {
   return messages
@@ -75,6 +85,20 @@ function toPermissionRequest(payload: PermissionPayload): PermissionRequest {
     description: payload.description,
     options: payload.options,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function projectCommandErrorFromUnknown(error: unknown): ProjectCommandErrorPayload | null {
+  if (isRecord(error) && typeof error.kind === 'string') {
+    return error as unknown as ProjectCommandErrorPayload;
+  }
+  if (isRecord(error) && isRecord(error.error) && typeof error.error.kind === 'string') {
+    return error.error as unknown as ProjectCommandErrorPayload;
+  }
+  return null;
 }
 
 export class TauriTransport implements BackendTransport {
@@ -130,13 +154,20 @@ export class TauriTransport implements BackendTransport {
   }
 
   async loadProject(path: string): Promise<ProjectDoc> {
-    const data = await invoke<string>('load_project', { path });
-    return { data, revision: UNGUARDED_REVISION };
+    const project = await invoke<LoadProjectPayload>('load_project', { path });
+    return { data: project.content, revision: project.revision };
   }
 
-  async saveProject(path: string, data: string, _baseRevision: string | null): Promise<string> {
-    await invoke('save_project', { path, data });
-    return UNGUARDED_REVISION;
+  async saveProject(path: string, data: string, baseRevision: string | null): Promise<string> {
+    try {
+      return await invoke<string>('save_project', { path, data, baseRevision });
+    } catch (error) {
+      const payload = projectCommandErrorFromUnknown(error);
+      if (payload?.kind === 'stale_revision' && payload.current_revision) {
+        throw new StaleRevisionError(payload.current_revision);
+      }
+      throw error;
+    }
   }
 
   async listProjects(): Promise<ProjectEntry[]> {
