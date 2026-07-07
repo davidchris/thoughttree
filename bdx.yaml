@@ -2,7 +2,7 @@ version: 1
 beads:
     path: .beads
 sbx:
-    template: docker.io/library/bdx-codex-bun:v1
+    template: docker.io/library/bdx-codex-bun-rust:v1
 codex:
     model: gpt-5.4
     reasoningEffort: high
