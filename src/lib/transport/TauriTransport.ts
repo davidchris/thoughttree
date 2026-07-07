@@ -171,10 +171,7 @@ export class TauriTransport implements BackendTransport {
   }
 
   async listProjects(): Promise<ProjectEntry[]> {
-    const files = await invoke<string[]>('search_files', { query: '', limit: 1000 });
-    return files
-      .filter((path) => path.endsWith('.thoughttree'))
-      .map((relativePath) => ({ relativePath, modifiedEpochMs: 0 }));
+    return invoke<ProjectEntry[]>('list_projects');
   }
 
   async sendPrompt(req: PromptRequest): Promise<string> {
