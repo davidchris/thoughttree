@@ -5,7 +5,7 @@ use serde::Serialize;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
-use crate::backend::types::{AgentProvider, EffortPreferences, ModelPreferences, ProviderPaths};
+use thoughttree_core::types::{AgentProvider, EffortPreferences, ModelPreferences, ProviderPaths};
 
 const CONFIG_STORE: &str = "config.json";
 

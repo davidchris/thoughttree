@@ -18,10 +18,11 @@ bun run build         # TypeScript check + Vite build
 bun test              # Run tests in watch mode
 bun test:run          # Run tests once
 
-# Before committing Rust changes (CI enforces all three)
-cargo fmt --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml --lib -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+# Before committing Rust changes (CI enforces all four)
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+./scripts/check-core-no-tauri.sh
 ```
 
 ## Architecture Summary

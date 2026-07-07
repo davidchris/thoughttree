@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Supported agent providers for ACP connections
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum AgentProvider {
+pub enum AgentProvider {
     #[default]
     ClaudeCode,
     GeminiCli,
@@ -12,7 +12,7 @@ pub(crate) enum AgentProvider {
 
 /// Static per-provider data. Adding a Provider means adding a variant,
 /// a descriptor entry, and a spawn arm — no other code changes.
-pub(crate) struct ProviderDescriptor {
+pub struct ProviderDescriptor {
     /// Serde value of the variant AND key in per-provider config maps
     pub id: &'static str,
     pub display_name: &'static str,
@@ -97,13 +97,13 @@ const CODEX_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
 
 impl AgentProvider {
     /// Every supported provider — drives availability lists and config maps
-    pub(crate) const ALL: &'static [AgentProvider] = &[
+    pub const ALL: &'static [AgentProvider] = &[
         AgentProvider::ClaudeCode,
         AgentProvider::GeminiCli,
         AgentProvider::Codex,
     ];
 
-    pub(crate) fn descriptor(&self) -> &'static ProviderDescriptor {
+    pub fn descriptor(&self) -> &'static ProviderDescriptor {
         match self {
             AgentProvider::ClaudeCode => &CLAUDE_CODE_DESCRIPTOR,
             AgentProvider::GeminiCli => &GEMINI_CLI_DESCRIPTOR,
@@ -112,14 +112,14 @@ impl AgentProvider {
     }
 
     /// Human-readable display name for UI
-    pub(crate) fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> &'static str {
         self.descriptor().display_name
     }
 }
 
 /// Provider availability status for frontend
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct ProviderStatus {
+pub struct ProviderStatus {
     pub provider: AgentProvider,
     pub available: bool,
     pub error_message: Option<String>,
@@ -127,7 +127,7 @@ pub(crate) struct ProviderStatus {
 
 /// Model info discovered from ACP CreateSessionResponse.models.available_models
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct ModelInfo {
+pub struct ModelInfo {
     pub model_id: String,
     pub display_name: String,
 }
@@ -138,7 +138,7 @@ pub(crate) struct ModelInfo {
 /// app versions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
-pub(crate) struct PerProvider<T>(std::collections::BTreeMap<String, Option<T>>);
+pub struct PerProvider<T>(std::collections::BTreeMap<String, Option<T>>);
 
 impl<T> Default for PerProvider<T> {
     fn default() -> Self {
@@ -147,13 +147,13 @@ impl<T> Default for PerProvider<T> {
 }
 
 impl<T> PerProvider<T> {
-    pub(crate) fn get(&self, provider: &AgentProvider) -> Option<&T> {
+    pub fn get(&self, provider: &AgentProvider) -> Option<&T> {
         self.0
             .get(provider.descriptor().id)
             .and_then(|value| value.as_ref())
     }
 
-    pub(crate) fn set(&mut self, provider: &AgentProvider, value: Option<T>) {
+    pub fn set(&mut self, provider: &AgentProvider, value: Option<T>) {
         self.0.insert(provider.descriptor().id.to_string(), value);
     }
 }
@@ -162,7 +162,7 @@ impl<T> PerProvider<T> {
 /// cross-language contract with the TS `ReasoningEffort` type.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum ReasoningEffort {
+pub enum ReasoningEffort {
     Low,
     Medium,
     High,
@@ -170,7 +170,7 @@ pub(crate) enum ReasoningEffort {
 }
 
 impl ReasoningEffort {
-    pub(crate) fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Low => "low",
             Self::Medium => "medium",
@@ -181,30 +181,30 @@ impl ReasoningEffort {
 }
 
 /// User's preferred model per provider (stores model_id strings)
-pub(crate) type ModelPreferences = PerProvider<String>;
+pub type ModelPreferences = PerProvider<String>;
 
 /// User's preferred reasoning effort per provider
-pub(crate) type EffortPreferences = PerProvider<ReasoningEffort>;
+pub type EffortPreferences = PerProvider<ReasoningEffort>;
 
 /// Custom executable paths for providers (user-configured overrides)
-pub(crate) type ProviderPaths = PerProvider<String>;
+pub type ProviderPaths = PerProvider<String>;
 
 // Message types from frontend (with optional images)
 #[derive(Clone, Deserialize)]
-pub(crate) struct MessageImage {
+pub struct MessageImage {
     pub data: String,
     pub mime_type: String,
 }
 
 #[derive(Clone, Deserialize)]
-pub(crate) struct Message {
+pub struct Message {
     pub role: String,
     pub content: String,
     pub images: Option<Vec<MessageImage>>,
 }
 
 #[derive(Clone, Serialize)]
-pub(crate) struct SummaryResult {
+pub struct SummaryResult {
     pub node_id: String,
     pub summary: String,
 }

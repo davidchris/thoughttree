@@ -1,0 +1,21 @@
+[package]
+name = "thoughttree-core"
+version = "0.4.0"
+edition = "2021"
+license-file = "LICENSE"
+
+[dependencies]
+agent-client-protocol = { version = "0.9", features = ["unstable"] }
+anyhow = "1.0"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+futures = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "process", "io-util", "time"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+

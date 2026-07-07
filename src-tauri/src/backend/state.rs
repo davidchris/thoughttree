@@ -1,4 +1,4 @@
-use crate::backend::permissions::PermissionBroker;
+use thoughttree_core::permissions::PermissionBroker;
 
 /// App state for managing permission responses
 #[derive(Default)]

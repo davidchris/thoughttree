@@ -9,13 +9,13 @@ use async_trait::async_trait;
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
-use crate::backend::events::{
+use crate::events::{
     PermissionRequestEvent, PermissionRequestOption, SessionEventSink, StreamChunkEvent,
 };
-use crate::backend::permissions::PermissionBroker;
+use crate::permissions::PermissionBroker;
 
 /// ACP Client that streams to frontend and handles permissions via UI
-pub(crate) struct StreamingClient<S> {
+pub struct StreamingClient<S> {
     sink: S,
     node_id: String,
     broker: PermissionBroker,
@@ -23,7 +23,7 @@ pub(crate) struct StreamingClient<S> {
 }
 
 impl<S: SessionEventSink> StreamingClient<S> {
-    pub(crate) fn new(
+    pub fn new(
         sink: S,
         node_id: String,
         broker: PermissionBroker,
@@ -250,7 +250,7 @@ impl<S: SessionEventSink> Client for StreamingClient<S> {
 }
 
 /// Minimal ACP client just for model discovery - no streaming or permissions needed
-pub(crate) struct ModelDiscoveryClient;
+pub struct ModelDiscoveryClient;
 
 #[async_trait(?Send)]
 impl Client for ModelDiscoveryClient {
@@ -274,7 +274,7 @@ impl Client for ModelDiscoveryClient {
 }
 
 /// Simple ACP client for summarization - collects response text, auto-approves all tools
-pub(crate) struct SummaryClient {
+pub struct SummaryClient {
     pub response_text: Arc<Mutex<String>>,
 }
 
@@ -286,9 +286,15 @@ impl SummaryClient {
     }
 }
 
+impl Default for SummaryClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Summary generation is background work, so keep tool access extremely strict.
 /// Deny-by-default and only allow explicit read-only discovery tools.
-pub(crate) fn is_allowed_summary_tool(tool_name: &str) -> bool {
+pub fn is_allowed_summary_tool(tool_name: &str) -> bool {
     const ALLOWED_PATTERNS: [&str; 3] = ["Read", "Grep", "Glob"];
     ALLOWED_PATTERNS
         .iter()
@@ -349,8 +355,8 @@ mod tests {
     };
 
     use super::{is_allowed_summary_tool, StreamingClient};
-    use crate::backend::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
-    use crate::backend::permissions::PermissionBroker;
+    use crate::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
+    use crate::permissions::PermissionBroker;
 
     #[derive(Clone, Default)]
     struct RecordingSink {

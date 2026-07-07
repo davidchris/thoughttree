@@ -1,6 +1,6 @@
 use std::future::Future;
 
-pub(crate) async fn run_localset_blocking<T, Fut, F>(task: F) -> Result<T, String>
+pub async fn run_localset_blocking<T, Fut, F>(task: F) -> Result<T, String>
 where
     T: Send + 'static,
     Fut: Future<Output = Result<T, String>> + 'static,

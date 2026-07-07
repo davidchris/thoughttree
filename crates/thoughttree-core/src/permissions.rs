@@ -4,10 +4,10 @@ use std::sync::Arc;
 use anyhow::Context;
 use tokio::sync::{oneshot, Mutex};
 
-use crate::backend::events::{PermissionRequestEvent, SessionEventSink};
+use crate::events::{PermissionRequestEvent, SessionEventSink};
 
 #[derive(Clone)]
-pub(crate) struct PermissionBroker {
+pub struct PermissionBroker {
     inner: Arc<Mutex<BrokerInner>>,
 }
 
@@ -23,13 +23,13 @@ struct PendingPermission {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum RespondError {
+pub enum RespondError {
     #[error("no pending permission request with id {0}")]
     UnknownRequest(String),
 }
 
 impl PermissionBroker {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(BrokerInner {
                 pending: HashMap::new(),
@@ -37,7 +37,7 @@ impl PermissionBroker {
         }
     }
 
-    pub(crate) async fn request(
+    pub async fn request(
         &self,
         request: PermissionRequestEvent,
         sink: &impl SessionEventSink,
@@ -69,11 +69,7 @@ impl PermissionBroker {
         })
     }
 
-    pub(crate) async fn respond(
-        &self,
-        request_id: &str,
-        option_id: String,
-    ) -> Result<(), RespondError> {
+    pub async fn respond(&self, request_id: &str, option_id: String) -> Result<(), RespondError> {
         let pending = {
             let mut inner = self.inner.lock().await;
             inner.pending.remove(request_id)
@@ -87,7 +83,7 @@ impl PermissionBroker {
     /// Snapshot of parked requests — the server will surface these on client reattach
     /// (thoughttree-73r). Until then only tests call this.
     #[allow(dead_code)]
-    pub(crate) async fn pending(&self) -> Vec<PermissionRequestEvent> {
+    pub async fn pending(&self) -> Vec<PermissionRequestEvent> {
         let inner = self.inner.lock().await;
         inner
             .pending
@@ -111,7 +107,7 @@ mod tests {
     use tokio::task::LocalSet;
 
     use super::PermissionBroker;
-    use crate::backend::events::{
+    use crate::events::{
         PermissionRequestEvent, PermissionRequestOption, SessionEventSink, StreamChunkEvent,
     };
 
