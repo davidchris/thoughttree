@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
-import { invoke } from '@tauri-apps/api/core';
 import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '@thoughttree/graph-model';
+import type { BackendTransport } from '../lib/transport';
+import { setBackendTransport } from '../lib/transport';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
@@ -22,12 +23,37 @@ function resetStore() {
   useUIStore.getState().reset();
 }
 
-const mockedInvoke = vi.mocked(invoke);
+function createMockTransport(): BackendTransport {
+  return {
+    capabilities: { nativeDialogs: true },
+    loadProject: vi.fn(),
+    saveProject: vi.fn(),
+    listProjects: vi.fn(),
+    sendPrompt: vi.fn(),
+    respondToPermission: vi.fn(),
+    checkAcpAvailable: vi.fn(),
+    searchFiles: vi.fn(),
+    getAvailableProviders: vi.fn(),
+    getDefaultProvider: vi.fn(),
+    setDefaultProvider: vi.fn(),
+    getModelPreferences: vi.fn(),
+    setModelPreference: vi.fn(),
+    getEffortPreferences: vi.fn(),
+    setEffortPreference: vi.fn(),
+    getAvailableModels: vi.fn(),
+    generateSummary: vi.fn(),
+    onStreamChunk: vi.fn(() => () => {}),
+    onPermissionRequest: vi.fn(() => () => {}),
+  };
+}
 
 describe('useGraphStore', () => {
+  let transport: BackendTransport;
+
   beforeEach(() => {
     vi.useRealTimers();
-    mockedInvoke.mockReset();
+    transport = createMockTransport();
+    setBackendTransport(transport);
     resetStore();
   });
 
@@ -116,47 +142,49 @@ describe('useGraphStore', () => {
   });
 
   it('round-trips project reasoning effort preferences in V3 files', async () => {
-    mockedInvoke.mockResolvedValue(undefined);
+    vi.mocked(transport.saveProject).mockResolvedValue('rev-1');
     useGraphStore.setState({ projectPath: '/tmp/project.thoughttree' });
     useGraphStore.getState().setProjectEffortPreference('claude-code', 'high');
 
     await useGraphStore.getState().saveProject();
 
-    const saveCall = mockedInvoke.mock.calls.find(([command]) => command === 'save_project');
-    expect(saveCall).toBeDefined();
-    const saved = JSON.parse((saveCall?.[1] as { data: string }).data);
+    expect(transport.saveProject).toHaveBeenCalledWith(
+      '/tmp/project.thoughttree',
+      expect.any(String),
+      null
+    );
+    const saved = JSON.parse(vi.mocked(transport.saveProject).mock.calls[0][1]);
     expect(saved.version).toBe(3);
     expect(saved.projectEffortPreferences).toEqual({ 'claude-code': 'high' });
 
     const graph = GraphSerialize.toJSON(GraphMutations.empty());
-    mockedInvoke.mockImplementation(async (command) => {
-      if (command === 'load_project') {
-        return JSON.stringify({
-          version: GRAPH_JSON_VERSION,
-          graph,
-          projectEffortPreferences: { codex: 'xhigh', 'claude-code': null },
-        });
-      }
-      return undefined;
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify({
+        version: GRAPH_JSON_VERSION,
+        graph,
+        projectEffortPreferences: { codex: 'xhigh', 'claude-code': null },
+      }),
+      revision: 'rev-2',
     });
 
     await useGraphStore.getState().loadProject('/tmp/project.thoughttree');
 
     expect(useGraphStore.getState().projectEffortPreferences).toEqual({ codex: 'xhigh' });
+    expect(useGraphStore.getState().projectRevision).toBe('rev-2');
 
-    mockedInvoke.mockImplementation(async (command) => {
-      if (command === 'load_project') {
-        return JSON.stringify({ version: GRAPH_JSON_VERSION, graph });
-      }
-      return undefined;
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify({ version: GRAPH_JSON_VERSION, graph }),
+      revision: 'rev-3',
     });
 
     await useGraphStore.getState().loadProject('/tmp/project-without-effort.thoughttree');
     expect(useGraphStore.getState().projectEffortPreferences).toBeNull();
+    expect(useGraphStore.getState().projectRevision).toBe('rev-3');
 
     useGraphStore.getState().setProjectEffortPreference('codex', 'low');
     useGraphStore.getState().newProject();
     expect(useGraphStore.getState().projectEffortPreferences).toBeNull();
+    expect(useGraphStore.getState().projectRevision).toBeNull();
   });
 });
 
@@ -172,6 +200,7 @@ describe('streaming chunk batching', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    setBackendTransport(createMockTransport());
     resetStore();
   });
 

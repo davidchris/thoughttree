@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { invoke } from '@tauri-apps/api/core';
 import { Graph } from './components/Graph';
 import { Toolbar } from './components/Toolbar';
 import { PermissionDialog } from './components/PermissionDialog';
@@ -8,20 +7,19 @@ import { SetupWizard } from './components/SetupWizard';
 import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
 import { SidePanel } from './components/SidePanel';
 import { Palette } from './components/Palette';
-import {
-  initializeListeners,
-  getAvailableProviders,
-  getDefaultProvider,
-} from './lib/tauri';
+import { getNotesDirectory, newProjectDialog, openProjectDialog, addRecentProject } from './lib/desktop';
+import { getBackendTransport } from './lib/transport';
 import { useSummaryGeneration } from './hooks/useSummaryGeneration';
 import { useGraphStore } from './store/useGraphStore';
 import { useProviderStore } from './store/useProviderStore';
+import { useUIStore } from './store/useUIStore';
 import { logger } from './lib/logger';
 import './App.css';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
+  const transport = getBackendTransport();
   const projectPath = useGraphStore((state) => state.projectPath);
   const loadProject = useGraphStore((state) => state.loadProject);
   const newProject = useGraphStore((state) => state.newProject);
@@ -32,19 +30,26 @@ function App() {
   useSummaryGeneration();
 
   useEffect(() => {
+    const unsubscribeStream = transport.onStreamChunk(({ nodeId, chunk }) => {
+      useGraphStore.getState().appendToNode(nodeId, chunk);
+    });
+    const unsubscribePermission = transport.onPermissionRequest((permission) => {
+      useUIStore.getState().setPendingPermission(permission);
+    });
+
     const initialize = async () => {
       try {
-        // Check if notes directory is configured
-        const notesDir = await invoke<string | null>('get_notes_directory');
-        setNeedsSetup(!notesDir);
-
-        // Initialize event listeners
-        await initializeListeners();
+        if (transport.capabilities.nativeDialogs) {
+          const notesDir = await getNotesDirectory();
+          setNeedsSetup(!notesDir);
+        } else {
+          setNeedsSetup(false);
+        }
 
         // Load provider configuration
         try {
-          const providers = await getAvailableProviders();
-          const defaultProv = await getDefaultProvider();
+          const providers = await transport.getAvailableProviders();
+          const defaultProv = await transport.getDefaultProvider();
           useProviderStore.getState().setAvailableProviders(providers);
           useProviderStore.getState().setDefaultProvider(defaultProv);
         } catch (error) {
@@ -58,18 +63,28 @@ function App() {
     };
 
     initialize();
-  }, []);
+    return () => {
+      unsubscribeStream();
+      unsubscribePermission();
+    };
+  }, [transport]);
 
   const handleOpenProject = useCallback(async () => {
+    if (!transport.capabilities.nativeDialogs) return;
     try {
-      const path = await invoke<string | null>('open_project_dialog');
+      const path = await openProjectDialog();
       if (path) {
         await loadProject(path);
+        try {
+          await addRecentProject(path);
+        } catch (error) {
+          logger.warn('Failed to track project:', error);
+        }
       }
     } catch (error) {
       logger.error('Failed to open project:', error);
     }
-  }, [loadProject]);
+  }, [loadProject, transport.capabilities.nativeDialogs]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -107,26 +122,32 @@ function App() {
   );
 
   const handleOpenDialog = useCallback(async () => {
+    if (!transport.capabilities.nativeDialogs) return;
     try {
-      const path = await invoke<string | null>('open_project_dialog');
+      const path = await openProjectDialog();
       if (path) {
         await handleProjectSelected(path);
+        try {
+          await addRecentProject(path);
+        } catch (error) {
+          logger.warn('Failed to track project:', error);
+        }
       }
     } catch (error) {
       logger.error('Failed to open project:', error);
     }
-  }, [handleProjectSelected]);
+  }, [handleProjectSelected, transport.capabilities.nativeDialogs]);
 
   const handleNewProject = useCallback(async () => {
+    if (!transport.capabilities.nativeDialogs) return;
     try {
-      const path = await invoke<string | null>('new_project_dialog');
+      const path = await newProjectDialog();
       if (path) {
         newProject();
         setProjectPath(path);
         await saveProject();
-        // Track new project in recent projects
         try {
-          await invoke('add_recent_project', { path });
+          await addRecentProject(path);
         } catch (error) {
           logger.warn('Failed to track new project:', error);
         }
@@ -134,7 +155,7 @@ function App() {
     } catch (error) {
       logger.error('Failed to create new project:', error);
     }
-  }, [newProject, setProjectPath, saveProject]);
+  }, [newProject, saveProject, setProjectPath, transport.capabilities.nativeDialogs]);
 
   if (isLoading) {
     return (
@@ -155,6 +176,7 @@ function App() {
         onProjectSelected={handleProjectSelected}
         onOpenDialog={handleOpenDialog}
         onNewProject={handleNewProject}
+        nativeDialogsEnabled={transport.capabilities.nativeDialogs}
       />
     );
   }

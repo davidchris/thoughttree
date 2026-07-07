@@ -2,27 +2,47 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SidePanel } from "./index";
+import type { BackendTransport } from "../../lib/transport";
+import { setBackendTransport } from "../../lib/transport";
 import { useGraphStore } from "../../store/useGraphStore";
 import { useUIStore } from "../../store/useUIStore";
 import { useProviderStore } from "../../store/useProviderStore";
-import { sendPrompt } from "../../lib/tauri";
 
 // Mock the stores
 vi.mock("../../store/useGraphStore");
 vi.mock("../../store/useUIStore");
 vi.mock("../../store/useProviderStore");
 
-// Mock tauri lib
-vi.mock("../../lib/tauri", () => ({
-  sendPrompt: vi.fn(() => Promise.resolve()),
-  getAvailableModels: vi.fn(() => Promise.resolve([])),
-}));
-
 const mockUseGraphStore = vi.mocked(useGraphStore);
 const mockUseUIStore = vi.mocked(useUIStore);
 const mockUseProviderStore = vi.mocked(useProviderStore);
 
+function createMockTransport(): BackendTransport {
+  return {
+    capabilities: { nativeDialogs: true },
+    loadProject: vi.fn(),
+    saveProject: vi.fn(),
+    listProjects: vi.fn(),
+    sendPrompt: vi.fn(() => Promise.resolve("")),
+    respondToPermission: vi.fn(),
+    checkAcpAvailable: vi.fn(),
+    searchFiles: vi.fn(),
+    getAvailableProviders: vi.fn(),
+    getDefaultProvider: vi.fn(),
+    setDefaultProvider: vi.fn(),
+    getModelPreferences: vi.fn(),
+    setModelPreference: vi.fn(),
+    getEffortPreferences: vi.fn(),
+    setEffortPreference: vi.fn(),
+    getAvailableModels: vi.fn(() => Promise.resolve([])),
+    generateSummary: vi.fn(),
+    onStreamChunk: vi.fn(() => () => {}),
+    onPermissionRequest: vi.fn(() => () => {}),
+  };
+}
+
 describe("SidePanel", () => {
+  let transport: BackendTransport;
   const mockSetPreviewNode = vi.fn();
   const mockUpdateNodeContent = vi.fn();
   const mockCreateAgentNodeDownstream = vi.fn(() => "new-agent-node-id");
@@ -35,6 +55,8 @@ describe("SidePanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    transport = createMockTransport();
+    setBackendTransport(transport);
   });
 
   const mockGetEffectiveModel = vi.fn(() => undefined);
@@ -170,14 +192,13 @@ describe("SidePanel", () => {
       await userEvent.click(screen.getByRole("button", { name: /generate/i }));
 
       await waitFor(() => {
-        expect(sendPrompt).toHaveBeenCalledWith(
-          "new-agent-node-id",
-          [{ role: "user", content: "Hello" }],
-          expect.any(Function),
-          "claude-code",
-          undefined,
-          "high"
-        );
+        expect(transport.sendPrompt).toHaveBeenCalledWith({
+          nodeId: "new-agent-node-id",
+          messages: [{ role: "user", content: "Hello" }],
+          provider: "claude-code",
+          modelId: undefined,
+          effort: "high",
+        });
       });
       expect(mockGetEffectiveEffort).toHaveBeenCalledWith("claude-code");
     });

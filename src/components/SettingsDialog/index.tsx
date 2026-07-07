@@ -2,17 +2,12 @@ import { useEffect, useState, useCallback } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useProviderStore } from '../../store/useProviderStore';
 import {
-  getAvailableModels,
-  getAvailableProviders,
-  getEffortPreferences,
-  getModelPreferences,
   getProviderPaths,
   pickProviderExecutable,
-  setEffortPreference,
-  setModelPreference,
   setProviderPath,
   validateProviderPath,
-} from '../../lib/tauri';
+} from '../../lib/desktop';
+import { getBackendTransport } from '../../lib/transport';
 import { EffortSelector } from '../EffortSelector';
 import { ModelSelector } from '../ModelSelector';
 import {
@@ -73,10 +68,10 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   // Load global preferences and provider paths on mount
   useEffect(() => {
     if (isOpen) {
-      getModelPreferences().then(setGlobalModelPreferences).catch((error) => {
+      getBackendTransport().getModelPreferences().then(setGlobalModelPreferences).catch((error) => {
         logger.error('Failed to load model preferences:', error);
       });
-      getEffortPreferences().then(setGlobalEffortPreferences).catch((error) => {
+      getBackendTransport().getEffortPreferences().then(setGlobalEffortPreferences).catch((error) => {
         logger.error('Failed to load effort preferences:', error);
       });
       getProviderPaths().then((paths) => {
@@ -108,7 +103,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
 
     setLoadingModels((prev) => ({ ...prev, [provider]: true }));
     try {
-      const models = await getAvailableModels(provider);
+      const models = await getBackendTransport().getAvailableModels(provider);
       setAvailableModels(provider, models);
     } catch (error) {
       logger.error(`Failed to fetch models for ${provider}:`, error);
@@ -135,7 +130,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
     const newModelId = modelId || null;
     setGlobalModelPreference(provider, newModelId);
     try {
-      await setModelPreference(provider, newModelId);
+      await getBackendTransport().setModelPreference(provider, newModelId);
     } catch (error) {
       logger.error('Failed to save model preference:', error);
     }
@@ -152,7 +147,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   ) => {
     setGlobalEffortPreference(provider, effort);
     try {
-      await setEffortPreference(provider, effort);
+      await getBackendTransport().setEffortPreference(provider, effort);
     } catch (error) {
       logger.error('Failed to save effort preference:', error);
     }
@@ -196,8 +191,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         ...prev,
         [provider]: { status: 'valid', message: version },
       }));
-      // Refresh provider availability
-      const providers = await getAvailableProviders();
+      const providers = await getBackendTransport().getAvailableProviders();
       setAvailableProviders(providers);
     } catch (error) {
       setPathValidation((prev) => ({
@@ -222,8 +216,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             ...prev,
             [provider]: { status: 'valid', message: version },
           }));
-          // Refresh provider availability
-          const providers = await getAvailableProviders();
+          const providers = await getBackendTransport().getAvailableProviders();
           setAvailableProviders(providers);
         } catch (error) {
           setPathValidation((prev) => ({
@@ -251,8 +244,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         return next;
       });
       setPathValidation((prev) => ({ ...prev, [provider]: { status: 'idle' } }));
-      // Refresh provider availability
-      const providers = await getAvailableProviders();
+      const providers = await getBackendTransport().getAvailableProviders();
       setAvailableProviders(providers);
     } catch (error) {
       logger.error('Failed to reset path:', error);

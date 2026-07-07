@@ -7,7 +7,6 @@ import {
   type EdgeChange,
   type NodeChange,
 } from '@xyflow/react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   AgentNodeData,
   AgentProvider,
@@ -25,6 +24,7 @@ import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 import { logger } from '../lib/logger';
+import { getBackendTransport } from '../lib/transport';
 import {
   GRAPH_JSON_VERSION,
   GraphModel,
@@ -82,6 +82,7 @@ interface GraphState {
 
   // Project state
   projectPath: string | null;
+  projectRevision: string | null;
   lastSavedAt: number | null;
   isDirty: boolean;
 
@@ -206,6 +207,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   edges: [],
   nodeData: new Map(),
   projectPath: null,
+  projectRevision: null,
   lastSavedAt: null,
   isDirty: false,
   projectModelPreferences: null,
@@ -557,11 +559,16 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     return projectEffortPreferences?.[provider] ?? globalEffortPreferences[provider];
   },
 
-  setProjectPath: (path) => set({ projectPath: path }),
+  setProjectPath: (path) =>
+    set((state) => ({
+      projectPath: path,
+      projectRevision: state.projectPath === path ? state.projectRevision : null,
+    })),
 
   saveProject: async () => {
     get().flushStreamingChunks();
-    const { projectPath, graph, projectModelPreferences, projectEffortPreferences } = get();
+    const transport = getBackendTransport();
+    const { projectPath, projectRevision, graph, projectModelPreferences, projectEffortPreferences } = get();
     if (!projectPath) {
       logger.warn('No project path set, cannot save');
       return;
@@ -575,11 +582,12 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     };
 
     try {
-      await invoke('save_project', {
-        path: projectPath,
-        data: JSON.stringify(projectFile, null, 2),
-      });
-      set({ lastSavedAt: Date.now(), isDirty: false });
+      const revision = await transport.saveProject(
+        projectPath,
+        JSON.stringify(projectFile, null, 2),
+        projectRevision
+      );
+      set({ projectRevision: revision, lastSavedAt: Date.now(), isDirty: false });
       logger.info('Project saved to:', projectPath);
     } catch (error) {
       logger.error('Failed to save project:', error);
@@ -588,9 +596,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   },
 
   loadProject: async (path) => {
+    const transport = getBackendTransport();
     try {
-      const data = await invoke<string>('load_project', { path });
-      const parsed = JSON.parse(data) as ProjectFile;
+      const project = await transport.loadProject(path);
+      const parsed = JSON.parse(project.data) as ProjectFile;
 
       let graph: Graph;
       let projectModelPreferences: ModelPreferences | null = null;
@@ -625,18 +634,13 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         projectModelPreferences,
         projectEffortPreferences,
         projectPath: path,
+        projectRevision: project.revision,
         lastSavedAt: Date.now(),
         isDirty: false,
         selectedNodeId: null,
         streamingNodeIds: new Set<string>(),
       });
       useUIStore.getState().reset();
-
-      try {
-        await invoke('add_recent_project', { path });
-      } catch (error) {
-        logger.warn('Failed to update recent projects:', error);
-      }
 
       logger.info('Project loaded from:', path);
     } catch (error) {
@@ -655,6 +659,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       projectModelPreferences: null,
       projectEffortPreferences: null,
       projectPath: null,
+      projectRevision: null,
       lastSavedAt: null,
       isDirty: false,
       selectedNodeId: null,
