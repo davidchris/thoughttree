@@ -1,34 +1,57 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
+use thoughttree_core::vault::{guarded_write_file, read_project_file, Revision, VaultError};
 use walkdir::WalkDir;
 
 use crate::backend::config;
 
-fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, String> {
-    let canonical_notes = std::fs::canonicalize(notes_dir)
-        .map_err(|e| format!("Failed to resolve notes directory: {e}"))?;
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ProjectCommandError {
+    Message { message: String },
+    StaleRevision { current_revision: String },
+}
 
-    let canonical_path = if path.exists() {
-        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve path: {e}"))?
-    } else {
-        let parent = path
-            .parent()
-            .ok_or_else(|| "Invalid path: no parent directory".to_string())?;
-        let filename = path
-            .file_name()
-            .ok_or_else(|| "Invalid path: no filename".to_string())?;
-        let canonical_parent = std::fs::canonicalize(parent)
-            .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
-        canonical_parent.join(filename)
-    };
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct LoadProjectResponse {
+    content: String,
+    revision: String,
+}
 
-    if !canonical_path.starts_with(&canonical_notes) {
-        return Err("Security error: path is outside the notes directory".to_string());
+fn map_load_error(err: VaultError) -> ProjectCommandError {
+    match err {
+        VaultError::NotFound => ProjectCommandError::Message {
+            message: "Project file not found".to_string(),
+        },
+        VaultError::InvalidPath => ProjectCommandError::Message {
+            message: "Invalid project path".to_string(),
+        },
+        VaultError::Stale { .. } => ProjectCommandError::Message {
+            message: "Unexpected stale revision while loading project".to_string(),
+        },
+        VaultError::Io(err) => ProjectCommandError::Message {
+            message: format!("Failed to load project: {err}"),
+        },
     }
+}
 
-    Ok(canonical_path)
+fn map_save_error(err: VaultError) -> ProjectCommandError {
+    match err {
+        VaultError::Stale { current } => ProjectCommandError::StaleRevision {
+            current_revision: current.0,
+        },
+        VaultError::NotFound => ProjectCommandError::Message {
+            message: "Project file not found".to_string(),
+        },
+        VaultError::InvalidPath => ProjectCommandError::Message {
+            message: "Invalid project path".to_string(),
+        },
+        VaultError::Io(err) => ProjectCommandError::Message {
+            message: format!("Failed to save project: {err}"),
+        },
+    }
 }
 
 #[tauri::command]
@@ -55,24 +78,33 @@ pub(crate) async fn pick_notes_directory(app: AppHandle) -> Result<Option<String
 }
 
 #[tauri::command]
-pub(crate) async fn save_project(app: AppHandle, path: String, data: String) -> Result<(), String> {
-    let notes_directory = config::get_notes_directory_required(&app)?;
-    let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
+pub(crate) async fn save_project(
+    _app: AppHandle,
+    path: String,
+    data: String,
+    base_revision: Option<String>,
+) -> Result<String, ProjectCommandError> {
+    let revision = base_revision
+        .as_deref()
+        .map(|value| Revision(value.to_string()));
+    let next_revision =
+        guarded_write_file(&path, &data, revision.as_ref()).map_err(map_save_error)?;
 
-    std::fs::write(&validated_path, &data).map_err(|e| format!("Failed to save project: {e}"))?;
-    tracing::info!("Project saved to: {:?}", validated_path);
-    Ok(())
+    tracing::info!("Project saved to: {}", path);
+    Ok(next_revision.0)
 }
 
 #[tauri::command]
-pub(crate) async fn load_project(app: AppHandle, path: String) -> Result<String, String> {
-    let notes_directory = config::get_notes_directory_required(&app)?;
-    let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
-
-    let data = std::fs::read_to_string(&validated_path)
-        .map_err(|e| format!("Failed to load project: {e}"))?;
-    tracing::info!("Project loaded from: {:?}", validated_path);
-    Ok(data)
+pub(crate) async fn load_project(
+    _app: AppHandle,
+    path: String,
+) -> Result<LoadProjectResponse, ProjectCommandError> {
+    let project = read_project_file(&path).map_err(map_load_error)?;
+    tracing::info!("Project loaded from: {}", path);
+    Ok(LoadProjectResponse {
+        content: project.content,
+        revision: project.revision.0,
+    })
 }
 
 #[tauri::command]

@@ -132,19 +132,32 @@ describe('Palette', () => {
     seedGraph([userNode('a', 'hello')]);
     render(<Palette />);
 
-    useUIStore.setState({ settingsOpen: true });
+    act(() => {
+      useUIStore.setState({ settingsOpen: true });
+    });
     openPalette();
     expect(screen.queryByRole('dialog')).toBeNull();
 
-    useUIStore.setState({
-      settingsOpen: false,
-      pendingPermission: {
-        id: 'p1',
-        toolType: 'fetch',
-        toolName: 'WebFetch',
-        description: '',
-        options: [],
-      },
+    act(() => {
+      useUIStore.setState({
+        settingsOpen: false,
+        pendingPermission: {
+          id: 'p1',
+          toolType: 'fetch',
+          toolName: 'WebFetch',
+          description: '',
+          options: [],
+        },
+      });
+    });
+    openPalette();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    act(() => {
+      useUIStore.setState({
+        pendingPermission: null,
+        staleProjectSave: { path: '/tmp/project.thoughttree', currentRevision: 'rev-2' },
+      });
     });
     openPalette();
     expect(screen.queryByRole('dialog')).toBeNull();

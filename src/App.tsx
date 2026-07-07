@@ -3,6 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { Graph } from './components/Graph';
 import { Toolbar } from './components/Toolbar';
 import { PermissionDialog } from './components/PermissionDialog';
+import { StaleSaveDialog } from './components/StaleSaveDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
 import { SidePanel } from './components/SidePanel';
@@ -192,6 +193,7 @@ function App() {
         <Palette />
       </ReactFlowProvider>
       <PermissionDialog />
+      <StaleSaveDialog />
     </div>
   );
 }
