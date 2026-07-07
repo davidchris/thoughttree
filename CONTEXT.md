@@ -52,6 +52,18 @@ _Avoid_: intent detection, heuristic.
 Per-node spatial position `{x, y}` used to render the Graph in ReactFlow. Stored inside Graph (persisted with project file) but semantically separate from node content.
 _Avoid_: position (ambiguous), coords.
 
+**Project file**:
+A `.thoughttree` file persisting one Graph (nodes, edges, Layout). The unit of opening, saving, syncing, and conflict.
+_Avoid_: document, save file, project (alone — that's the open app state, not the file).
+
+**Vault**:
+The user's synced directory where Project files live, shared across devices and writers (desktop, server, torhaus). Sync authority is the file-sync service, never ThoughtTree.
+_Avoid_: notes directory (config-key name, not the concept), workspace.
+
+**Guarded write**:
+The only legal way to persist a Project file: atomically replace the whole file, conditioned on the content read before mutating still being current. A stale write is rejected; the writer reloads and reapplies. No locks, no partial writes.
+_Avoid_: save (unqualified), lock, transaction.
+
 **ReactFlow projection**:
 The transformation `(Graph, uiState) → ReactFlow Node[]` that produces presentation nodes for `@xyflow/react`. ReactFlow `node.data` carries only `{ id }`; node components subscribe to the store by id for content.
 _Avoid_: node mapping, view model.
@@ -87,6 +99,22 @@ _Avoid_: backend, vendor.
 **ACP adapter**:
 The executable a Provider spawns to speak ACP over stdio. Three shapes exist: bundled sidecar wrapping a vendor CLI (`claude-code-acp`), vendor CLI with native ACP flag (`gemini --experimental-acp`), user-installed bridge binary (`codex-acp`). The Provider abstraction hides which shape is in use.
 _Avoid_: sidecar (that's one distribution shape, not the concept), agent binary.
+
+**Deployment shape**:
+One of three ways the runtime is consumed, identical Graph semantics in all: Shape A — desktop in-process; Shape B — desktop app toggling an embedded server for its own network; Shape C — headless server near the Vault. Clients don't know which shape serves them.
+_Avoid_: mode, variant, edition.
+
+**Turn**:
+One prompt→response execution within an ACP session, streaming into one GraphNode. Owned by the runtime, not by any client: it runs to completion (or a Parked permission) even if every Attachment drops.
+_Avoid_: request, generation, run.
+
+**Attachment**:
+A client's live subscription to a Graph's updates and streams. Many Attachments may watch one Graph; prompting is arbitrated — one active Turn per Graph, further prompts rejected while it runs.
+_Avoid_: connection (transport-level), session (taken by ACP session).
+
+**Parked permission**:
+A permission request pending while nobody answers it. Pauses its Turn indefinitely — no timeout, no auto-deny; surfaced first when an Attachment (re)appears.
+_Avoid_: stale prompt, timed-out request.
 
 **Backend module tree**:
 The concern-grouped Rust modules under `src-tauri/src/backend/`: `types`, `state`, `runtime`, `config`, `acp/{clients,process,sessions}`, `commands/{chat,projects,providers,summary}`. `lib.rs` is a thin entry point that registers Tauri commands; all logic lives under `backend/`.
@@ -127,6 +155,11 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - An **ACP session** is spawned per **Provider** and bound to one streaming **GraphNode** at a time
 - An **ACP session** drives an **ACP client**; user-permission prompts during the session use a **Permission channel** routed back through a **Tauri command**
 - All **ACP session**s and model-discovery runs execute on a **LocalSet runtime**
+- A **Vault** contains many **Project files**; each **Project file** persists one **Graph**
+- Every persist of a **Project file** is a **Guarded write**, regardless of **Deployment shape** or writer
+- A **Deployment shape** determines where **ACP session**s run; **Graph** semantics never vary by shape
+- A **Turn** belongs to one **ACP session** and streams into one **GraphNode**; it survives losing all **Attachments**
+- A **Parked permission** pauses its **Turn** until answered through an **Attachment** (routed via the **Permission channel**)
 - The **Config store** persists **Provider** paths, model preferences, **Reasoning effort** preferences, default **Provider**, recent project files, and the notes directory
 - A **Reasoning effort** preference is resolved per **Provider** — project scope overrides global scope, absence means the Provider's CLI default
 
