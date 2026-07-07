@@ -1,4 +1,4 @@
-import type { GraphNode } from '../graph';
+import type { GraphNode } from '@thoughttree/graph-model';
 
 /** Half-open [start, end) char range into the text it accompanies. */
 export interface TextSpan {

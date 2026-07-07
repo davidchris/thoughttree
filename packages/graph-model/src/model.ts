@@ -1,5 +1,4 @@
-import type { ImageAttachment } from '../../types';
-import type { Graph, GraphEdge, NodeId } from './types';
+import type { Graph, GraphEdge, ImageAttachment, NodeId } from './types';
 
 interface Adjacency {
   parents: Map<NodeId, NodeId[]>;
@@ -217,9 +216,6 @@ export const GraphModel = {
       }
     }
 
-    // Cycle fallback: any include nodes left unemitted belong to a cycle.
-    // Topological order is undefined for them; fall back to timestamp order
-    // so the conversation path is non-empty rather than silently dropped.
     if (emitted.size < include.size) {
       const leftover: NodeId[] = [];
       for (const id of include) if (!emitted.has(id)) leftover.push(id);

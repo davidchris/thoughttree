@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { GraphNode } from '@thoughttree/graph-model';
 import { Palette } from './index';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
-import type { GraphNode } from '../../lib/graph';
 
 const mockSetCenter = vi.fn();
 const mockGetNode = vi.fn();

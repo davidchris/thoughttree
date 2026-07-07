@@ -30,13 +30,11 @@ import {
   GraphModel,
   GraphMutations,
   GraphSerialize,
-  graphToFlowEdges,
-  graphToFlowNodes,
-  type FlowNode,
   type Graph,
   type GraphJSON,
   type NodeId,
-} from '../lib/graph';
+} from '@thoughttree/graph-model';
+import { graphToFlowEdges, graphToFlowNodes, type FlowNode } from '../lib/graph/projection';
 
 const COLLAPSED_NODE_HEIGHT = 120;
 

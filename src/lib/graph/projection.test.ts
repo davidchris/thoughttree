@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GraphMutations } from './mutations';
+import { GraphMutations, type GraphNode } from '@thoughttree/graph-model';
 import { graphToFlowEdges, graphToFlowNodes } from './projection';
-import type { GraphNode } from './types';
 
 function userNode(id: string, ts = 1): GraphNode {
   return { id, role: 'user', content: '', timestamp: ts, contentUpdatedAt: ts };
