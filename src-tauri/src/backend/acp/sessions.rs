@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -9,14 +8,14 @@ use agent_client_protocol::{
     SetSessionModelRequest, TextContent,
 };
 use chrono::Local;
-use futures::lock::Mutex;
-use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info, warn};
 
 use crate::backend::acp::clients::{ModelDiscoveryClient, StreamingClient, SummaryClient};
 use crate::backend::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
+use crate::backend::events::SessionEventSink;
+use crate::backend::permissions::PermissionBroker;
 use crate::backend::types::{AgentProvider, Message, ModelInfo, ProviderPaths, ReasoningEffort};
 
 /// Effort for housekeeping sessions (summaries, model discovery): the lowest
@@ -144,11 +143,11 @@ async fn initialize_with_timeout(
 }
 
 /// Parameters for [`run_prompt_session`]
-pub(crate) struct PromptSessionParams {
-    pub app_handle: tauri::AppHandle,
+pub(crate) struct PromptSessionParams<S> {
+    pub sink: S,
     pub node_id: String,
     pub messages: Vec<Message>,
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
+    pub broker: PermissionBroker,
     pub notes_directory: PathBuf,
     pub provider: AgentProvider,
     pub model_id: Option<String>,
@@ -157,12 +156,14 @@ pub(crate) struct PromptSessionParams {
 }
 
 /// Run a prompt session with ACP
-pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::Result<String> {
+pub(crate) async fn run_prompt_session<S: SessionEventSink>(
+    params: PromptSessionParams<S>,
+) -> anyhow::Result<String> {
     let PromptSessionParams {
-        app_handle,
+        sink,
         node_id,
         messages,
-        pending_permissions,
+        broker,
         notes_directory,
         provider,
         model_id,
@@ -182,9 +183,9 @@ pub(crate) async fn run_prompt_session(params: PromptSessionParams) -> anyhow::R
 
     // Create client with notes directory for permission filtering
     let client = Arc::new(StreamingClient::new(
-        app_handle,
+        sink,
         node_id,
-        pending_permissions,
+        broker,
         notes_directory.clone(),
     ));
 

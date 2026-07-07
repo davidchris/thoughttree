@@ -1,18 +1,7 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use futures::lock::Mutex;
-use tokio::sync::oneshot;
+use crate::backend::permissions::PermissionBroker;
 
 /// App state for managing permission responses
+#[derive(Default)]
 pub(crate) struct AppState {
-    pub pending_permissions: Arc<Mutex<HashMap<String, oneshot::Sender<String>>>>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            pending_permissions: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
+    pub broker: PermissionBroker,
 }
