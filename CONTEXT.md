@@ -108,6 +108,34 @@ _Avoid_: mode, variant, edition.
 One prompt→response execution within an ACP session, streaming into one GraphNode. Owned by the runtime, not by any client: it runs to completion (or a Parked permission) even if every Attachment drops.
 _Avoid_: request, generation, run.
 
+**Turn provenance**:
+A best-effort record of the available evidence about a Turn, attached to its assistant GraphNode. Its completeness is explicitly complete, partial, or unknown; optional origin identifiers are descriptive metadata and never establish identity or re-import behavior.
+_Avoid_: audit trail, execution log, trace (all imply stronger completeness guarantees).
+
+**Provenance completeness**:
+The capture adapter's claim about supported Turn provenance: complete means the full Turn was observed and all supported items retained; partial means a loss is known; unknown means loss cannot be determined. A GraphNode without Turn provenance makes no completeness claim.
+_Avoid_: confidence, accuracy, audit completeness.
+
+**Turn reference**:
+A canonical persisted record of a URL or file evidenced by a Turn, ordered by first appearance. Relations are additive and observed-only; URL text is preserved exactly and only HTTP(S) is clickable, while Vault files use Vault-relative paths and external files retain only a non-clickable display name.
+_Avoid_: link (URLs are only one kind), attachment (a live client subscription), dynamically parsed reference.
+
+**Assistant commentary**:
+User-visible progress text emitted by the assistant during a Turn, preserved verbatim and in order as Turn provenance. It excludes hidden reasoning and chain-of-thought and is collapsed by default when displayed.
+_Avoid_: reasoning, analysis, summary.
+
+**Turn activity**:
+The ordered sequence of Assistant commentary, Tool activity, and Unknown activity observed during a Turn. Persisted sequence order is authoritative; timestamps are optional metadata and never reorder it.
+_Avoid_: event log, trace, history.
+
+**Tool activity**:
+A logical tool invocation recorded as Turn provenance with a normalized kind: read, edit, delete, move, search, execute, fetch, delegate, or other. It is ordered by first appearance; lifecycle updates refine the same item, unfinished activity becomes incomplete when its Turn closes, and terminal state never regresses.
+_Avoid_: tool event, tool log, tool-call update.
+
+**Unknown activity**:
+An unrecognized Provider item retained as Turn activity using only its type name, safe display label, and observed order. Its raw payload is discarded and its presence makes Turn provenance partial.
+_Avoid_: raw event, unsupported tool.
+
 **Attachment**:
 A client's live subscription to a Graph's updates and streams. Many Attachments may watch one Graph; prompting is arbitrated — one active Turn per Graph, further prompts rejected while it runs.
 _Avoid_: connection (transport-level), session (taken by ACP session).
@@ -159,6 +187,7 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - Every persist of a **Project file** is a **Guarded write**, regardless of **Deployment shape** or writer
 - A **Deployment shape** determines where **ACP session**s run; **Graph** semantics never vary by shape
 - A **Turn** belongs to one **ACP session** and streams into one **GraphNode**; it survives losing all **Attachments**
+- **Turn provenance** belongs to its assistant **GraphNode**, is excluded from the **Conversation path**, and is retained when that GraphNode is included in a subgraph export
 - A **Parked permission** pauses its **Turn** until answered through an **Attachment** (routed via the **Permission channel**)
 - The **Config store** persists **Provider** paths, model preferences, **Reasoning effort** preferences, default **Provider**, recent project files, and the notes directory
 - A **Reasoning effort** preference is resolved per **Provider** — project scope overrides global scope, absence means the Provider's CLI default
