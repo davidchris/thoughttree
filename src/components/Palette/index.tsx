@@ -3,7 +3,7 @@ import { useReactFlow } from '@xyflow/react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { PaletteSearch, type HighlightedText } from '../../lib/palette';
-import type { GraphNode } from '../../lib/graph';
+import type { GraphNode } from '@thoughttree/graph-model';
 import { PROVIDER_SHORT_NAMES } from '../../types';
 import './styles.css';
 
@@ -51,8 +51,8 @@ export function Palette() {
 
   const open = useCallback(() => {
     // Modal flows own the keyboard; jumping mid-flow makes no sense.
-    const { settingsOpen, pendingPermission, setEditing } = useUIStore.getState();
-    if (settingsOpen || pendingPermission) return;
+    const { settingsOpen, pendingPermission, staleProjectSave, setEditing } = useUIStore.getState();
+    if (settingsOpen || pendingPermission || staleProjectSave) return;
     // The palette steals focus from any in-edit textarea; an empty node's
     // blur handler won't clear editingNodeId, so reconcile it here or every
     // Graph shortcut stays dead behind `if (editingNodeId) return`.
@@ -98,10 +98,11 @@ export function Palette() {
   // this, a PermissionDialog would render underneath the palette overlay with
   // its keyboard input swallowed.
   const pendingPermission = useUIStore((state) => state.pendingPermission);
+  const staleProjectSave = useUIStore((state) => state.staleProjectSave);
   const settingsOpen = useUIStore((state) => state.settingsOpen);
   useEffect(() => {
-    if (isOpen && (pendingPermission || settingsOpen)) close();
-  }, [isOpen, pendingPermission, settingsOpen, close]);
+    if (isOpen && (pendingPermission || settingsOpen || staleProjectSave)) close();
+  }, [isOpen, pendingPermission, settingsOpen, staleProjectSave, close]);
 
   // Keep the active row visible under keyboard navigation.
   useEffect(() => {

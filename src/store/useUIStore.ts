@@ -20,6 +20,7 @@ interface UIState {
   /** Node briefly highlighted after a Palette jump. */
   flashNodeId: string | null;
   pendingPermission: PermissionRequest | null;
+  staleProjectSave: { path: string; currentRevision: string } | null;
   settingsOpen: boolean;
   triggerSidePanelEdit: boolean;
 
@@ -29,6 +30,7 @@ interface UIState {
   /** Flash a node briefly; owns its own expiry so callers can't leak the state. */
   flashNode: (nodeId: string) => void;
   setPendingPermission: (permission: PermissionRequest | null) => void;
+  setStaleProjectSave: (conflict: { path: string; currentRevision: string } | null) => void;
   setSettingsOpen: (open: boolean) => void;
   triggerSidePanelEditMode: () => void;
   clearSidePanelEditTrigger: () => void;
@@ -44,6 +46,7 @@ export const useUIStore = create<UIState>()((set, get) => ({
   previewNodeId: null,
   flashNodeId: null,
   pendingPermission: null,
+  staleProjectSave: null,
   settingsOpen: false,
   triggerSidePanelEdit: false,
 
@@ -67,6 +70,7 @@ export const useUIStore = create<UIState>()((set, get) => ({
     }
   },
   setPendingPermission: (permission) => set({ pendingPermission: permission }),
+  setStaleProjectSave: (conflict) => set({ staleProjectSave: conflict }),
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   triggerSidePanelEditMode: () => set({ triggerSidePanelEdit: true }),
   clearSidePanelEditTrigger: () => set({ triggerSidePanelEdit: false }),
@@ -88,6 +92,7 @@ export const useUIStore = create<UIState>()((set, get) => ({
       previewNodeId: null,
       flashNodeId: null,
       pendingPermission: null,
+      staleProjectSave: null,
       triggerSidePanelEdit: false,
     });
   },

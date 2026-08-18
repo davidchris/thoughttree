@@ -1,0 +1,23 @@
+version: 1
+beads:
+    path: .beads
+sbx:
+    template: docker.io/library/bdx-codex-bun-rust:v1
+codex:
+    model: gpt-5.6-sol
+    reasoningEffort: medium
+worktreeRoot:
+    policy: sibling
+    path: ../thoughttree-bdx-worktrees
+verification:
+    commands:
+        - name: test
+          argv: [bash, -lc, "bun install && bun run test:run"]
+        - name: build
+          argv: [bash, -lc, "bun run build"]
+runPolicy:
+    idleTimeout: 30m
+    maxRuntime: 2h
+cleanup:
+    sandbox: onFailure
+    worktree: onSuccess

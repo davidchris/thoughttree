@@ -1,34 +1,173 @@
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
+use thoughttree_core::vault::{guarded_write_file, read_project_file, Revision, VaultError};
 use walkdir::WalkDir;
 
 use crate::backend::config;
 
-fn validate_path_in_notes_dir(path: &Path, notes_dir: &Path) -> Result<PathBuf, String> {
-    let canonical_notes = std::fs::canonicalize(notes_dir)
-        .map_err(|e| format!("Failed to resolve notes directory: {e}"))?;
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum ProjectCommandError {
+    Message { message: String },
+    StaleRevision { current_revision: String },
+}
 
-    let canonical_path = if path.exists() {
-        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve path: {e}"))?
-    } else {
-        let parent = path
-            .parent()
-            .ok_or_else(|| "Invalid path: no parent directory".to_string())?;
-        let filename = path
-            .file_name()
-            .ok_or_else(|| "Invalid path: no filename".to_string())?;
-        let canonical_parent = std::fs::canonicalize(parent)
-            .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
-        canonical_parent.join(filename)
-    };
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct LoadProjectResponse {
+    content: String,
+    revision: String,
+}
 
-    if !canonical_path.starts_with(&canonical_notes) {
-        return Err("Security error: path is outside the notes directory".to_string());
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectEntry {
+    relative_path: String,
+    modified_epoch_ms: u64,
+}
+
+fn collect_project_entries(notes_directory: &Path) -> Result<Vec<ProjectEntry>, String> {
+    let mut projects = Vec::new();
+
+    for entry in WalkDir::new(notes_directory)
+        .follow_links(false)
+        .max_depth(20)
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+
+        let rel_path = match entry.path().strip_prefix(notes_directory) {
+            Ok(path) => path.to_string_lossy().to_string(),
+            Err(_) => continue,
+        };
+
+        if !rel_path.ends_with(".thoughttree") {
+            continue;
+        }
+
+        let metadata = fs::metadata(entry.path())
+            .map_err(|err| format!("Failed to read project metadata for {rel_path}: {err}"))?;
+        let modified_epoch_ms = metadata
+            .modified()
+            .map_err(|err| format!("Failed to read project modified time for {rel_path}: {err}"))?
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        projects.push(ProjectEntry {
+            relative_path: rel_path,
+            modified_epoch_ms,
+        });
     }
 
-    Ok(canonical_path)
+    projects.sort_by(|left, right| {
+        right
+            .modified_epoch_ms
+            .cmp(&left.modified_epoch_ms)
+            .then_with(|| left.relative_path.cmp(&right.relative_path))
+    });
+
+    Ok(projects)
+}
+
+fn map_load_error(err: VaultError) -> ProjectCommandError {
+    match err {
+        VaultError::NotFound => ProjectCommandError::Message {
+            message: "Project file not found".to_string(),
+        },
+        VaultError::InvalidPath => ProjectCommandError::Message {
+            message: "Invalid project path".to_string(),
+        },
+        VaultError::Stale { .. } => ProjectCommandError::Message {
+            message: "Unexpected stale revision while loading project".to_string(),
+        },
+        VaultError::Io(err) => ProjectCommandError::Message {
+            message: format!("Failed to load project: {err}"),
+        },
+    }
+}
+
+fn map_save_error(err: VaultError) -> ProjectCommandError {
+    match err {
+        VaultError::Stale { current } => ProjectCommandError::StaleRevision {
+            current_revision: current.0,
+        },
+        VaultError::NotFound => ProjectCommandError::Message {
+            message: "Project file not found".to_string(),
+        },
+        VaultError::InvalidPath => ProjectCommandError::Message {
+            message: "Invalid project path".to_string(),
+        },
+        VaultError::Io(err) => ProjectCommandError::Message {
+            message: format!("Failed to save project: {err}"),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use filetime::{set_file_mtime, FileTime};
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn collect_project_entries_filters_to_project_files_and_preserves_metadata() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("alpha.thoughttree"), "{}").unwrap();
+        fs::create_dir(dir.path().join("nested")).unwrap();
+        fs::write(dir.path().join("nested").join("beta.thoughttree"), "{}").unwrap();
+        fs::write(dir.path().join("notes.md"), "# note").unwrap();
+
+        let entries = collect_project_entries(dir.path()).unwrap();
+        let mut paths = entries
+            .iter()
+            .map(|entry| entry.relative_path.as_str())
+            .collect::<Vec<_>>();
+        paths.sort_unstable();
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(paths, vec!["alpha.thoughttree", "nested/beta.thoughttree"]);
+        assert!(entries.iter().all(|entry| entry.modified_epoch_ms > 0));
+    }
+
+    #[test]
+    fn collect_project_entries_sorts_newest_first_then_path() {
+        let dir = tempdir().unwrap();
+        let alpha = dir.path().join("alpha.thoughttree");
+        let beta = dir.path().join("beta.thoughttree");
+        let newer = dir.path().join("newer.thoughttree");
+
+        fs::write(&alpha, "{}").unwrap();
+        fs::write(&beta, "{}").unwrap();
+        fs::write(&newer, "{}").unwrap();
+
+        let shared_time = FileTime::from_unix_time(1_700_000_000, 0);
+        let newer_time = FileTime::from_unix_time(1_700_000_100, 0);
+        set_file_mtime(&alpha, shared_time).unwrap();
+        set_file_mtime(&beta, shared_time).unwrap();
+        set_file_mtime(&newer, newer_time).unwrap();
+
+        let entries = collect_project_entries(dir.path()).unwrap();
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.relative_path.as_str())
+                .collect::<Vec<_>>(),
+            vec!["newer.thoughttree", "alpha.thoughttree", "beta.thoughttree"]
+        );
+        assert!(entries[0].modified_epoch_ms > entries[1].modified_epoch_ms);
+        assert_eq!(entries[1].modified_epoch_ms, entries[2].modified_epoch_ms);
+    }
 }
 
 #[tauri::command]
@@ -55,24 +194,39 @@ pub(crate) async fn pick_notes_directory(app: AppHandle) -> Result<Option<String
 }
 
 #[tauri::command]
-pub(crate) async fn save_project(app: AppHandle, path: String, data: String) -> Result<(), String> {
-    let notes_directory = config::get_notes_directory_required(&app)?;
-    let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
+pub(crate) async fn save_project(
+    _app: AppHandle,
+    path: String,
+    data: String,
+    base_revision: Option<String>,
+) -> Result<String, ProjectCommandError> {
+    let revision = base_revision
+        .as_deref()
+        .map(|value| Revision(value.to_string()));
+    let next_revision =
+        guarded_write_file(&path, &data, revision.as_ref()).map_err(map_save_error)?;
 
-    std::fs::write(&validated_path, &data).map_err(|e| format!("Failed to save project: {e}"))?;
-    tracing::info!("Project saved to: {:?}", validated_path);
-    Ok(())
+    tracing::info!("Project saved to: {}", path);
+    Ok(next_revision.0)
 }
 
 #[tauri::command]
-pub(crate) async fn load_project(app: AppHandle, path: String) -> Result<String, String> {
-    let notes_directory = config::get_notes_directory_required(&app)?;
-    let validated_path = validate_path_in_notes_dir(Path::new(&path), &notes_directory)?;
+pub(crate) async fn load_project(
+    _app: AppHandle,
+    path: String,
+) -> Result<LoadProjectResponse, ProjectCommandError> {
+    let project = read_project_file(&path).map_err(map_load_error)?;
+    tracing::info!("Project loaded from: {}", path);
+    Ok(LoadProjectResponse {
+        content: project.content,
+        revision: project.revision.0,
+    })
+}
 
-    let data = std::fs::read_to_string(&validated_path)
-        .map_err(|e| format!("Failed to load project: {e}"))?;
-    tracing::info!("Project loaded from: {:?}", validated_path);
-    Ok(data)
+#[tauri::command]
+pub(crate) async fn list_projects(app: AppHandle) -> Result<Vec<ProjectEntry>, String> {
+    let notes_directory = config::get_notes_directory_required(&app)?;
+    collect_project_entries(&notes_directory)
 }
 
 #[tauri::command]

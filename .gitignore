@@ -13,6 +13,7 @@ dist-ssr
 *.local
 
 */target
+/target/
 
 # Editor directories and files
 .vscode/*
@@ -33,3 +34,12 @@ learnings/
 .sidecar-build/
 
 .playwright-mcp/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+# bdx local run artifacts
+.bdx/

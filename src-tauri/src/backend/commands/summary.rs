@@ -1,9 +1,9 @@
 use tauri::AppHandle;
+use thoughttree_core::acp::sessions::run_summary_session;
+use thoughttree_core::runtime::run_localset_blocking;
+use thoughttree_core::types::{AgentProvider, SummaryResult};
 
-use crate::backend::acp::sessions::run_summary_session;
 use crate::backend::config;
-use crate::backend::runtime::run_localset_blocking;
-use crate::backend::types::{AgentProvider, SummaryResult};
 
 #[tauri::command]
 pub(crate) async fn generate_summary(

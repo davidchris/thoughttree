@@ -4,6 +4,7 @@ version = "0.4.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+license-file = "LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -23,31 +24,14 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-store = "2"
 tauri-plugin-shell = "2"
+thoughttree-core = { path = "../crates/thoughttree-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-# ACP dependencies
-agent-client-protocol = { version = "0.9", features = ["unstable"] }
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "process", "io-util", "time"] }
-tokio-util = { version = "0.7", features = ["compat"] }
-anyhow = "1.0"
+tokio = { version = "1", features = ["process"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-async-trait = "0.1"
-futures = "0.3"
-uuid = { version = "1", features = ["v4"] }
-chrono = { version = "0.4", features = ["serde"] }
 walkdir = "2"
-dirs = "5"
 
-[profile.release]
-lto = true           # Link-Time Optimization (smaller binary)
-strip = true         # Strip symbols
-codegen-units = 1    # Better optimization
-panic = "abort"      # Smaller binary, no stack unwinding
-
-[profile.dev]
-incremental = true   # Faster incremental builds
-
-[profile.dev.package."*"]
-opt-level = 2        # Optimize dependencies even in dev mode
+[dev-dependencies]
+filetime = "0.2"
+tempfile = "3"

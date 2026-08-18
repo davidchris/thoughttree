@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { GraphNode } from '@thoughttree/graph-model';
 import { Palette } from './index';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
-import type { GraphNode } from '../../lib/graph';
 
 const mockSetCenter = vi.fn();
 const mockGetNode = vi.fn();
@@ -132,19 +132,32 @@ describe('Palette', () => {
     seedGraph([userNode('a', 'hello')]);
     render(<Palette />);
 
-    useUIStore.setState({ settingsOpen: true });
+    act(() => {
+      useUIStore.setState({ settingsOpen: true });
+    });
     openPalette();
     expect(screen.queryByRole('dialog')).toBeNull();
 
-    useUIStore.setState({
-      settingsOpen: false,
-      pendingPermission: {
-        id: 'p1',
-        toolType: 'fetch',
-        toolName: 'WebFetch',
-        description: '',
-        options: [],
-      },
+    act(() => {
+      useUIStore.setState({
+        settingsOpen: false,
+        pendingPermission: {
+          id: 'p1',
+          toolType: 'fetch',
+          toolName: 'WebFetch',
+          description: '',
+          options: [],
+        },
+      });
+    });
+    openPalette();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    act(() => {
+      useUIStore.setState({
+        pendingPermission: null,
+        staleProjectSave: { path: '/tmp/project.thoughttree', currentRevision: 'rev-2' },
+      });
     });
     openPalette();
     expect(screen.queryByRole('dialog')).toBeNull();

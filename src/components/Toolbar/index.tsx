@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { SettingsDialog } from '../SettingsDialog';
+import { addRecentProject, exportMarkdown, newProjectDialog, openProjectDialog } from '../../lib/desktop';
+import { getBackendTransport } from '../../lib/transport';
 import { logger } from '../../lib/logger';
 import './Toolbar.css';
 
@@ -22,6 +23,7 @@ export function Toolbar() {
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const autoLayout = useGraphStore((state) => state.autoLayout);
   const getConversationPathNodeIds = useGraphStore((state) => state.getConversationPathNodeIds);
+  const nativeDialogsEnabled = getBackendTransport().capabilities.nativeDialogs;
 
   const [isSaving, setIsSaving] = useState(false);
   // In the UI store (not local state) so the Palette can suppress ⌘K while open.
@@ -48,15 +50,15 @@ export function Toolbar() {
     : 'Untitled';
 
   const handleNewProject = async () => {
+    if (!nativeDialogsEnabled) return;
     try {
-      const path = await invoke<string | null>('new_project_dialog');
+      const path = await newProjectDialog();
       if (path) {
         newProject();
         setProjectPath(path);
         await saveProject();
-        // Track new project in recent projects
         try {
-          await invoke('add_recent_project', { path });
+          await addRecentProject(path);
         } catch (error) {
           logger.warn('Failed to track new project:', error);
         }
@@ -67,10 +69,16 @@ export function Toolbar() {
   };
 
   const handleOpenProject = async () => {
+    if (!nativeDialogsEnabled) return;
     try {
-      const path = await invoke<string | null>('open_project_dialog');
+      const path = await openProjectDialog();
       if (path) {
         await loadProject(path);
+        try {
+          await addRecentProject(path);
+        } catch (error) {
+          logger.warn('Failed to track project:', error);
+        }
       }
     } catch (error) {
       logger.error('Failed to open project:', error);
@@ -95,8 +103,9 @@ export function Toolbar() {
   };
 
   const handleSaveProjectAs = async () => {
+    if (!nativeDialogsEnabled) return;
     try {
-      const path = await invoke<string | null>('new_project_dialog');
+      const path = await newProjectDialog();
       if (path) {
         setProjectPath(path);
         await saveProject();
@@ -131,11 +140,9 @@ export function Toolbar() {
   };
 
   const doExport = async (content: string, defaultName: string) => {
+    if (!nativeDialogsEnabled) return;
     try {
-      const path = await invoke<string | null>('export_markdown', {
-        content,
-        defaultName,
-      });
+      const path = await exportMarkdown(content, defaultName);
       if (path) {
         logger.info('Exported to:', path);
       }
@@ -166,10 +173,10 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar-center">
-        <button onClick={handleNewProject} title="New Project">
+        <button onClick={handleNewProject} title="New Project" disabled={!nativeDialogsEnabled}>
           New
         </button>
-        <button onClick={handleOpenProject} title="Open Project">
+        <button onClick={handleOpenProject} title="Open Project" disabled={!nativeDialogsEnabled}>
           Open
         </button>
         <button
@@ -198,14 +205,14 @@ export function Toolbar() {
         <span className="toolbar-divider" />
         <button
           onClick={handleExportSelected}
-          disabled={!selectedNodeId}
+          disabled={!selectedNodeId || !nativeDialogsEnabled}
           title="Export conversation to selected node"
         >
           Export Thread
         </button>
         <button
           onClick={handleExportAll}
-          disabled={nodes.length === 0}
+          disabled={nodes.length === 0 || !nativeDialogsEnabled}
           title="Export all nodes"
         >
           Export All

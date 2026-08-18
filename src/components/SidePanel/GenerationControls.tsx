@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useProviderStore } from '../../store/useProviderStore';
 import { ProviderSelector } from '../ProviderSelector';
 import { ModelSelector } from '../ModelSelector';
-import { getAvailableModels } from '../../lib/tauri';
+import { getBackendTransport } from '../../lib/transport';
 import type { AgentProvider } from '../../types';
 import { logger } from '../../lib/logger';
 
@@ -41,7 +41,7 @@ export function GenerationControls({
 
       setLoadingModels(true);
       try {
-        const models = await getAvailableModels(target);
+        const models = await getBackendTransport().getAvailableModels(target);
         setAvailableModels(target, models);
       } catch (error) {
         logger.error('Failed to fetch models:', error);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { pickNotesDirectory, setNotesDirectory } from '../../lib/desktop';
 import './SetupWizard.css';
 
 interface SetupWizardProps {
@@ -15,7 +15,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setIsSelecting(true);
     setError(null);
     try {
-      const path = await invoke<string | null>('pick_notes_directory');
+      const path = await pickNotesDirectory();
       if (path) {
         setSelectedPath(path);
       }
@@ -30,7 +30,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     if (!selectedPath) return;
 
     try {
-      await invoke('set_notes_directory', { path: selectedPath });
+      await setNotesDirectory(selectedPath);
       onComplete();
     } catch (e) {
       setError(`Failed to save settings: ${e}`);

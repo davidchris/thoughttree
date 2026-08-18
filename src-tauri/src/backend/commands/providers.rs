@@ -2,16 +2,16 @@ use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
-use tokio::process::Command;
-
-use crate::backend::acp::process::{find_provider_executable, find_sidecar_path};
-use crate::backend::acp::sessions::run_model_discovery_session;
-use crate::backend::config;
-use crate::backend::runtime::run_localset_blocking;
-use crate::backend::types::{
+use thoughttree_core::acp::process::{find_provider_executable, find_sidecar_path};
+use thoughttree_core::acp::sessions::run_model_discovery_session;
+use thoughttree_core::runtime::run_localset_blocking;
+use thoughttree_core::types::{
     AgentProvider, EffortPreferences, ModelInfo, ModelPreferences, ProviderPaths, ProviderStatus,
     ReasoningEffort,
 };
+use tokio::process::Command;
+
+use crate::backend::config;
 
 fn check_provider_availability(provider: &AgentProvider, paths: &ProviderPaths) -> ProviderStatus {
     let descriptor = provider.descriptor();

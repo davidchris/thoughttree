@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { sendPrompt } from '../lib/tauri';
+import { getBackendTransport } from '../lib/transport';
 import { useGraphStore } from '../store/useGraphStore';
 import { useProviderStore } from '../store/useProviderStore';
 import type { AgentProvider, UserNodeData } from '../types';
@@ -39,16 +39,16 @@ export function useNodeGeneration() {
 
       const context = buildConversationContext(userNodeId);
       const effort = getEffectiveEffort(provider ?? defaultProvider);
+      const transport = getBackendTransport();
 
       try {
-        await sendPrompt(
-          agentNodeId,
-          context,
-          (chunk) => appendToNode(agentNodeId, chunk),
+        await transport.sendPrompt({
+          nodeId: agentNodeId,
+          messages: context,
           provider,
           modelId,
-          effort
-        );
+          effort,
+        });
       } catch (error) {
         logger.error('Generation failed:', error);
         appendToNode(agentNodeId, `\n\n[Error: ${String(error)}]`);

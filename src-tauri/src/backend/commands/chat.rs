@@ -1,11 +1,12 @@
 use tauri::{AppHandle, State};
+use thoughttree_core::acp::process::find_sidecar_path;
+use thoughttree_core::acp::sessions::{run_prompt_session, PromptSessionParams};
+use thoughttree_core::runtime::run_localset_blocking;
+use thoughttree_core::types::{AgentProvider, Message, ReasoningEffort};
 
-use crate::backend::acp::process::find_sidecar_path;
-use crate::backend::acp::sessions::{run_prompt_session, PromptSessionParams};
 use crate::backend::config;
-use crate::backend::runtime::run_localset_blocking;
+use crate::backend::events::TauriEventSink;
 use crate::backend::state::AppState;
-use crate::backend::types::{AgentProvider, Message, ReasoningEffort};
 
 #[tauri::command]
 pub(crate) async fn send_prompt(
@@ -17,7 +18,8 @@ pub(crate) async fn send_prompt(
     model_id: Option<String>,
     effort: Option<ReasoningEffort>,
 ) -> Result<String, String> {
-    let pending_permissions = state.pending_permissions.clone();
+    let sink = TauriEventSink::new(app_handle.clone());
+    let broker = state.broker.clone();
 
     let notes_directory = config::get_notes_directory_required(&app_handle)?;
     let default_provider = config::get_default_provider(&app_handle)?;
@@ -33,10 +35,10 @@ pub(crate) async fn send_prompt(
 
     run_localset_blocking(move || async move {
         run_prompt_session(PromptSessionParams {
-            app_handle,
+            sink,
             node_id,
             messages,
-            pending_permissions,
+            broker,
             notes_directory,
             provider: active_provider,
             model_id,
@@ -55,18 +57,11 @@ pub(crate) async fn respond_to_permission(
     request_id: String,
     option_id: String,
 ) -> Result<(), String> {
-    let mut pending = state.pending_permissions.lock().await;
-
-    if let Some(sender) = pending.remove(&request_id) {
-        sender
-            .send(option_id)
-            .map_err(|_| "Failed to send permission response")?;
-        Ok(())
-    } else {
-        Err(format!(
-            "No pending permission request with ID: {request_id}"
-        ))
-    }
+    state
+        .broker
+        .respond(&request_id, option_id)
+        .await
+        .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

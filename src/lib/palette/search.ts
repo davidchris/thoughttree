@@ -1,4 +1,4 @@
-import type { GraphNode } from '../graph';
+import type { GraphNode } from '@thoughttree/graph-model';
 import type { HighlightedText, SearchHit, TextSpan } from './types';
 
 const TITLE_MAX_CHARS = 80;

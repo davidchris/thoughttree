@@ -1,5 +1,5 @@
 import { useUIStore } from '../../store/useUIStore';
-import { respondToPermission } from '../../lib/tauri';
+import { getBackendTransport } from '../../lib/transport';
 import { logger } from '../../lib/logger';
 import './styles.css';
 
@@ -13,7 +13,7 @@ export function PermissionDialog() {
 
   const handleOptionClick = async (optionId: string) => {
     try {
-      await respondToPermission(pendingPermission.id, optionId);
+      await getBackendTransport().respondToPermission(pendingPermission.id, optionId);
     } catch (error) {
       logger.error('Failed to respond to permission:', error);
     } finally {
