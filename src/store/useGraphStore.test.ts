@@ -7,6 +7,7 @@ import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
 import { hasFreshSummary } from '../hooks/useSummaryGeneration';
+import projectV4 from '../../test/fixtures/project-v4.json';
 
 function resetStore() {
   const state = useGraphStore.getState();
@@ -141,7 +142,29 @@ describe('useGraphStore', () => {
     expect(useGraphStore.getState().getEffectiveModel('codex')).toBe('gpt-5.5');
   });
 
-  it('round-trips project reasoning effort preferences in V3 files', async () => {
+  it('loads and saves the sanitized v4 fixture without changing its assistant Turn', async () => {
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify(projectV4),
+      revision: 'rev-v4',
+    });
+    vi.mocked(transport.saveProject).mockResolvedValue('rev-saved');
+
+    await useGraphStore.getState().loadProject('/tmp/project.thoughttree');
+
+    const loadedAssistant = useGraphStore.getState().graph.nodes.get('answer');
+    expect(loadedAssistant).toEqual(projectV4.graph.nodes[1]);
+
+    await useGraphStore.getState().saveProject();
+
+    const saved = JSON.parse(vi.mocked(transport.saveProject).mock.calls[0][1]);
+    expect(saved.version).toBe(4);
+    expect(saved.graph.nodes[1]).toEqual(projectV4.graph.nodes[1]);
+    expect(JSON.stringify(saved.graph.nodes[1])).not.toMatch(
+      /raw(Input|Output|Payload)|commandText|\/Users\//,
+    );
+  });
+
+  it('round-trips project reasoning effort preferences in V4 files', async () => {
     vi.mocked(transport.saveProject).mockResolvedValue('rev-1');
     useGraphStore.setState({ projectPath: '/tmp/project.thoughttree' });
     useGraphStore.getState().setProjectEffortPreference('claude-code', 'high');
@@ -154,7 +177,7 @@ describe('useGraphStore', () => {
       null
     );
     const saved = JSON.parse(vi.mocked(transport.saveProject).mock.calls[0][1]);
-    expect(saved.version).toBe(3);
+    expect(saved.version).toBe(4);
     expect(saved.projectEffortPreferences).toEqual({ 'claude-code': 'high' });
 
     const graph = GraphSerialize.toJSON(GraphMutations.empty());
@@ -185,6 +208,70 @@ describe('useGraphStore', () => {
     useGraphStore.getState().newProject();
     expect(useGraphStore.getState().projectEffortPreferences).toBeNull();
     expect(useGraphStore.getState().projectRevision).toBeNull();
+  });
+
+  it.each([1, 2])('loads legacy Project-file v%i without inventing Turn provenance', async (version) => {
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify({
+        version,
+        nodes: [{ id: 'legacy', position: { x: 10, y: 20 } }],
+        edges: [],
+        nodeData: {
+          legacy: {
+            id: 'legacy',
+            role: 'assistant',
+            content: `legacy v${version}`,
+            timestamp: version,
+          },
+        },
+      }),
+      revision: `rev-${version}`,
+    });
+
+    await useGraphStore.getState().loadProject(`/tmp/legacy-v${version}.thoughttree`);
+
+    expect(useGraphStore.getState().graph.nodes.get('legacy')).toEqual({
+      id: 'legacy',
+      role: 'assistant',
+      content: `legacy v${version}`,
+      timestamp: version,
+      contentUpdatedAt: version,
+      provider: 'claude-code',
+    });
+    expect(useGraphStore.getState().graph.nodes.get('legacy')).not.toHaveProperty('provenance');
+  });
+
+  it('loads Project-file v3 without inventing Turn provenance', async () => {
+    const graph = GraphSerialize.toJSON(GraphMutations.empty());
+    graph.version = 3;
+    graph.nodes.push({
+      id: 'v3',
+      role: 'assistant',
+      content: 'legacy v3',
+      timestamp: 3,
+      provider: 'codex',
+    });
+    graph.layout.push({ id: 'v3', position: { x: 1, y: 2 } });
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify({ version: 3, graph }),
+      revision: 'rev-3',
+    });
+
+    await useGraphStore.getState().loadProject('/tmp/legacy-v3.thoughttree');
+
+    expect(useGraphStore.getState().graph.nodes.get('v3')).toEqual(graph.nodes[0]);
+    expect(useGraphStore.getState().graph.nodes.get('v3')).not.toHaveProperty('provenance');
+  });
+
+  it('rejects unsupported future Project-file versions', async () => {
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify({ ...projectV4, version: 5 }),
+      revision: 'rev-future',
+    });
+
+    await expect(
+      useGraphStore.getState().loadProject('/tmp/future.thoughttree'),
+    ).rejects.toThrow('Unsupported Project file version: 5');
   });
 
   it('surfaces stale saves in UI state and force-saves with a null base revision', async () => {
