@@ -5,7 +5,21 @@ sbx:
     template: docker.io/library/bdx-codex-bun-rust:v1
 codex:
     model: gpt-5.6-sol
-    reasoningEffort: medium
+    reasoningEffort: high
+review:
+    mode: local
+    checkpoint: beforeFinalize
+    scope: owningBranch
+    maxCycles: 2
+    onExhausted: stop
+    blockOn:
+        - high
+        - unspecified
+    belowBlockOn: defer
+    reviewer:
+        agent: codex
+        model: gpt-5.6-sol
+        reasoningEffort: high
 worktreeRoot:
     policy: sibling
     path: ../thoughttree-bdx-worktrees
@@ -15,9 +29,17 @@ verification:
           argv: [bash, -lc, "bun install && bun run test:run"]
         - name: build
           argv: [bash, -lc, "bun run build"]
+output:
+    progress: normal
 runPolicy:
     idleTimeout: 30m
     maxRuntime: 2h
 cleanup:
     sandbox: onFailure
     worktree: onSuccess
+finalize:
+    upstream: origin/main
+skills:
+    - tdd
+    - clean
+    - diagnosing-bugs
