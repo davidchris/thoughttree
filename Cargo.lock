@@ -4414,7 +4414,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "filetime",
  "serde",
@@ -4435,7 +4435,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",

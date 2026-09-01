@@ -14,7 +14,7 @@ ThoughtTree treats conversations as a directed acyclic graph (DAG) where each no
 
 ## Prerequisites
 
-To use ThoughtTree, you need:
+This first-user release supports macOS only. You need:
 
 1. **Claude Max subscription** — Required for accessing Claude models
 2. **Claude Code installed** — [Installation guide](https://code.claude.com/docs/en/overview)
@@ -32,11 +32,13 @@ To use ThoughtTree, you need:
 
 ThoughtTree is currently available for macOS:
 
-*   **macOS:** Download the `.dmg` from [Releases](https://codeberg.org/dcwilde/thoughttree/releases)
+* **macOS:** Download the `.dmg` from [GitHub Releases](https://github.com/davidchris/thoughttree/releases)
 
 After downloading:
-1. Double-click the `.dmg` file and drag ThoughtTree to your Applications folder
-2. **First launch:** Right-click the app → "Open" (required once for unsigned apps)
+
+1. Double-click the `.dmg` file.
+2. Drag ThoughtTree to the Applications folder.
+3. Right-click ThoughtTree and select **Open** on the first launch. The app is not signed.
 
 ## Build from Source
 
@@ -46,7 +48,7 @@ If you prefer to build ThoughtTree yourself:
 2. Clone and build:
 
 ```bash
-git clone https://codeberg.org/dcwilde/thoughttree.git
+git clone https://github.com/davidchris/thoughttree.git
 cd thoughttree
 bun install
 bun run build:sidecar

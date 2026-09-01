@@ -55,7 +55,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'ThoughtTree ${{ github.ref_name }}'
           releaseBody: 'See CHANGELOG.md for details.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
         env:

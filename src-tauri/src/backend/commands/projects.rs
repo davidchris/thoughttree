@@ -29,6 +29,31 @@ pub(crate) struct ProjectEntry {
     modified_epoch_ms: u64,
 }
 
+fn validate_path_in_notes_dir(path: &Path, notes_directory: &Path) -> Result<PathBuf, String> {
+    let canonical_notes = fs::canonicalize(notes_directory)
+        .map_err(|err| format!("Failed to resolve notes directory: {err}"))?;
+
+    let canonical_path = if path.exists() {
+        fs::canonicalize(path).map_err(|err| format!("Failed to resolve project path: {err}"))?
+    } else {
+        let parent = path
+            .parent()
+            .ok_or_else(|| "Invalid project path: no parent directory".to_string())?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| "Invalid project path: no file name".to_string())?;
+        let canonical_parent = fs::canonicalize(parent)
+            .map_err(|err| format!("Failed to resolve project directory: {err}"))?;
+        canonical_parent.join(file_name)
+    };
+
+    if !canonical_path.starts_with(&canonical_notes) {
+        return Err("Security error: project path is outside the notes directory".to_string());
+    }
+
+    Ok(canonical_path)
+}
+
 fn collect_project_entries(notes_directory: &Path) -> Result<Vec<ProjectEntry>, String> {
     let mut projects = Vec::new();
 
@@ -110,6 +135,39 @@ fn map_save_error(err: VaultError) -> ProjectCommandError {
     }
 }
 
+fn command_message(message: String) -> ProjectCommandError {
+    ProjectCommandError::Message { message }
+}
+
+fn save_project_in_notes_dir(
+    notes_directory: &Path,
+    path: &Path,
+    data: &str,
+    base_revision: Option<&Revision>,
+) -> Result<(PathBuf, Revision), ProjectCommandError> {
+    let validated_path =
+        validate_path_in_notes_dir(path, notes_directory).map_err(command_message)?;
+    let revision =
+        guarded_write_file(&validated_path, data, base_revision).map_err(map_save_error)?;
+    Ok((validated_path, revision))
+}
+
+fn load_project_in_notes_dir(
+    notes_directory: &Path,
+    path: &Path,
+) -> Result<(PathBuf, LoadProjectResponse), ProjectCommandError> {
+    let validated_path =
+        validate_path_in_notes_dir(path, notes_directory).map_err(command_message)?;
+    let project = read_project_file(&validated_path).map_err(map_load_error)?;
+    Ok((
+        validated_path,
+        LoadProjectResponse {
+            content: project.content,
+            revision: project.revision.0,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -168,6 +226,43 @@ mod tests {
         assert!(entries[0].modified_epoch_ms > entries[1].modified_epoch_ms);
         assert_eq!(entries[1].modified_epoch_ms, entries[2].modified_epoch_ms);
     }
+
+    #[test]
+    fn save_project_rejects_paths_outside_notes_directory() {
+        let dir = tempdir().unwrap();
+        let notes_directory = dir.path().join("notes");
+        let outside_path = dir.path().join("outside.thoughttree");
+        fs::create_dir(&notes_directory).unwrap();
+        fs::write(&outside_path, "outside content").unwrap();
+
+        let error =
+            save_project_in_notes_dir(&notes_directory, &outside_path, "changed content", None)
+                .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ProjectCommandError::Message { message }
+                if message == "Security error: project path is outside the notes directory"
+        ));
+        assert_eq!(fs::read_to_string(outside_path).unwrap(), "outside content");
+    }
+
+    #[test]
+    fn load_project_rejects_paths_outside_notes_directory() {
+        let dir = tempdir().unwrap();
+        let notes_directory = dir.path().join("notes");
+        let outside_path = dir.path().join("outside.thoughttree");
+        fs::create_dir(&notes_directory).unwrap();
+        fs::write(&outside_path, "outside content").unwrap();
+
+        let error = load_project_in_notes_dir(&notes_directory, &outside_path).unwrap_err();
+
+        assert!(matches!(
+            error,
+            ProjectCommandError::Message { message }
+                if message == "Security error: project path is outside the notes directory"
+        ));
+    }
 }
 
 #[tauri::command]
@@ -195,32 +290,31 @@ pub(crate) async fn pick_notes_directory(app: AppHandle) -> Result<Option<String
 
 #[tauri::command]
 pub(crate) async fn save_project(
-    _app: AppHandle,
+    app: AppHandle,
     path: String,
     data: String,
     base_revision: Option<String>,
 ) -> Result<String, ProjectCommandError> {
+    let notes_directory = config::get_notes_directory_required(&app).map_err(command_message)?;
     let revision = base_revision
         .as_deref()
         .map(|value| Revision(value.to_string()));
-    let next_revision =
-        guarded_write_file(&path, &data, revision.as_ref()).map_err(map_save_error)?;
+    let (validated_path, next_revision) =
+        save_project_in_notes_dir(&notes_directory, Path::new(&path), &data, revision.as_ref())?;
 
-    tracing::info!("Project saved to: {}", path);
+    tracing::info!("Project saved to: {:?}", validated_path);
     Ok(next_revision.0)
 }
 
 #[tauri::command]
 pub(crate) async fn load_project(
-    _app: AppHandle,
+    app: AppHandle,
     path: String,
 ) -> Result<LoadProjectResponse, ProjectCommandError> {
-    let project = read_project_file(&path).map_err(map_load_error)?;
-    tracing::info!("Project loaded from: {}", path);
-    Ok(LoadProjectResponse {
-        content: project.content,
-        revision: project.revision.0,
-    })
+    let notes_directory = config::get_notes_directory_required(&app).map_err(command_message)?;
+    let (validated_path, project) = load_project_in_notes_dir(&notes_directory, Path::new(&path))?;
+    tracing::info!("Project loaded from: {:?}", validated_path);
+    Ok(project)
 }
 
 #[tauri::command]

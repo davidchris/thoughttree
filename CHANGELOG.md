@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Security - Restored the notes-directory boundary for project load and save commands
+- Downloads - Changed the README links to the canonical GitHub repository and release page
+
 ## 0.4.0
 
 - Codex Support - Added Codex as a second agent provider alongside Claude Code, with model selection when starting a session
