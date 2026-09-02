@@ -33,6 +33,9 @@ import {
   type Graph,
   type GraphJSON,
   type NodeId,
+  type TurnActivity,
+  type TurnProvenance,
+  type TurnReference,
 } from '@thoughttree/graph-model';
 import { graphToFlowEdges, graphToFlowNodes, type FlowNode } from '../lib/graph/projection';
 
@@ -160,6 +163,60 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: numbe
     if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => fn(...args), delay);
   }) as T;
+}
+
+function formatReference(reference: TurnReference, index: number): string {
+  const relations = reference.relations.join(', ');
+
+  if (reference.type === 'url') {
+    const title = reference.title ? `${reference.title} — ` : '';
+    return `${index}. **URL:** ${title}<${reference.url}> — Relations: ${relations}`;
+  }
+
+  if (reference.scope === 'vault') {
+    return `${index}. **Vault file:** \`${reference.path}\` — Relations: ${relations}`;
+  }
+
+  return `${index}. **External file:** \`${reference.displayName}\` — Relations: ${relations}`;
+}
+
+function formatActivity(activity: TurnActivity, index: number): string {
+  switch (activity.type) {
+    case 'commentary':
+      return `${index}. **Commentary:** ${activity.content}`;
+    case 'tool':
+      return `${index}. **Tool (${activity.kind}, ${activity.status}):** ${activity.title}`;
+    case 'unknown':
+      return `${index}. **Unknown (${activity.providerType}):** ${activity.label}`;
+  }
+}
+
+function formatProvenance(provenance: TurnProvenance): string {
+  const lines = [
+    '### Provenance',
+    '',
+    `**Completeness:** ${provenance.completeness[0].toUpperCase()}${provenance.completeness.slice(1)}`,
+  ];
+
+  if (provenance.references.length > 0) {
+    lines.push(
+      '',
+      '#### References',
+      '',
+      ...provenance.references.map((reference, index) => formatReference(reference, index + 1)),
+    );
+  }
+
+  if (provenance.activity.length > 0) {
+    lines.push(
+      '',
+      '#### Turn Activity',
+      '',
+      ...provenance.activity.map((activity, index) => formatActivity(activity, index + 1)),
+    );
+  }
+
+  return lines.join('\n');
 }
 
 interface ProjectionResult {
@@ -714,7 +771,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         const node = graph.nodes.get(id);
         if (!node) return '';
         const header = node.role === 'user' ? '## User' : '## Assistant';
-        return `${header}\n\n${node.content}`;
+        const provenance =
+          node.role === 'assistant' && node.provenance
+            ? `\n\n${formatProvenance(node.provenance)}`
+            : '';
+        return `${header}\n\n${node.content}${provenance}`;
       })
       .filter(Boolean)
       .join('\n\n---\n\n');
