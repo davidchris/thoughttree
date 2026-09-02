@@ -20,3 +20,5 @@ Always set `TAURI_DEV_HOST=127.0.0.1`: the sandbox cannot resolve `localhost` (`
 - Build: `node node_modules/typescript/bin/tsc && TAURI_DEV_HOST=127.0.0.1 TMPDIR=/tmp node node_modules/vite/bin/vite.js build --configLoader runner --outDir /tmp/thoughttree-review-build`
 
 Dependencies are installed by bdx provisioning before the review starts. Do not treat a `.vite-temp` ENOENT as a blocked validation; use the commands above instead.
+
+Rust checks (`cargo test`, `cargo clippy`, `./scripts/check-core-no-tauri.sh`) need the crates.io index and a C linker, neither of which this reviewer environment provides. CI runs them on every pull request. Do not attempt them here and do not record them as blocked validations; note in the summary that Rust validation is deferred to CI, and review Rust changes by reading the diff.
