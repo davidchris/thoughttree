@@ -14,7 +14,9 @@ Severity rubric:
 
 The reviewer sandbox is read-only, and Vite cannot create `node_modules/.vite-temp` there when it bundles `vite.config.ts`. Run the frontend checks with the runner config loader so no temp file is written inside the repository:
 
-- Tests: `node node_modules/vitest/vitest.mjs run --configLoader runner`
+- Tests: `TAURI_DEV_HOST=127.0.0.1 TMPDIR=/tmp node node_modules/vitest/vitest.mjs run --configLoader runner`
+
+Always set `TAURI_DEV_HOST=127.0.0.1`: the sandbox cannot resolve `localhost` (`getaddrinfo EAI_AGAIN localhost`), and that variable makes Vite bind the loopback address directly. Do not record that DNS gap as a blocked validation; use the environment variable.
 - Build: `node node_modules/typescript/bin/tsc && TAURI_DEV_HOST=127.0.0.1 TMPDIR=/tmp node node_modules/vite/bin/vite.js build --configLoader runner --outDir /tmp/thoughttree-review-build`
 
 Dependencies are installed by bdx provisioning before the review starts. Do not treat a `.vite-temp` ENOENT as a blocked validation; use the commands above instead.
