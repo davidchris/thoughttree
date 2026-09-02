@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import kagiExport from '../../../test/fixtures/kagi-export-v1.json';
 import { TauriTransport } from './TauriTransport';
 
 describe('TauriTransport', () => {
@@ -17,23 +18,26 @@ describe('TauriTransport', () => {
     expect(invoke).toHaveBeenCalledWith('list_projects');
   });
 
-  it('imports a Kagi export through the backend transport seam', async () => {
-    const graphDto = {
-      version: 4,
-      nodes: [{ id: 'import:Example%20conversation:turn:0:user', role: 'user', content: 'Question', timestamp: 0 }],
-      edges: [],
-      layout: [{ id: 'import:Example%20conversation:turn:0:user', position: { x: 0, y: 0 } }],
-    };
-    vi.mocked(invoke).mockResolvedValue({ title: 'Example conversation', graph: graphDto });
+  it('reads and imports a Kagi export through the frontend graph-model seam', async () => {
+    vi.mocked(invoke).mockResolvedValue(JSON.stringify(kagiExport));
 
     const transport = new TauriTransport();
+    const imported = await transport.importKagiExport('/tmp/export.json');
 
-    await expect(transport.importKagiExport('/tmp/export.json')).resolves.toEqual({
-      title: 'Example conversation',
-      graph: {
-        nodes: new Map([[graphDto.nodes[0].id, graphDto.nodes[0]]]),
-        edges: [],
-        layout: new Map([[graphDto.layout[0].id, graphDto.layout[0].position]]),
+    expect(imported.title).toBe('Example research conversation');
+    expect(imported.graph.nodes).toHaveLength(4);
+    expect(imported.graph.edges).toHaveLength(3);
+    expect(imported.graph.nodes.get('import:Example%20research%20conversation:turn:0:assistant')).toMatchObject({
+      id: 'import:Example%20research%20conversation:turn:0:assistant',
+      content: 'The fetched page supports the first point【1】, while the search result supports the second【2】. A dangling citation is retained【9】.',
+      model: 'example-model',
+      provenance: {
+        completeness: 'complete',
+        references: [
+          expect.objectContaining({ index: 1, relations: ['cited'] }),
+          expect.objectContaining({ index: 2, relations: ['cited'] }),
+          expect.objectContaining({ index: 3, relations: ['consulted'] }),
+        ],
       },
     });
     expect(invoke).toHaveBeenCalledWith('import_kagi_export', { path: '/tmp/export.json' });
