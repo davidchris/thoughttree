@@ -1,0 +1,164 @@
+import type { ImportedConversation, ImportedConversationTurn } from './import';
+import type { TurnProvenance, UrlTurnReference } from './types';
+
+export const KAGI_EXPORT_MAX_BYTES = 16 * 1024 * 1024;
+
+type KagiExportErrorCode = 'input_too_large' | 'invalid_json' | 'unsupported_version';
+
+export class KagiExportError extends Error {
+  readonly code: KagiExportErrorCode;
+  readonly foundVersion?: unknown;
+  readonly inputBytes?: number;
+
+  constructor(code: KagiExportErrorCode, detail?: unknown) {
+    const message =
+      code === 'input_too_large'
+        ? `Kagi export exceeds the ${KAGI_EXPORT_MAX_BYTES}-byte input limit (${String(detail)} bytes)`
+        : code === 'unsupported_version'
+          ? `Unsupported Kagi export version: ${String(detail)}`
+          : 'Invalid Kagi export JSON';
+    super(message);
+    this.name = 'KagiExportError';
+    this.code = code;
+    if (code === 'unsupported_version') this.foundVersion = detail;
+    if (code === 'input_too_large') this.inputBytes = detail as number;
+  }
+}
+
+interface KagiMessage {
+  role?: unknown;
+  content?: unknown;
+  model_name?: unknown;
+  references?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asMessage(value: unknown): KagiMessage | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function provenance(message: KagiMessage): TurnProvenance {
+  const content = text(message.content);
+  const citedIndexes = new Set(
+    Array.from(content.matchAll(/【(\d+)】/gu), (match) => Number(match[1]))
+  );
+  const references: UrlTurnReference[] = [];
+
+  if (Array.isArray(message.references)) {
+    for (const value of message.references) {
+      if (!isRecord(value) || typeof value.url !== 'string') continue;
+      const reference: UrlTurnReference = {
+        type: 'url',
+        url: value.url,
+        relations: [
+          typeof value.index === 'number' && citedIndexes.has(value.index)
+            ? 'cited'
+            : 'consulted',
+        ],
+      };
+      if (typeof value.title === 'string') reference.title = value.title;
+      if (typeof value.domain === 'string') reference.domain = value.domain;
+      if (typeof value.index === 'number' && Number.isFinite(value.index)) {
+        reference.index = value.index;
+      }
+      if (typeof value.percentage === 'number' && Number.isFinite(value.percentage)) {
+        reference.percentage = value.percentage;
+      }
+      if (typeof value.is_search_result === 'boolean') {
+        reference.is_search_result = value.is_search_result;
+      }
+      references.push(reference);
+    }
+  }
+
+  return { completeness: 'complete', references, activity: [] };
+}
+
+function turnFromUser(user: KagiMessage, assistant?: KagiMessage): ImportedConversationTurn {
+  if (!assistant) {
+    return {
+      userMessage: text(user.content),
+      assistantAnswer: '',
+      incomplete: true,
+    };
+  }
+
+  const turn: ImportedConversationTurn = {
+    userMessage: text(user.content),
+    assistantAnswer: text(assistant.content),
+    provenance: provenance(assistant),
+  };
+  if (typeof assistant.model_name === 'string') turn.model = assistant.model_name;
+  return turn;
+}
+
+function parseBytes(input: string | Uint8Array): { text: string; bytes: number } {
+  if (typeof input === 'string') {
+    const bytes = new TextEncoder().encode(input).byteLength;
+    return { text: input, bytes };
+  }
+  return { text: new TextDecoder().decode(input), bytes: input.byteLength };
+}
+
+export function parseKagiExport(
+  input: string | Uint8Array,
+  maxBytes = KAGI_EXPORT_MAX_BYTES
+): ImportedConversation {
+  const parsedInput = parseBytes(input);
+  if (parsedInput.bytes > maxBytes) {
+    throw new KagiExportError('input_too_large', parsedInput.bytes);
+  }
+
+  let exportData: unknown;
+  try {
+    exportData = JSON.parse(parsedInput.text);
+  } catch {
+    throw new KagiExportError('invalid_json');
+  }
+
+  if (!isRecord(exportData) || exportData.version !== 1) {
+    throw new KagiExportError('unsupported_version', isRecord(exportData) ? exportData.version : undefined);
+  }
+
+  const conversation = isRecord(exportData.conversation) ? exportData.conversation : {};
+  const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const turns: ImportedConversationTurn[] = [];
+  let pendingUser: KagiMessage | undefined;
+
+  for (const value of messages) {
+    const message = asMessage(value);
+    if (!message) {
+      if (pendingUser) {
+        turns.push(turnFromUser(pendingUser));
+        pendingUser = undefined;
+      }
+      continue;
+    }
+
+    if (message.role === 'user') {
+      if (pendingUser) turns.push(turnFromUser(pendingUser));
+      pendingUser = message;
+    } else if (message.role === 'assistant' && pendingUser) {
+      turns.push(turnFromUser(pendingUser, message));
+      pendingUser = undefined;
+    } else if (message.role !== 'assistant') {
+      if (pendingUser) {
+        turns.push(turnFromUser(pendingUser));
+        pendingUser = undefined;
+      }
+    }
+  }
+  if (pendingUser) turns.push(turnFromUser(pendingUser));
+
+  return {
+    importKey: text(conversation.title) || 'Kagi conversation',
+    turns,
+  };
+}
