@@ -11,8 +11,8 @@ describe('Kagi export fixtures', () => {
       conversation: {
         title: string;
         model_name: string;
-        messages: Array<Record<string, unknown>>;
       };
+      messages: Array<Record<string, unknown>>;
     };
 
     expect(fixture).toMatchObject({
@@ -24,10 +24,10 @@ describe('Kagi export fixtures', () => {
         model_name: 'example-model',
       },
     });
-    expect(fixture.conversation.messages).toHaveLength(4);
+    expect(fixture.messages).toHaveLength(4);
     expect(Buffer.byteLength(JSON.stringify(fixture))).toBeLessThan(5 * 1024);
 
-    const [firstUser, firstAssistant, secondUser, secondAssistant] = fixture.conversation.messages;
+    const [firstUser, firstAssistant, secondUser, secondAssistant] = fixture.messages;
     expect(firstUser).toMatchObject({ role: 'user' });
     expect(firstAssistant).toMatchObject({
       role: 'assistant',

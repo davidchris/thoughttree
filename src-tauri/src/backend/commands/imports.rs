@@ -37,9 +37,14 @@ fn graph_from_kagi(bytes: &[u8]) -> Result<(String, Value), String> {
         .filter(|value| !value.is_empty())
         .unwrap_or("Kagi conversation")
         .to_string();
-    let messages = conversation
-        .and_then(|value| value.get("messages"))
+    let messages = export
+        .get("messages")
         .and_then(Value::as_array)
+        .or_else(|| {
+            conversation
+                .and_then(|value| value.get("messages"))
+                .and_then(Value::as_array)
+        })
         .cloned()
         .unwrap_or_default();
 
@@ -169,6 +174,10 @@ fn graph_from_kagi(bytes: &[u8]) -> Result<(String, Value), String> {
         );
     }
 
+    if nodes.is_empty() {
+        return Err("Kagi export contains no messages".to_string());
+    }
+
     Ok((
         title,
         json!({"version": 4, "nodes": nodes, "edges": edges, "layout": layout}),
@@ -237,5 +246,20 @@ mod tests {
         .unwrap();
         assert_eq!(result["title"], "Example research conversation");
         assert_eq!(result["graph"]["nodes"].as_array().unwrap().len(), 4);
+        assert_eq!(result["graph"]["edges"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn rejects_kagi_export_without_messages() {
+        let path = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(
+            path.path(),
+            r#"{"version":1,"conversation":{"title":"Empty"}}"#,
+        )
+        .unwrap();
+
+        let error = import_kagi_export_from_path(path.path()).unwrap_err();
+
+        assert_eq!(error, "Kagi export contains no messages");
     }
 }
