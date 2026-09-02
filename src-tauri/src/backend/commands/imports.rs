@@ -232,7 +232,7 @@ mod tests {
     fn imports_sanitized_fixture_into_expected_graph() {
         let result = import_kagi_export_from_path(Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../..//test/fixtures/kagi-export-v1.json"
+            "/../test/fixtures/kagi-export-v1.json"
         )))
         .unwrap();
         assert_eq!(result["title"], "Example research conversation");
