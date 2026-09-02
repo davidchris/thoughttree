@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import projectV4 from '../../../test/fixtures/project-v4.json';
 import { GraphModel } from './model';
-import type { Graph, GraphEdge, GraphNode } from './types';
+import { GraphSerialize } from './serialize';
+import type { Graph, GraphEdge, GraphJSON, GraphNode } from './types';
 
 function userNode(id: string, content: string, ts: number): GraphNode {
   return { id, role: 'user', content, timestamp: ts, contentUpdatedAt: ts };
@@ -180,6 +182,21 @@ describe('GraphModel.hasNonLinearLineage', () => {
 });
 
 describe('GraphModel.conversationPath', () => {
+  it('builds identical model context with or without Turn provenance', () => {
+    const graphWithProvenance = GraphSerialize.fromJSON(projectV4.graph as GraphJSON);
+    const assistant = graphWithProvenance.nodes.get('answer');
+    if (!assistant || assistant.role !== 'assistant') throw new Error('fixture assistant missing');
+    const { provenance: _provenance, ...assistantWithoutProvenance } = assistant;
+    const graphWithoutProvenance: Graph = {
+      ...graphWithProvenance,
+      nodes: new Map(graphWithProvenance.nodes).set('answer', assistantWithoutProvenance),
+    };
+
+    expect(GraphModel.conversationPath(graphWithProvenance, 'answer')).toEqual(
+      GraphModel.conversationPath(graphWithoutProvenance, 'answer'),
+    );
+  });
+
   it('keeps linear Conversation path messages byte-identical with no graph structure', () => {
     const a = userNode('a', 'hello', 1);
     const b = agentNode('b', 'hi', 2);

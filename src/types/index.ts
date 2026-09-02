@@ -1,3 +1,5 @@
+import type { TurnProvenance } from '@thoughttree/graph-model';
+
 // ============================================================================
 // Agent Provider Types
 // ============================================================================
@@ -117,6 +119,7 @@ export interface AgentNodeData {
   summaryTimestamp?: number;  // When summary was last generated
   provider?: AgentProvider;   // Which provider generated this response
   model?: string;             // Which model was used for this response
+  provenance?: TurnProvenance;
   // Note: isStreaming is derived from store.streamingNodeId, not stored here
 }
 

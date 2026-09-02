@@ -1,0 +1,99 @@
+{
+  "version": 4,
+  "graph": {
+    "version": 4,
+    "nodes": [
+      {
+        "id": "question",
+        "role": "user",
+        "content": "Which evidence supports this answer?",
+        "timestamp": 1750000000000,
+        "contentUpdatedAt": 1750000000000
+      },
+      {
+        "id": "answer",
+        "role": "assistant",
+        "content": "The exact assistant answer stays unchanged.",
+        "timestamp": 1750000001000,
+        "contentUpdatedAt": 1750000001000,
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "provenance": {
+          "completeness": "partial",
+          "references": [
+            {
+              "type": "url",
+              "url": "https://example.com/evidence?item=1#result",
+              "title": "Canonical evidence",
+              "relations": ["consulted", "cited"],
+              "timestamp": 1750000000200
+            },
+            {
+              "type": "file",
+              "scope": "vault",
+              "path": "research/evidence.md",
+              "displayName": "evidence.md",
+              "relations": ["read", "cited"]
+            },
+            {
+              "type": "file",
+              "scope": "external",
+              "displayName": "outside-notes.txt",
+              "relations": ["read"],
+              "timestamp": 1750000000300
+            }
+          ],
+          "activity": [
+            {
+              "type": "commentary",
+              "content": "I’m checking the cited evidence first.",
+              "timestamp": 1750000000500
+            },
+            {
+              "type": "tool",
+              "kind": "read",
+              "title": "Read the sanitized evidence fixt…",
+              "titleTruncated": true,
+              "status": "completed",
+              "timestamp": 1750000000400,
+              "completedAt": 1750000000700
+            },
+            {
+              "type": "commentary",
+              "content": "The source and Vault file agree."
+            },
+            {
+              "type": "unknown",
+              "providerType": "provider_status",
+              "label": "Provider status update",
+              "timestamp": 1750000000600
+            }
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "question->answer",
+        "source": "question",
+        "target": "answer"
+      }
+    ],
+    "layout": [
+      {
+        "id": "question",
+        "position": { "x": 0, "y": 0 }
+      },
+      {
+        "id": "answer",
+        "position": { "x": 0, "y": 240 }
+      }
+    ]
+  },
+  "projectModelPreferences": {
+    "codex": "gpt-5.5"
+  },
+  "projectEffortPreferences": {
+    "codex": "high"
+  }
+}

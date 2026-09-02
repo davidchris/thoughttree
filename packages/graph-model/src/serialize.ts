@@ -1,6 +1,6 @@
 import type { Graph, GraphEdge, GraphJSON, GraphNode, NodeId, Position } from './types';
 
-export const GRAPH_JSON_VERSION = 3;
+export const GRAPH_JSON_VERSION = 4;
 
 interface LegacyV2Node {
   id: NodeId;

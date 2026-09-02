@@ -53,23 +53,27 @@ function scheduleStreamFlush() {
   }, STREAM_FLUSH_INTERVAL_MS);
 }
 
-interface ProjectFileV3 {
-  version: 3;
+interface CurrentProjectFile {
+  version: typeof GRAPH_JSON_VERSION;
   graph: GraphJSON;
   // On-disk shape: legacy writers stored explicit nulls for unset entries
   projectModelPreferences?: StoredProviderRecord | null;
   projectEffortPreferences?: StoredProviderRecord<ReasoningEffort> | null;
 }
 
+interface ProjectFileV3 extends Omit<CurrentProjectFile, 'version'> {
+  version: 3;
+}
+
 interface ProjectFileLegacyV2 {
-  version: number;
+  version: 1 | 2;
   nodes: Array<{ id: string; position: { x: number; y: number }; [key: string]: unknown }>;
   edges: Array<{ id: string; source: string; target: string; [key: string]: unknown }>;
   nodeData: Record<string, MessageNodeData>;
   projectModelPreferences?: StoredProviderRecord | null;
 }
 
-type ProjectFile = ProjectFileV3 | ProjectFileLegacyV2;
+type ProjectFile = CurrentProjectFile | ProjectFileV3 | ProjectFileLegacyV2;
 
 interface GraphState {
   // Source of truth
@@ -206,7 +210,7 @@ function serializeProjectFile(
   projectModelPreferences: ModelPreferences | null,
   projectEffortPreferences: EffortPreferences | null
 ): string {
-  const projectFile: ProjectFileV3 = {
+  const projectFile: CurrentProjectFile = {
     version: GRAPH_JSON_VERSION,
     graph: GraphSerialize.toJSON(graph),
     projectModelPreferences,
@@ -617,7 +621,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       let projectModelPreferences: ModelPreferences | null = null;
       let projectEffortPreferences: EffortPreferences | null = null;
 
-      if (parsed.version === GRAPH_JSON_VERSION && 'graph' in parsed) {
+      if ((parsed.version === GRAPH_JSON_VERSION || parsed.version === 3) && 'graph' in parsed) {
         graph = GraphSerialize.fromJSON(parsed.graph);
         projectModelPreferences = parsed.projectModelPreferences
           ? withoutNullEntries(parsed.projectModelPreferences)
@@ -625,7 +629,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         projectEffortPreferences = parsed.projectEffortPreferences
           ? withoutNullEntries(parsed.projectEffortPreferences)
           : null;
-      } else {
+      } else if (parsed.version === 1 || parsed.version === 2) {
         const legacy = parsed as ProjectFileLegacyV2;
         const migratedNodeData = migrateLegacyV2NodeData(legacy.nodeData);
         graph = GraphSerialize.fromLegacyV2({
@@ -638,6 +642,8 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
           ? withoutNullEntries(legacy.projectModelPreferences)
           : null;
         projectEffortPreferences = null;
+      } else {
+        throw new Error(`Unsupported Project file version: ${String(parsed.version)}`);
       }
 
       set({

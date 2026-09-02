@@ -7,6 +7,91 @@ export interface ImageAttachment {
   name?: string;
 }
 
+export type ProvenanceCompleteness = 'complete' | 'partial' | 'unknown';
+
+export type TurnReferenceRelation =
+  | 'consulted'
+  | 'cited'
+  | 'read'
+  | 'created'
+  | 'updated'
+  | 'deleted'
+  | 'moved'
+  | 'searched'
+  | 'fetched';
+
+interface TurnReferenceBase {
+  relations: TurnReferenceRelation[];
+  timestamp?: number;
+}
+
+export interface UrlTurnReference extends TurnReferenceBase {
+  type: 'url';
+  url: string;
+  title?: string;
+}
+
+export interface VaultFileTurnReference extends TurnReferenceBase {
+  type: 'file';
+  scope: 'vault';
+  path: string;
+  displayName: string;
+}
+
+export interface ExternalFileTurnReference extends TurnReferenceBase {
+  type: 'file';
+  scope: 'external';
+  displayName: string;
+}
+
+export type FileTurnReference = VaultFileTurnReference | ExternalFileTurnReference;
+export type TurnReference = UrlTurnReference | FileTurnReference;
+
+interface TurnActivityBase {
+  timestamp?: number;
+}
+
+export interface AssistantCommentary extends TurnActivityBase {
+  type: 'commentary';
+  content: string;
+}
+
+export type ToolActivityKind =
+  | 'read'
+  | 'edit'
+  | 'delete'
+  | 'move'
+  | 'search'
+  | 'execute'
+  | 'fetch'
+  | 'delegate'
+  | 'other';
+
+export type ToolActivityStatus = 'pending' | 'completed' | 'failed' | 'incomplete';
+
+export interface ToolActivity extends TurnActivityBase {
+  type: 'tool';
+  kind: ToolActivityKind;
+  title: string;
+  titleTruncated?: boolean;
+  status: ToolActivityStatus;
+  completedAt?: number;
+}
+
+export interface UnknownActivity extends TurnActivityBase {
+  type: 'unknown';
+  providerType: string;
+  label: string;
+}
+
+export type TurnActivity = AssistantCommentary | ToolActivity | UnknownActivity;
+
+export interface TurnProvenance {
+  completeness: ProvenanceCompleteness;
+  references: TurnReference[];
+  activity: TurnActivity[];
+}
+
 export interface UserGraphNode {
   id: NodeId;
   role: 'user';
@@ -28,6 +113,7 @@ export interface AssistantGraphNode {
   summaryTimestamp?: number;
   provider?: GraphAgentProvider;
   model?: string;
+  provenance?: TurnProvenance;
 }
 
 export type GraphNode = UserGraphNode | AssistantGraphNode;
