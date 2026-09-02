@@ -76,10 +76,14 @@ describe('parseKagiExport', () => {
     );
   });
 
-  it('handles missing references and empty messages', () => {
-    expect(
-      parseKagiExport(JSON.stringify({ version: 1, conversation: { messages: [] } }))
-    ).toEqual({ importKey: 'Kagi conversation', turns: [] });
+  it('rejects empty or missing messages', () => {
+    expect(() => parseKagiExport(JSON.stringify({ version: 1, messages: [] }))).toThrowError(
+      new KagiExportError('no_messages')
+    );
+
+    expect(() => parseKagiExport(JSON.stringify({ version: 1 }))).toThrowError(
+      new KagiExportError('no_messages')
+    );
 
     expect(
       parseKagiExport(JSON.stringify({

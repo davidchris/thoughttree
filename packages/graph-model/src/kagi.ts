@@ -3,7 +3,11 @@ import type { TurnProvenance, UrlTurnReference } from './types';
 
 export const KAGI_EXPORT_MAX_BYTES = 16 * 1024 * 1024;
 
-type KagiExportErrorCode = 'input_too_large' | 'invalid_json' | 'unsupported_version';
+type KagiExportErrorCode =
+  | 'input_too_large'
+  | 'invalid_json'
+  | 'unsupported_version'
+  | 'no_messages';
 
 export class KagiExportError extends Error {
   readonly code: KagiExportErrorCode;
@@ -16,7 +20,9 @@ export class KagiExportError extends Error {
         ? `Kagi export exceeds the ${KAGI_EXPORT_MAX_BYTES}-byte input limit (${String(detail)} bytes)`
         : code === 'unsupported_version'
           ? `Unsupported Kagi export version: ${String(detail)}`
-          : 'Invalid Kagi export JSON';
+          : code === 'no_messages'
+            ? 'Kagi export contains no messages'
+            : 'Invalid Kagi export JSON';
     super(message);
     this.name = 'KagiExportError';
     this.code = code;
@@ -128,7 +134,11 @@ export function parseKagiExport(
   }
 
   const conversation = isRecord(exportData.conversation) ? exportData.conversation : {};
-  const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const messages = Array.isArray(exportData.messages)
+    ? exportData.messages
+    : Array.isArray(conversation.messages)
+      ? conversation.messages
+      : [];
   const turns: ImportedConversationTurn[] = [];
   let pendingUser: KagiMessage | undefined;
 
@@ -156,6 +166,7 @@ export function parseKagiExport(
     }
   }
   if (pendingUser) turns.push(turnFromUser(pendingUser));
+  if (turns.length === 0) throw new KagiExportError('no_messages');
 
   return {
     importKey: text(conversation.title) || 'Kagi conversation',

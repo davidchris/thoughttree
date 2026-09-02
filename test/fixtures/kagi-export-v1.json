@@ -4,8 +4,9 @@
   "fixture_note": "unknown top-level field",
   "conversation": {
     "title": "Example research conversation",
-    "model_name": "example-model",
-    "messages": [
+    "model_name": "example-model"
+  },
+  "messages": [
       {
         "role": "user",
         "content": "Compare the example sources."
@@ -73,6 +74,5 @@
         "duration_ms": 90,
         "model_version": "example-model-2026-01-01"
       }
-    ]
-  }
+  ]
 }
