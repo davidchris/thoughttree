@@ -7,6 +7,8 @@ import { setBackendTransport } from "../../lib/transport";
 import { useGraphStore } from "../../store/useGraphStore";
 import { useUIStore } from "../../store/useUIStore";
 import { useProviderStore } from "../../store/useProviderStore";
+import type { GraphJSON } from "@thoughttree/graph-model";
+import projectV4 from "../../../test/fixtures/project-v4.json";
 
 // Mock the stores
 vi.mock("../../store/useGraphStore");
@@ -16,6 +18,9 @@ vi.mock("../../store/useProviderStore");
 const mockUseGraphStore = vi.mocked(useGraphStore);
 const mockUseUIStore = vi.mocked(useUIStore);
 const mockUseProviderStore = vi.mocked(useProviderStore);
+const sanitizedV4Answer = (projectV4.graph as GraphJSON).nodes.find(
+  (node) => node.id === "answer"
+)!;
 
 function createMockTransport(): BackendTransport {
   return {
@@ -242,6 +247,199 @@ describe("SidePanel", () => {
       render(<SidePanel />);
 
       expect(screen.getByText("Assistant")).toBeInTheDocument();
+      expect(screen.queryByText(/^Provenance/)).not.toBeInTheDocument();
+    });
+
+    it("shows one collapsed Provenance disclosure below the exact answer", () => {
+      setupMockStore({
+        previewNodeId: "answer",
+        nodeData: new Map([["answer", sanitizedV4Answer]]),
+      });
+
+      render(<SidePanel />);
+
+      const exactAnswer = screen.getByText("The exact assistant answer stays unchanged.");
+      const disclosure = screen.getByText("Provenance · 1 source · 2 files · 4 activities");
+
+      expect(disclosure.closest("details")).not.toHaveAttribute("open");
+      expect(exactAnswer.compareDocumentPosition(disclosure)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      expect(screen.getAllByText(/^Provenance/)).toHaveLength(1);
+    });
+
+    it("renders canonical references first with safe links and visible relations", async () => {
+      setupMockStore({
+        previewNodeId: "answer",
+        nodeData: new Map([["answer", sanitizedV4Answer]]),
+      });
+      render(<SidePanel />);
+
+      await userEvent.click(screen.getByText(/^Provenance/));
+
+      const source = screen.getByRole("link", { name: "Canonical evidence" });
+      const vaultFile = screen.getByText("research/evidence.md");
+      const externalFile = screen.getByText("outside-notes.txt");
+      const activityHeading = screen.getByRole("heading", { name: "Turn activity" });
+
+      expect(source).toHaveAttribute(
+        "href",
+        "https://example.com/evidence?item=1#result"
+      );
+      expect(screen.getByText("consulted · cited")).toBeInTheDocument();
+      expect(screen.getByText("read · cited")).toBeInTheDocument();
+      expect(screen.getByText("read")).toBeInTheDocument();
+      expect(vaultFile.closest("a")).toBeNull();
+      expect(externalFile.closest("a")).toBeNull();
+      expect(source.compareDocumentPosition(vaultFile)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      expect(vaultFile.compareDocumentPosition(externalFile)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      expect(externalFile.compareDocumentPosition(activityHeading)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    });
+
+    it("warns about partial evidence and preserves authoritative activity order", async () => {
+      setupMockStore({
+        previewNodeId: "answer",
+        nodeData: new Map([["answer", sanitizedV4Answer]]),
+      });
+      render(<SidePanel />);
+
+      await userEvent.click(screen.getByText(/^Provenance/));
+
+      expect(
+        screen.getByText("Some Turn evidence may be missing.")
+      ).toBeInTheDocument();
+
+      const commentary = screen.getAllByText("Assistant commentary");
+      const tool = screen.getByText("Read · Completed");
+      const unknown = screen.getByText("provider_status · Provider status update");
+
+      expect(commentary).toHaveLength(2);
+      expect(commentary[0].closest("details")).not.toHaveAttribute("open");
+      expect(tool.closest("details")).not.toHaveAttribute("open");
+      expect(screen.getByText("Read the sanitized evidence fixt…")).toBeInTheDocument();
+      expect(screen.getByText("Title truncated")).toBeInTheDocument();
+      expect(commentary[0].compareDocumentPosition(tool)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      expect(tool.compareDocumentPosition(commentary[1])).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+      expect(commentary[1].compareDocumentPosition(unknown)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING
+      );
+    });
+
+    it("renders untrusted historical provenance as bounded plain text", async () => {
+      const longTitle = `<button>Run me</button>${"x".repeat(220)}`;
+      const displayedTitle = longTitle.slice(0, 200);
+      setupMockStore({
+        previewNodeId: "unsafe-answer",
+        nodeData: new Map([
+          [
+            "unsafe-answer",
+            {
+              id: "unsafe-answer",
+              role: "assistant" as const,
+              content: "Safe answer",
+              timestamp: 1,
+              provenance: {
+                completeness: "unknown" as const,
+                references: [
+                  {
+                    type: "url" as const,
+                    url: "javascript:alert('no')",
+                    title: "Unsafe URL",
+                    relations: ["consulted" as const],
+                  },
+                  {
+                    type: "url" as const,
+                    url: "mailto:person@example.com",
+                    title: "Email URL",
+                    relations: ["consulted" as const],
+                  },
+                  {
+                    type: "url" as const,
+                    url: "http://example.com",
+                    title: "HTTP URL",
+                    relations: ["consulted" as const],
+                  },
+                ],
+                activity: [
+                  {
+                    type: "tool" as const,
+                    kind: "execute" as const,
+                    title: longTitle,
+                    status: "incomplete" as const,
+                  },
+                  {
+                    type: "unknown" as const,
+                    providerType: "future_item",
+                    label: "Future provider item",
+                    rawPayload: "SECRET RAW PAYLOAD",
+                  },
+                ],
+              },
+            },
+          ],
+        ]),
+      });
+      render(<SidePanel />);
+
+      await userEvent.click(screen.getByText(/^Provenance/));
+
+      expect(screen.getByText("Some Turn evidence may be missing.")).toBeInTheDocument();
+      expect(screen.getByText("Unsafe URL").closest("a")).toBeNull();
+      expect(screen.getByText("Email URL").closest("a")).toBeNull();
+      expect(screen.getByRole("link", { name: "HTTP URL" })).toHaveAttribute(
+        "href",
+        "http://example.com"
+      );
+      expect(screen.getByText("Execute · Incomplete").closest("details")).not.toHaveAttribute(
+        "open"
+      );
+      expect(screen.getByText(displayedTitle)).toBeInTheDocument();
+      expect(screen.getByText("Title truncated")).toBeInTheDocument();
+      expect(screen.getByText("future_item · Future provider item")).toBeInTheDocument();
+      expect(screen.queryByText("SECRET RAW PAYLOAD")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Run me" })).not.toBeInTheDocument();
+    });
+
+    it("distinguishes a complete empty Turn from incomplete evidence", async () => {
+      setupMockStore({
+        previewNodeId: "empty-answer",
+        nodeData: new Map([
+          [
+            "empty-answer",
+            {
+              id: "empty-answer",
+              role: "assistant" as const,
+              content: "",
+              timestamp: 1,
+              provenance: {
+                completeness: "complete" as const,
+                references: [],
+                activity: [],
+              },
+            },
+          ],
+        ]),
+      });
+      render(<SidePanel />);
+
+      expect(screen.getByText("No content")).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByText("Provenance · 0 sources · 0 files · 0 activities")
+      );
+
+      expect(screen.getByText("No references recorded.")).toBeInTheDocument();
+      expect(screen.getByText("No Turn activity recorded.")).toBeInTheDocument();
+      expect(screen.queryByText("Some Turn evidence may be missing.")).not.toBeInTheDocument();
     });
   });
 
