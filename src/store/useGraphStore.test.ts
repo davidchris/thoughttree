@@ -164,6 +164,72 @@ describe('useGraphStore', () => {
     );
   });
 
+  it('exports assistant Turn provenance from the sanitized v4 fixture', async () => {
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify(projectV4),
+      revision: 'rev-v4',
+    });
+
+    await useGraphStore.getState().loadProject('/tmp/project.thoughttree');
+
+    const exported = useGraphStore.getState().exportSubgraph(['question', 'answer']);
+
+    expect(exported).toBe(
+      [
+        '## User',
+        '',
+        'Which evidence supports this answer?',
+        '',
+        '---',
+        '',
+        '## Assistant',
+        '',
+        'The exact assistant answer stays unchanged.',
+        '',
+        '### Provenance',
+        '',
+        '**Completeness:** Partial',
+        '',
+        '#### References',
+        '',
+        '1. **URL:** Canonical evidence — <https://example.com/evidence?item=1#result> — Relations: consulted, cited',
+        '2. **Vault file:** `research/evidence.md` — Relations: read, cited',
+        '3. **External file:** `outside-notes.txt` — Relations: read',
+        '',
+        '#### Turn Activity',
+        '',
+        '1. **Commentary:** I’m checking the cited evidence first.',
+        '2. **Tool (read, completed):** Read the sanitized evidence fixt…',
+        '3. **Commentary:** The source and Vault file agree.',
+        '4. **Unknown (provider_status):** Provider status update',
+      ].join('\n'),
+    );
+    expect(exported).not.toMatch(/raw(Input|Output|Payload)|commandText|\/Users\//);
+  });
+
+  it('retains the existing Markdown shape when no assistant provenance exists', () => {
+    const state = useGraphStore.getState();
+    const userId = state.createUserNode();
+    state.updateNodeContent(userId, 'Question without provenance');
+    const assistantId = state.createAgentNodeDownstream(userId);
+    state.stopStreaming(assistantId);
+    state.updateNodeContent(assistantId, 'Answer without provenance');
+
+    expect(state.exportSubgraph([userId, assistantId])).toBe(
+      [
+        '## User',
+        '',
+        'Question without provenance',
+        '',
+        '---',
+        '',
+        '## Assistant',
+        '',
+        'Answer without provenance',
+      ].join('\n'),
+    );
+  });
+
   it('round-trips project reasoning effort preferences in V4 files', async () => {
     vi.mocked(transport.saveProject).mockResolvedValue('rev-1');
     useGraphStore.setState({ projectPath: '/tmp/project.thoughttree' });
