@@ -5,7 +5,7 @@ sbx:
     template: docker.io/library/bdx-codex-bun-rust:v1
 codex:
     model: gpt-5.6-sol
-    reasoningEffort: high
+    reasoningEffort: medium
 review:
     mode: local
     checkpoint: beforeFinalize
@@ -23,6 +23,10 @@ review:
 worktreeRoot:
     policy: sibling
     path: ../thoughttree-bdx-worktrees
+provision:
+    commands:
+        - name: bun install
+          argv: [bun, install, --frozen-lockfile]
 verification:
     commands:
         - name: test
