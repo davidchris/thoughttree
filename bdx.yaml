@@ -26,7 +26,7 @@ worktreeRoot:
 provision:
     commands:
         - name: bun install
-          argv: [bash, -lc, "bun install --frozen-lockfile || (sleep 5 && bun install --frozen-lockfile)"]
+          argv: [bash, -lc, "for i in 1 2 3 4; do bun install --frozen-lockfile && exit 0; bun pm cache rm >/dev/null 2>&1; sleep $((i * 10)); done; exit 1"]
 verification:
     commands:
         - name: test
