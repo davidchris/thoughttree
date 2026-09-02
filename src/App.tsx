@@ -8,7 +8,7 @@ import { SetupWizard } from './components/SetupWizard';
 import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
 import { SidePanel } from './components/SidePanel';
 import { Palette } from './components/Palette';
-import { getNotesDirectory, newProjectDialog, openProjectDialog, addRecentProject } from './lib/desktop';
+import { getNotesDirectory, newProjectDialog, openProjectDialog, pickKagiExport, addRecentProject } from './lib/desktop';
 import { getBackendTransport } from './lib/transport';
 import { useSummaryGeneration } from './hooks/useSummaryGeneration';
 import { useGraphStore } from './store/useGraphStore';
@@ -22,10 +22,12 @@ function App() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const transport = getBackendTransport();
   const projectPath = useGraphStore((state) => state.projectPath);
+  const projectTitle = useGraphStore((state) => state.projectTitle);
   const loadProject = useGraphStore((state) => state.loadProject);
   const newProject = useGraphStore((state) => state.newProject);
   const setProjectPath = useGraphStore((state) => state.setProjectPath);
   const saveProject = useGraphStore((state) => state.saveProject);
+  const importGraph = useGraphStore((state) => state.importGraph);
 
   // Automatically generate summaries for node content
   useSummaryGeneration();
@@ -110,6 +112,21 @@ function App() {
     setNeedsSetup(false);
   };
 
+  const handleImport = useCallback(async () => {
+    if (!transport.capabilities.nativeDialogs) return;
+    try {
+      const path = await pickKagiExport();
+      if (path) {
+        const imported = await transport.importKagiExport(path);
+        importGraph(imported.title, imported.graph);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to import Kagi export:', error);
+      window.alert(message);
+    }
+  }, [importGraph, transport]);
+
   const handleProjectSelected = useCallback(
     async (path: string) => {
       try {
@@ -171,12 +188,13 @@ function App() {
   }
 
   // Show project opening wizard if no project is loaded
-  if (!projectPath) {
+  if (!projectPath && !projectTitle) {
     return (
       <ProjectOpeningWizard
         onProjectSelected={handleProjectSelected}
         onOpenDialog={handleOpenDialog}
         onNewProject={handleNewProject}
+        onImport={handleImport}
         nativeDialogsEnabled={transport.capabilities.nativeDialogs}
       />
     );

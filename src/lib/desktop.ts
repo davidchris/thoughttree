@@ -22,6 +22,10 @@ export function openProjectDialog(): Promise<string | null> {
   return invoke<string | null>('open_project_dialog');
 }
 
+export function pickKagiExport(): Promise<string | null> {
+  return invoke<string | null>('pick_kagi_export');
+}
+
 export function getRecentProjects(): Promise<string[]> {
   return invoke<string[]>('get_recent_projects');
 }

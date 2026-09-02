@@ -28,6 +28,7 @@ function createMockTransport(): BackendTransport {
     loadProject: vi.fn(),
     saveProject: vi.fn(),
     listProjects: vi.fn(),
+    importKagiExport: vi.fn(),
     sendPrompt: vi.fn(() => Promise.resolve("")),
     respondToPermission: vi.fn(),
     checkAcpAvailable: vi.fn(),
