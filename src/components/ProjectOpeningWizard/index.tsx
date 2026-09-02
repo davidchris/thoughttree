@@ -8,6 +8,7 @@ interface ProjectOpeningWizardProps {
   onProjectSelected: (path: string) => void;
   onOpenDialog: () => void;
   onNewProject: () => void;
+  onImport: () => void;
   nativeDialogsEnabled: boolean;
 }
 
@@ -15,6 +16,7 @@ export function ProjectOpeningWizard({
   onProjectSelected,
   onOpenDialog,
   onNewProject,
+  onImport,
   nativeDialogsEnabled,
 }: ProjectOpeningWizardProps) {
   const [recentProjects, setRecentProjects] = useState<string[]>([]);
@@ -142,6 +144,9 @@ export function ProjectOpeningWizard({
                   </button>
                   <button onClick={onNewProject} className="action-button primary">
                     New Project
+                  </button>
+                  <button onClick={onImport} className="action-button secondary">
+                    Import Kagi JSON...
                   </button>
                 </>
               )}

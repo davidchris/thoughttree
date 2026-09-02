@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { SettingsDialog } from '../SettingsDialog';
-import { addRecentProject, exportMarkdown, newProjectDialog, openProjectDialog } from '../../lib/desktop';
+import { addRecentProject, exportMarkdown, newProjectDialog, openProjectDialog, pickKagiExport } from '../../lib/desktop';
 import { getBackendTransport } from '../../lib/transport';
 import { logger } from '../../lib/logger';
 import './Toolbar.css';
 
 export function Toolbar() {
   const projectPath = useGraphStore((state) => state.projectPath);
+  const projectTitle = useGraphStore((state) => state.projectTitle);
   const isDirty = useGraphStore((state) => state.isDirty);
   const lastSavedAt = useGraphStore((state) => state.lastSavedAt);
   const nodes = useGraphStore((state) => state.nodes);
@@ -17,6 +18,7 @@ export function Toolbar() {
   const saveProject = useGraphStore((state) => state.saveProject);
   const loadProject = useGraphStore((state) => state.loadProject);
   const newProject = useGraphStore((state) => state.newProject);
+  const importGraph = useGraphStore((state) => state.importGraph);
   const exportSubgraph = useGraphStore((state) => state.exportSubgraph);
   const nodeData = useGraphStore((state) => state.nodeData);
   const createUserNodeDownstream = useGraphStore((state) => state.createUserNodeDownstream);
@@ -47,7 +49,21 @@ export function Toolbar() {
   // Get project name from path
   const projectName = projectPath
     ? projectPath.split('/').pop()?.replace('.thoughttree', '') || 'Untitled'
-    : 'Untitled';
+    : projectTitle || 'Untitled';
+
+  const handleImport = async () => {
+    if (!nativeDialogsEnabled) return;
+    try {
+      const path = await pickKagiExport();
+      if (path) {
+        const imported = await getBackendTransport().importKagiExport(path);
+        importGraph(imported.title, imported.graph);
+      }
+    } catch (error) {
+      logger.error('Failed to import Kagi export:', error);
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   const handleNewProject = async () => {
     if (!nativeDialogsEnabled) return;
@@ -178,6 +194,9 @@ export function Toolbar() {
         </button>
         <button onClick={handleOpenProject} title="Open Project" disabled={!nativeDialogsEnabled}>
           Open
+        </button>
+        <button onClick={handleImport} title="Import Kagi export" disabled={!nativeDialogsEnabled}>
+          Import
         </button>
         <button
           onClick={handleSaveProject}
