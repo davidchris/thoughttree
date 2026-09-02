@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { GraphMutations } from './mutations';
 import { GraphSerialize } from './serialize';
-import type { GraphNode } from './types';
+import type { GraphJSON, GraphNode } from './types';
+import projectV4 from '../../../test/fixtures/project-v4.json';
 
 function userNode(id: string, content = '', ts = 1): GraphNode {
   return { id, role: 'user', content, timestamp: ts, contentUpdatedAt: ts };
@@ -31,6 +32,32 @@ describe('GraphSerialize.toJSON / fromJSON', () => {
     expect(restored.edges).toEqual([{ id: 'a->b', source: 'a', target: 'b' }]);
     expect(restored.layout.get('a')).toEqual({ x: 10, y: 20 });
     expect(restored.layout.get('b')).toEqual({ x: 30, y: 40 });
+  });
+
+  it('preserves ordered Turn provenance from the sanitized v4 fixture', () => {
+    const graphJSON = projectV4.graph as GraphJSON;
+
+    const restored = GraphSerialize.fromJSON(graphJSON);
+    const serialized = GraphSerialize.toJSON(restored);
+
+    expect(serialized).toEqual(graphJSON);
+    expect(serialized.nodes[1]).toMatchObject({
+      content: 'The exact assistant answer stays unchanged.',
+      provenance: {
+        completeness: 'partial',
+        references: [
+          { type: 'url', relations: ['consulted', 'cited'] },
+          { type: 'file', scope: 'vault', relations: ['read', 'cited'] },
+          { type: 'file', scope: 'external', relations: ['read'] },
+        ],
+        activity: [
+          { type: 'commentary', content: 'I’m checking the cited evidence first.' },
+          { type: 'tool', kind: 'read', titleTruncated: true },
+          { type: 'commentary', content: 'The source and Vault file agree.' },
+          { type: 'unknown', providerType: 'provider_status' },
+        ],
+      },
+    });
   });
 });
 

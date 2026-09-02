@@ -97,6 +97,126 @@ body.resizing {
   line-height: 1.6;
 }
 
+.side-panel-provenance {
+  margin-top: 20px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  color: #cdd6f4;
+}
+
+.side-panel-provenance > summary {
+  padding: 10px 12px;
+  color: #a6adc8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.side-panel-provenance[open] > summary {
+  border-bottom: 1px solid #333;
+}
+
+.side-panel-provenance-content {
+  padding: 12px;
+}
+
+.side-panel-provenance-content h3 {
+  margin: 16px 0 8px;
+  color: #bac2de;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.side-panel-provenance-content h3:first-of-type {
+  margin-top: 0;
+}
+
+.side-panel-provenance-warning {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #fbbf24;
+  font-size: 12px;
+}
+
+.side-panel-provenance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 24px;
+}
+
+.side-panel-provenance-reference,
+.side-panel-provenance-activity-detail,
+.side-panel-provenance-unknown {
+  overflow-wrap: anywhere;
+}
+
+.side-panel-provenance-reference {
+  padding-left: 2px;
+  font-size: 13px;
+}
+
+.side-panel-provenance-reference a {
+  color: #60a5fa;
+}
+
+.side-panel-provenance-location,
+.side-panel-provenance-relations,
+.side-panel-provenance-truncated {
+  display: block;
+  margin-top: 3px;
+  color: #7f849c;
+  font-size: 11px;
+}
+
+.side-panel-provenance-activity {
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.side-panel-provenance-activity > summary {
+  padding: 7px 9px;
+  color: #bac2de;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.side-panel-provenance-activity-detail,
+.side-panel-provenance-unknown {
+  margin: 0;
+  padding: 8px 10px;
+  color: #a6adc8;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.side-panel-provenance-activity[open] > .side-panel-provenance-activity-detail {
+  border-top: 1px solid #2a2a3a;
+}
+
+.side-panel-provenance-unknown {
+  border-left: 2px solid #6b7280;
+  background: rgba(107, 114, 128, 0.08);
+}
+
+.side-panel-provenance-truncated {
+  color: #fbbf24;
+}
+
+.side-panel-provenance-empty {
+  margin: 0;
+  color: #7f849c;
+  font-size: 12px;
+  font-style: italic;
+}
+
 .side-panel-empty {
   color: #666;
   font-style: italic;

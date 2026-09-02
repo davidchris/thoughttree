@@ -33,6 +33,9 @@ import {
   type Graph,
   type GraphJSON,
   type NodeId,
+  type TurnActivity,
+  type TurnProvenance,
+  type TurnReference,
 } from '@thoughttree/graph-model';
 import { graphToFlowEdges, graphToFlowNodes, type FlowNode } from '../lib/graph/projection';
 
@@ -53,23 +56,27 @@ function scheduleStreamFlush() {
   }, STREAM_FLUSH_INTERVAL_MS);
 }
 
-interface ProjectFileV3 {
-  version: 3;
+interface CurrentProjectFile {
+  version: typeof GRAPH_JSON_VERSION;
   graph: GraphJSON;
   // On-disk shape: legacy writers stored explicit nulls for unset entries
   projectModelPreferences?: StoredProviderRecord | null;
   projectEffortPreferences?: StoredProviderRecord<ReasoningEffort> | null;
 }
 
+interface ProjectFileV3 extends Omit<CurrentProjectFile, 'version'> {
+  version: 3;
+}
+
 interface ProjectFileLegacyV2 {
-  version: number;
+  version: 1 | 2;
   nodes: Array<{ id: string; position: { x: number; y: number }; [key: string]: unknown }>;
   edges: Array<{ id: string; source: string; target: string; [key: string]: unknown }>;
   nodeData: Record<string, MessageNodeData>;
   projectModelPreferences?: StoredProviderRecord | null;
 }
 
-type ProjectFile = ProjectFileV3 | ProjectFileLegacyV2;
+type ProjectFile = CurrentProjectFile | ProjectFileV3 | ProjectFileLegacyV2;
 
 interface GraphState {
   // Source of truth
@@ -158,6 +165,60 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: numbe
   }) as T;
 }
 
+function formatReference(reference: TurnReference, index: number): string {
+  const relations = reference.relations.join(', ');
+
+  if (reference.type === 'url') {
+    const title = reference.title ? `${reference.title} — ` : '';
+    return `${index}. **URL:** ${title}<${reference.url}> — Relations: ${relations}`;
+  }
+
+  if (reference.scope === 'vault') {
+    return `${index}. **Vault file:** \`${reference.path}\` — Relations: ${relations}`;
+  }
+
+  return `${index}. **External file:** \`${reference.displayName}\` — Relations: ${relations}`;
+}
+
+function formatActivity(activity: TurnActivity, index: number): string {
+  switch (activity.type) {
+    case 'commentary':
+      return `${index}. **Commentary:** ${activity.content}`;
+    case 'tool':
+      return `${index}. **Tool (${activity.kind}, ${activity.status}):** ${activity.title}`;
+    case 'unknown':
+      return `${index}. **Unknown (${activity.providerType}):** ${activity.label}`;
+  }
+}
+
+function formatProvenance(provenance: TurnProvenance): string {
+  const lines = [
+    '### Provenance',
+    '',
+    `**Completeness:** ${provenance.completeness[0].toUpperCase()}${provenance.completeness.slice(1)}`,
+  ];
+
+  if (provenance.references.length > 0) {
+    lines.push(
+      '',
+      '#### References',
+      '',
+      ...provenance.references.map((reference, index) => formatReference(reference, index + 1)),
+    );
+  }
+
+  if (provenance.activity.length > 0) {
+    lines.push(
+      '',
+      '#### Turn Activity',
+      '',
+      ...provenance.activity.map((activity, index) => formatActivity(activity, index + 1)),
+    );
+  }
+
+  return lines.join('\n');
+}
+
 interface ProjectionResult {
   nodes: FlowNode[];
   edges: Edge[];
@@ -206,7 +267,7 @@ function serializeProjectFile(
   projectModelPreferences: ModelPreferences | null,
   projectEffortPreferences: EffortPreferences | null
 ): string {
-  const projectFile: ProjectFileV3 = {
+  const projectFile: CurrentProjectFile = {
     version: GRAPH_JSON_VERSION,
     graph: GraphSerialize.toJSON(graph),
     projectModelPreferences,
@@ -617,7 +678,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       let projectModelPreferences: ModelPreferences | null = null;
       let projectEffortPreferences: EffortPreferences | null = null;
 
-      if (parsed.version === GRAPH_JSON_VERSION && 'graph' in parsed) {
+      if ((parsed.version === GRAPH_JSON_VERSION || parsed.version === 3) && 'graph' in parsed) {
         graph = GraphSerialize.fromJSON(parsed.graph);
         projectModelPreferences = parsed.projectModelPreferences
           ? withoutNullEntries(parsed.projectModelPreferences)
@@ -625,7 +686,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         projectEffortPreferences = parsed.projectEffortPreferences
           ? withoutNullEntries(parsed.projectEffortPreferences)
           : null;
-      } else {
+      } else if (parsed.version === 1 || parsed.version === 2) {
         const legacy = parsed as ProjectFileLegacyV2;
         const migratedNodeData = migrateLegacyV2NodeData(legacy.nodeData);
         graph = GraphSerialize.fromLegacyV2({
@@ -638,6 +699,8 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
           ? withoutNullEntries(legacy.projectModelPreferences)
           : null;
         projectEffortPreferences = null;
+      } else {
+        throw new Error(`Unsupported Project file version: ${String(parsed.version)}`);
       }
 
       set({
@@ -708,7 +771,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         const node = graph.nodes.get(id);
         if (!node) return '';
         const header = node.role === 'user' ? '## User' : '## Assistant';
-        return `${header}\n\n${node.content}`;
+        const provenance =
+          node.role === 'assistant' && node.provenance
+            ? `\n\n${formatProvenance(node.provenance)}`
+            : '';
+        return `${header}\n\n${node.content}${provenance}`;
       })
       .filter(Boolean)
       .join('\n\n---\n\n');

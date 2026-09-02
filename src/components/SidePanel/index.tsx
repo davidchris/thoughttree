@@ -9,6 +9,7 @@ import { logger } from '../../lib/logger';
 import { usePanelResize } from './usePanelResize';
 import { EditArea } from './EditArea';
 import { GenerationControls } from './GenerationControls';
+import { Provenance } from './Provenance';
 import './styles.css';
 
 export function SidePanel() {
@@ -124,6 +125,7 @@ export function SidePanel() {
   }
 
   const isAgent = data.role === 'assistant';
+  const provenance = isAgent ? (data as AgentNodeData).provenance : undefined;
   const formattedTime = new Date(data.timestamp).toLocaleString();
 
   return (
@@ -199,16 +201,21 @@ export function SidePanel() {
             images={images}
             onGenerate={handleGenerate}
           />
-        ) : data?.content ? (
-          isStreaming ? (
-            <pre className="side-panel-plain-text">{data.content}</pre>
-          ) : (
-            <MarkdownContent content={data.content} />
-          )
-        ) : isStreaming ? (
-          <span className="side-panel-empty">Waiting for response...</span>
         ) : (
-          <span className="side-panel-empty">No content</span>
+          <>
+            {data.content ? (
+              isStreaming ? (
+                <pre className="side-panel-plain-text">{data.content}</pre>
+              ) : (
+                <MarkdownContent content={data.content} />
+              )
+            ) : isStreaming ? (
+              <span className="side-panel-empty">Waiting for response...</span>
+            ) : (
+              <span className="side-panel-empty">No content</span>
+            )}
+            {provenance && <Provenance provenance={provenance} />}
+          </>
         )}
       </div>
     </div>
