@@ -23,6 +23,8 @@ import type {
   SummaryResult,
   Unsubscribe,
 } from './types';
+import type { GraphJSON } from '../../../packages/graph-model/src/types';
+import { GraphSerialize } from '../../../packages/graph-model/src/serialize';
 import { StaleRevisionError } from './types';
 
 interface BackendMessageImage {
@@ -172,6 +174,13 @@ export class TauriTransport implements BackendTransport {
 
   async listProjects(): Promise<ProjectEntry[]> {
     return invoke<ProjectEntry[]>('list_projects');
+  }
+
+  async importKagiExport(path: string): Promise<import('./types').ImportedGraph> {
+    const imported = await invoke<{ title: string; graph: GraphJSON }>('import_kagi_export', {
+      path,
+    });
+    return { title: imported.title, graph: GraphSerialize.fromJSON(imported.graph) };
   }
 
   async sendPrompt(req: PromptRequest): Promise<string> {

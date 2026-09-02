@@ -28,6 +28,7 @@ function createMockTransport(): BackendTransport {
     loadProject: vi.fn(),
     saveProject: vi.fn(),
     listProjects: vi.fn(),
+    importKagiExport: vi.fn(),
     sendPrompt: vi.fn(() => Promise.resolve("")),
     respondToPermission: vi.fn(),
     checkAcpAvailable: vi.fn(),
@@ -300,6 +301,89 @@ describe("SidePanel", () => {
       expect(externalFile.compareDocumentPosition(activityHeading)).toBe(
         Node.DOCUMENT_POSITION_FOLLOWING
       );
+    });
+
+    it("resolves Kagi citation markers to ordered source references without changing the answer", async () => {
+      setupMockStore({
+        previewNodeId: "kagi-answer",
+        nodeData: new Map([
+          [
+            "kagi-answer",
+            {
+              id: "kagi-answer",
+              role: "assistant" as const,
+              content: "The fetched page supports this claim【2】 and the search result supports that claim【1】.",
+              timestamp: 1,
+              provenance: {
+                completeness: "complete" as const,
+                references: [
+                  {
+                    type: "url" as const,
+                    url: "https://example.com/search",
+                    title: "Search source",
+                    index: 1,
+                    is_search_result: true,
+                    relations: ["consulted" as const],
+                  },
+                  {
+                    type: "url" as const,
+                    url: "https://example.com/page",
+                    title: "Fetched source",
+                    index: 2,
+                    is_search_result: false,
+                    relations: ["consulted" as const],
+                  },
+                ],
+                activity: [],
+              },
+            },
+          ],
+        ]),
+      });
+      render(<SidePanel />);
+
+      expect(
+        screen.getByText(
+          "The fetched page supports this claim【2】 and the search result supports that claim【1】."
+        )
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByText(/^Provenance/));
+
+      const references = screen.getAllByRole("listitem").slice(0, 2);
+      expect(references[0]).toHaveTextContent("Search source");
+      expect(references[0]).toHaveTextContent("Cited");
+      expect(references[0]).toHaveTextContent("Search result");
+      expect(references[1]).toHaveTextContent("Fetched source");
+      expect(references[1]).toHaveTextContent("Cited");
+      expect(references[1]).toHaveTextContent("Fetched page");
+    });
+
+    it("reports citation markers with no matching reference", async () => {
+      setupMockStore({
+        previewNodeId: "dangling-answer",
+        nodeData: new Map([
+          [
+            "dangling-answer",
+            {
+              id: "dangling-answer",
+              role: "assistant" as const,
+              content: "This claim has no source【9】.",
+              timestamp: 1,
+              provenance: {
+                completeness: "complete" as const,
+                references: [],
+                activity: [],
+              },
+            },
+          ],
+        ]),
+      });
+      render(<SidePanel />);
+
+      expect(screen.getByText("This claim has no source【9】.")).toBeInTheDocument();
+      await userEvent.click(screen.getByText(/^Provenance/));
+
+      expect(screen.getByText("Citation marker 【9】 has no matching reference.")).toBeInTheDocument();
     });
 
     it("warns about partial evidence and preserves authoritative activity order", async () => {

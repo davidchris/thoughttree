@@ -4,10 +4,11 @@ use backend::commands::{
     add_recent_project, check_acp_available, export_markdown, generate_summary,
     get_available_models, get_available_providers, get_default_provider, get_effort_preferences,
     get_model_preferences, get_notes_directory, get_provider_paths, get_recent_projects,
-    list_projects, load_project, new_project_dialog, open_project_dialog, pick_notes_directory,
-    pick_provider_executable, remove_recent_project, respond_to_permission, save_project,
-    search_files, send_prompt, set_default_provider, set_effort_preference, set_model_preference,
-    set_notes_directory, set_provider_path, validate_provider_path,
+    import_kagi_export, list_projects, load_project, new_project_dialog, open_project_dialog,
+    pick_kagi_export, pick_notes_directory, pick_provider_executable, remove_recent_project,
+    respond_to_permission, save_project, search_files, send_prompt, set_default_provider,
+    set_effort_preference, set_model_preference, set_notes_directory, set_provider_path,
+    validate_provider_path,
 };
 use backend::state::AppState;
 
@@ -55,6 +56,8 @@ pub fn run() {
             remove_recent_project,
             search_files,
             generate_summary,
+            import_kagi_export,
+            pick_kagi_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

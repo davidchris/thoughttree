@@ -89,6 +89,7 @@ interface GraphState {
 
   // Project state
   projectPath: string | null;
+  projectTitle: string | null;
   projectRevision: string | null;
   lastSavedAt: number | null;
   isDirty: boolean;
@@ -149,6 +150,7 @@ interface GraphState {
   saveProject: (options?: { force?: boolean }) => Promise<void>;
   loadProject: (path: string) => Promise<void>;
   newProject: () => void;
+  importGraph: (title: string, graph: Graph) => void;
   exportSubgraph: (nodeIds: string[]) => string;
 
   // Layout actions
@@ -282,6 +284,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   edges: [],
   nodeData: new Map(),
   projectPath: null,
+  projectTitle: null,
   projectRevision: null,
   lastSavedAt: null,
   isDirty: false,
@@ -637,6 +640,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   setProjectPath: (path) =>
     set((state) => ({
       projectPath: path,
+      projectTitle: path ? null : state.projectTitle,
       projectRevision: state.projectPath === path ? state.projectRevision : null,
     })),
 
@@ -709,6 +713,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         projectModelPreferences,
         projectEffortPreferences,
         projectPath: path,
+        projectTitle: null,
         projectRevision: project.revision,
         lastSavedAt: Date.now(),
         isDirty: false,
@@ -734,9 +739,25 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       projectModelPreferences: null,
       projectEffortPreferences: null,
       projectPath: null,
+      projectTitle: null,
       projectRevision: null,
       lastSavedAt: null,
       isDirty: false,
+      selectedNodeId: null,
+      streamingNodeIds: new Set<string>(),
+    });
+    useUIStore.getState().reset();
+  },
+
+  importGraph: (title, graph) => {
+    set({
+      graph,
+      ...projectGraph(graph, [], null),
+      projectPath: null,
+      projectTitle: title,
+      projectRevision: null,
+      lastSavedAt: null,
+      isDirty: true,
       selectedNodeId: null,
       streamingNodeIds: new Set<string>(),
     });

@@ -29,6 +29,10 @@ export interface UrlTurnReference extends TurnReferenceBase {
   type: 'url';
   url: string;
   title?: string;
+  domain?: string;
+  index?: number;
+  percentage?: number;
+  is_search_result?: boolean;
 }
 
 export interface VaultFileTurnReference extends TurnReferenceBase {

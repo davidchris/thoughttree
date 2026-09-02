@@ -8,6 +8,7 @@ import type {
   ProviderStatus,
   ReasoningEffort,
 } from '../../types';
+import type { Graph } from '../../../packages/graph-model/src/types';
 
 export interface ProjectDoc {
   data: string;
@@ -17,6 +18,11 @@ export interface ProjectDoc {
 export interface ProjectEntry {
   relativePath: string;
   modifiedEpochMs: number;
+}
+
+export interface ImportedGraph {
+  title: string;
+  graph: Graph;
 }
 
 export class StaleRevisionError extends Error {
@@ -61,6 +67,7 @@ export interface BackendTransport {
   loadProject(path: string): Promise<ProjectDoc>;
   saveProject(path: string, data: string, baseRevision: string | null): Promise<string>;
   listProjects(): Promise<ProjectEntry[]>;
+  importKagiExport(path: string): Promise<ImportedGraph>;
 
   sendPrompt(req: PromptRequest): Promise<string>;
   respondToPermission(requestId: string, optionId: string): Promise<void>;

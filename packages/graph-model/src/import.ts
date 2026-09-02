@@ -3,6 +3,7 @@ import type { Graph, GraphEdge, GraphNode, NodeId, Position, TurnProvenance } fr
 export interface ImportedConversationTurn {
   userMessage: string;
   assistantAnswer: string;
+  incomplete?: boolean;
   model?: string;
   userTimestamp?: number;
   assistantTimestamp?: number;

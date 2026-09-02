@@ -3,6 +3,7 @@ export { GraphMutations } from './mutations';
 export { GraphSerialize, GRAPH_JSON_VERSION } from './serialize';
 export { conversationToGraph } from './import';
 export type { ImportedConversation, ImportedConversationTurn, TurnRange } from './import';
+export { KAGI_EXPORT_MAX_BYTES, KagiExportError, parseKagiExport } from './kagi';
 export type {
   AssistantCommentary,
   ExternalFileTurnReference,

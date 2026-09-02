@@ -7,6 +7,7 @@ import type {
 
 interface ProvenanceProps {
   provenance: TurnProvenance;
+  content?: string;
 }
 
 function countLabel(count: number, singular: string, plural = `${singular}s`) {
@@ -17,12 +18,19 @@ function isClickableUrl(url: string) {
   return /^https?:\/\//i.test(url);
 }
 
-function Reference({ reference }: { reference: TurnReference }) {
+function Reference({ reference, cited }: { reference: TurnReference; cited: boolean }) {
   const relations = reference.relations.join(' · ');
 
   if (reference.type === 'url') {
+    const sourceKind = reference.is_search_result ? 'Search result' : 'Fetched page';
+
     return (
       <li className="side-panel-provenance-reference">
+        {reference.index !== undefined && (
+          <span className="side-panel-provenance-reference-meta">
+            Reference {reference.index} · {cited ? 'Cited' : 'Consulted'} · {sourceKind}
+          </span>
+        )}
         {isClickableUrl(reference.url) ? (
           <a href={reference.url} target="_blank" rel="noopener noreferrer">
             {reference.title || reference.url}
@@ -85,7 +93,31 @@ function Activity({ activity }: { activity: TurnActivity }) {
   }
 }
 
-export function Provenance({ provenance }: ProvenanceProps) {
+export function Provenance({ provenance, content = '' }: ProvenanceProps) {
+  const citedIndexes = new Set(
+    Array.from(content.matchAll(/【(\d+)】/gu), (match) => Number(match[1]))
+  );
+  const references = provenance.references
+    .map((reference, originalIndex) => ({ reference, originalIndex }))
+    .sort((left, right) => {
+      const leftIndex = left.reference.type === 'url' ? left.reference.index : undefined;
+      const rightIndex = right.reference.type === 'url' ? right.reference.index : undefined;
+      if (leftIndex === undefined && rightIndex === undefined) {
+        return left.originalIndex - right.originalIndex;
+      }
+      if (leftIndex === undefined) return 1;
+      if (rightIndex === undefined) return -1;
+      return leftIndex - rightIndex;
+    })
+    .map(({ reference }) => reference);
+  const referenceIndexes = new Set(
+    references.flatMap((reference) =>
+      reference.type === 'url' && reference.index !== undefined ? [reference.index] : []
+    )
+  );
+  const missingCitationIndexes = [...citedIndexes]
+    .filter((index) => !referenceIndexes.has(index))
+    .sort((left, right) => left - right);
   const sourceCount = provenance.references.filter(
     (reference) => reference.type === 'url'
   ).length;
@@ -103,11 +135,22 @@ export function Provenance({ provenance }: ProvenanceProps) {
         )}
         <h3>References</h3>
         <ol className="side-panel-provenance-list">
-          {provenance.references.map((reference, index) => (
-            <Reference key={index} reference={reference} />
+          {references.map((reference, index) => (
+            <Reference
+              key={index}
+              reference={reference}
+              cited={reference.type === 'url' && reference.index !== undefined
+                ? citedIndexes.has(reference.index)
+                : reference.relations.includes('cited')}
+            />
           ))}
         </ol>
-        {provenance.references.length === 0 && (
+        {missingCitationIndexes.length > 0 && (
+          <p className="side-panel-provenance-warning">
+            {missingCitationIndexes.map((index) => `Citation marker 【${index}】 has no matching reference.`).join(' ')}
+          </p>
+        )}
+        {references.length === 0 && (
           <p className="side-panel-provenance-empty">No references recorded.</p>
         )}
         <h3>Turn activity</h3>
