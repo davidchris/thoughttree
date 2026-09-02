@@ -23,6 +23,10 @@ review:
 worktreeRoot:
     policy: sibling
     path: ../thoughttree-bdx-worktrees
+provision:
+    commands:
+        - name: bun install
+          argv: [bun, install, --frozen-lockfile]
 verification:
     commands:
         - name: test
