@@ -1,4 +1,4 @@
-import { isWebUrl } from '@thoughttree/graph-model';
+import { TOOL_TITLE_MAX_LENGTH, isWebUrl } from '@thoughttree/graph-model';
 import type {
   ToolActivity,
   TurnActivity,
@@ -54,8 +54,8 @@ function titleCase(value: string) {
 }
 
 function ToolDetails({ activity }: { activity: ToolActivity }) {
-  const title = activity.title.slice(0, 200);
-  const wasTruncated = activity.titleTruncated || activity.title.length > 200;
+  const title = activity.title.slice(0, TOOL_TITLE_MAX_LENGTH);
+  const wasTruncated = activity.titleTruncated || activity.title.length > TOOL_TITLE_MAX_LENGTH;
 
   return (
     <details className="side-panel-provenance-activity">

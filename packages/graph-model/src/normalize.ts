@@ -1,5 +1,6 @@
 import type {
   AssistantGraphNode,
+  GraphAgentProvider,
   GraphNode,
   ImageAttachment,
   ProvenanceCompleteness,
@@ -18,42 +19,47 @@ import type {
  * nodes never cross the persistence boundary in either direction.
  */
 
-const RELATIONS: ReadonlySet<TurnReferenceRelation> = new Set<TurnReferenceRelation>([
-  'consulted',
-  'cited',
-  'read',
-  'created',
-  'updated',
-  'deleted',
-  'moved',
-  'searched',
-  'fetched',
-]);
+// Allowlists are derived from exhaustive records so adding a union member
+// without updating the allowlist fails to compile instead of silently
+// dropping data on the next save.
+function keysOf<T extends string>(record: Record<T, true>): ReadonlySet<T> {
+  return new Set(Object.keys(record) as T[]);
+}
 
-const COMPLETENESS: ReadonlySet<ProvenanceCompleteness> = new Set<ProvenanceCompleteness>([
-  'complete',
-  'partial',
-  'unknown',
-]);
+const RELATIONS = keysOf<TurnReferenceRelation>({
+  consulted: true,
+  cited: true,
+  read: true,
+  created: true,
+  updated: true,
+  deleted: true,
+  moved: true,
+  searched: true,
+  fetched: true,
+});
 
-const TOOL_KINDS: ReadonlySet<ToolActivityKind> = new Set<ToolActivityKind>([
-  'read',
-  'edit',
-  'delete',
-  'move',
-  'search',
-  'execute',
-  'fetch',
-  'delegate',
-  'other',
-]);
+const COMPLETENESS = keysOf<ProvenanceCompleteness>({ complete: true, partial: true, unknown: true });
 
-const TOOL_STATUSES: ReadonlySet<ToolActivityStatus> = new Set<ToolActivityStatus>([
-  'pending',
-  'completed',
-  'failed',
-  'incomplete',
-]);
+const TOOL_KINDS = keysOf<ToolActivityKind>({
+  read: true,
+  edit: true,
+  delete: true,
+  move: true,
+  search: true,
+  execute: true,
+  fetch: true,
+  delegate: true,
+  other: true,
+});
+
+const TOOL_STATUSES = keysOf<ToolActivityStatus>({
+  pending: true,
+  completed: true,
+  failed: true,
+  incomplete: true,
+});
+
+const PROVIDERS = keysOf<GraphAgentProvider>({ 'claude-code': true, 'gemini-cli': true, codex: true });
 
 /** Tool titles are display summaries, never raw commands; cap them like the UI does. */
 export const TOOL_TITLE_MAX_LENGTH = 200;
@@ -96,7 +102,7 @@ function relations(value: unknown): TurnReferenceRelation[] {
 export function isVaultRelativePath(path: string): boolean {
   if (path.length === 0) return false;
   if (path.startsWith('/') || path.startsWith('\\')) return false;
-  if (/^[a-zA-Z]:[\\/]/.test(path)) return false;
+  // Rejects both URL schemes (file:, vault:) and Windows drive letters (C:).
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)) return false;
   return !path.split(/[\\/]/).some((segment) => segment === '..');
 }
@@ -204,8 +210,6 @@ function images(value: unknown): ImageAttachment[] | undefined {
   return result;
 }
 
-const PROVIDERS = new Set(['claude-code', 'gemini-cli', 'codex']);
-
 export function normalizeGraphNode(value: unknown): GraphNode | undefined {
   if (!isRecord(value)) return undefined;
   const id = str(value.id);
@@ -229,7 +233,7 @@ export function normalizeGraphNode(value: unknown): GraphNode | undefined {
     const node: AssistantGraphNode = { id, role: 'assistant', content, timestamp };
     return withOptional(node, {
       ...shared,
-      provider: provider !== undefined && PROVIDERS.has(provider) ? provider : undefined,
+      provider: provider !== undefined && PROVIDERS.has(provider as GraphAgentProvider) ? provider : undefined,
       model: str(value.model),
       incomplete: value.incomplete === true ? true : undefined,
       provenance: normalizeProvenance(value.provenance),
