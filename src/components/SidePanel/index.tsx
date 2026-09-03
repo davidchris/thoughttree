@@ -214,7 +214,9 @@ export function SidePanel() {
             ) : (
               <span className="side-panel-empty">No content</span>
             )}
-            {provenance && <Provenance provenance={provenance} content={data.content} />}
+            {provenance && (
+              <Provenance key={previewNodeId} provenance={provenance} content={data.content} />
+            )}
           </>
         )}
       </div>

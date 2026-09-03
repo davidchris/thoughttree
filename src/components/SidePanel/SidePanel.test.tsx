@@ -319,9 +319,9 @@ describe("SidePanel", () => {
                 references: [
                   {
                     type: "url" as const,
-                    url: "https://example.com/search",
-                    title: "Search source",
-                    index: 1,
+                    url: "https://example.com/uncited",
+                    title: "Uncited source",
+                    index: 3,
                     is_search_result: true,
                     relations: ["consulted" as const],
                   },
@@ -331,6 +331,14 @@ describe("SidePanel", () => {
                     title: "Fetched source",
                     index: 2,
                     is_search_result: false,
+                    relations: ["consulted" as const],
+                  },
+                  {
+                    type: "url" as const,
+                    url: "https://example.com/search",
+                    title: "Search source",
+                    index: 1,
+                    is_search_result: true,
                     relations: ["consulted" as const],
                   },
                 ],
@@ -349,13 +357,51 @@ describe("SidePanel", () => {
       ).toBeInTheDocument();
       await userEvent.click(screen.getByText(/^Provenance/));
 
-      const references = screen.getAllByRole("listitem").slice(0, 2);
+      const references = screen.getAllByRole("listitem").slice(0, 3);
       expect(references[0]).toHaveTextContent("Search source");
       expect(references[0]).toHaveTextContent("Cited");
       expect(references[0]).toHaveTextContent("Search result");
       expect(references[1]).toHaveTextContent("Fetched source");
       expect(references[1]).toHaveTextContent("Cited");
       expect(references[1]).toHaveTextContent("Fetched page");
+      expect(references[2]).toHaveTextContent("Uncited source");
+      expect(references[2]).toHaveTextContent("Consulted");
+      expect(references[2]).not.toHaveTextContent("Cited");
+    });
+
+    it("collapses provenance disclosures again when a different node is previewed", async () => {
+      const provenanceNode = (id: string, content: string) => ({
+        id,
+        role: "assistant" as const,
+        content,
+        timestamp: 1,
+        provenance: {
+          completeness: "complete" as const,
+          references: [],
+          activity: [
+            { type: "commentary" as const, content: `${id} commentary` },
+          ],
+        },
+      });
+      const nodeData = new Map([
+        ["answer-a", provenanceNode("answer-a", "Answer A")],
+        ["answer-b", provenanceNode("answer-b", "Answer B")],
+      ]);
+      setupMockStore({ previewNodeId: "answer-a", nodeData });
+      const { rerender } = render(<SidePanel />);
+
+      await userEvent.click(screen.getByText(/^Provenance/));
+      await userEvent.click(screen.getByText("Assistant commentary"));
+      const openBefore = screen.getByText(/^Provenance/).closest("details");
+      expect(openBefore).toHaveAttribute("open");
+      expect(screen.getByText("Assistant commentary").closest("details")).toHaveAttribute("open");
+
+      setupMockStore({ previewNodeId: "answer-b", nodeData });
+      rerender(<SidePanel />);
+
+      expect(screen.getByText("Answer B")).toBeInTheDocument();
+      expect(screen.getByText(/^Provenance/).closest("details")).not.toHaveAttribute("open");
+      expect(screen.getByText("Assistant commentary").closest("details")).not.toHaveAttribute("open");
     });
 
     it("reports citation markers with no matching reference", async () => {

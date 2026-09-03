@@ -1,3 +1,4 @@
+import { isWebUrl } from '@thoughttree/graph-model';
 import type {
   ToolActivity,
   TurnActivity,
@@ -14,10 +15,6 @@ function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function isClickableUrl(url: string) {
-  return /^https?:\/\//i.test(url);
-}
-
 function Reference({ reference, cited }: { reference: TurnReference; cited: boolean }) {
   const relations = reference.relations.join(' · ');
 
@@ -31,7 +28,7 @@ function Reference({ reference, cited }: { reference: TurnReference; cited: bool
             Reference {reference.index} · {cited ? 'Cited' : 'Consulted'} · {sourceKind}
           </span>
         )}
-        {isClickableUrl(reference.url) ? (
+        {isWebUrl(reference.url) ? (
           <a href={reference.url} target="_blank" rel="noopener noreferrer">
             {reference.title || reference.url}
           </a>
