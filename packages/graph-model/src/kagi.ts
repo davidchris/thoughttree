@@ -9,15 +9,24 @@ type KagiExportErrorCode =
   | 'unsupported_version'
   | 'no_messages';
 
+interface InputTooLargeDetail {
+  inputBytes: number;
+  limitBytes: number;
+}
+
 export class KagiExportError extends Error {
   readonly code: KagiExportErrorCode;
   readonly foundVersion?: unknown;
   readonly inputBytes?: number;
+  readonly limitBytes?: number;
 
+  constructor(code: 'input_too_large', detail: InputTooLargeDetail);
+  constructor(code: 'unsupported_version', foundVersion: unknown);
+  constructor(code: 'invalid_json' | 'no_messages');
   constructor(code: KagiExportErrorCode, detail?: unknown) {
     const message =
       code === 'input_too_large'
-        ? `Kagi export exceeds the ${KAGI_EXPORT_MAX_BYTES}-byte input limit (${String(detail)} bytes)`
+        ? `Kagi export exceeds the ${(detail as InputTooLargeDetail).limitBytes}-byte input limit (${(detail as InputTooLargeDetail).inputBytes} bytes)`
         : code === 'unsupported_version'
           ? `Unsupported Kagi export version: ${String(detail)}`
           : code === 'no_messages'
@@ -27,7 +36,10 @@ export class KagiExportError extends Error {
     this.name = 'KagiExportError';
     this.code = code;
     if (code === 'unsupported_version') this.foundVersion = detail;
-    if (code === 'input_too_large') this.inputBytes = detail as number;
+    if (code === 'input_too_large') {
+      this.inputBytes = (detail as InputTooLargeDetail).inputBytes;
+      this.limitBytes = (detail as InputTooLargeDetail).limitBytes;
+    }
   }
 }
 
@@ -50,7 +62,8 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-function isWebUrl(value: string): boolean {
+/** True only for parseable http/https URLs. Never dereferences the URL. */
+export function isWebUrl(value: string): boolean {
   try {
     const protocol = new URL(value).protocol;
     return protocol === 'http:' || protocol === 'https:';
@@ -114,26 +127,40 @@ function turnFromUser(user: KagiMessage, assistant?: KagiMessage): ImportedConve
   return turn;
 }
 
-function parseBytes(input: string | Uint8Array): { text: string; bytes: number } {
+function tooLarge(inputBytes: number, limitBytes: number): KagiExportError {
+  return new KagiExportError('input_too_large', { inputBytes, limitBytes });
+}
+
+/**
+ * Enforces the byte cap before materializing untrusted input: strings are
+ * bounded by their code-unit length (UTF-8 is never shorter) before encoding,
+ * and bytes are bounded before decoding. Malformed UTF-8 is rejected rather
+ * than silently replaced.
+ */
+function decodeInput(input: string | Uint8Array, maxBytes: number): string {
   if (typeof input === 'string') {
+    if (input.length > maxBytes) throw tooLarge(input.length, maxBytes);
     const bytes = new TextEncoder().encode(input).byteLength;
-    return { text: input, bytes };
+    if (bytes > maxBytes) throw tooLarge(bytes, maxBytes);
+    return input;
   }
-  return { text: new TextDecoder().decode(input), bytes: input.byteLength };
+  if (input.byteLength > maxBytes) throw tooLarge(input.byteLength, maxBytes);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(input);
+  } catch {
+    throw new KagiExportError('invalid_json');
+  }
 }
 
 export function parseKagiExport(
   input: string | Uint8Array,
   maxBytes = KAGI_EXPORT_MAX_BYTES
 ): ImportedConversation {
-  const parsedInput = parseBytes(input);
-  if (parsedInput.bytes > maxBytes) {
-    throw new KagiExportError('input_too_large', parsedInput.bytes);
-  }
+  const source = decodeInput(input, maxBytes);
 
   let exportData: unknown;
   try {
-    exportData = JSON.parse(parsedInput.text);
+    exportData = JSON.parse(source);
   } catch {
     throw new KagiExportError('invalid_json');
   }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import kagiExportV1 from '../../../test/fixtures/kagi-export-v1.json';
 import kagiExportV99 from '../../../test/fixtures/kagi-export-v99.json';
 import {
@@ -175,5 +175,69 @@ describe('parseKagiExport', () => {
         inputBytes: expect.any(Number),
       });
     }
+  });
+
+  it('reports the effective byte limit when a custom cap rejects input', () => {
+    expect(() => parseKagiExport('{"version":1}', 1)).toThrowError(
+      'Kagi export exceeds the 1-byte input limit (13 bytes)'
+    );
+    try {
+      parseKagiExport('{"version":1}', 1);
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'input_too_large', inputBytes: 13, limitBytes: 1 });
+    }
+  });
+
+  it('rejects oversized strings before encoding them', () => {
+    const encode = vi.spyOn(TextEncoder.prototype, 'encode');
+    try {
+      expect(() => parseKagiExport('x'.repeat(9), 8)).toThrowError(KagiExportError);
+      expect(encode).not.toHaveBeenCalled();
+    } finally {
+      encode.mockRestore();
+    }
+  });
+
+  it('rejects oversized byte input before decoding it', () => {
+    const decode = vi.spyOn(TextDecoder.prototype, 'decode');
+    try {
+      expect(() => parseKagiExport(new Uint8Array(9), 8)).toThrowError(KagiExportError);
+      expect(decode).not.toHaveBeenCalled();
+    } finally {
+      decode.mockRestore();
+    }
+  });
+
+  it('rejects malformed UTF-8 bytes instead of substituting U+FFFD', () => {
+    const valid = new TextEncoder().encode(
+      JSON.stringify({ version: 1, messages: [{ role: 'user', content: 'q' }, { role: 'assistant', content: 'a' }] })
+    );
+    const malformed = new Uint8Array(valid);
+    malformed[malformed.lastIndexOf(0x61)] = 0x80; // replace the "a" answer byte with a stray continuation byte
+
+    expect(() => parseKagiExport(malformed)).toThrowError(new KagiExportError('invalid_json'));
+    expect(parseKagiExport(valid).turns[0].assistantAnswer).toBe('a');
+  });
+
+  it('classifies an uncited fetched page as consulted independent of source kind', () => {
+    const conversation = parseKagiExport(JSON.stringify({
+      version: 1,
+      messages: [
+        { role: 'user', content: 'Question' },
+        {
+          role: 'assistant',
+          content: 'Only the search result is cited【2】.',
+          references: [
+            { url: 'https://example.com/fetched', index: 1, is_search_result: false },
+            { url: 'https://example.com/search', index: 2, is_search_result: true },
+          ],
+        },
+      ],
+    }));
+
+    expect(conversation.turns[0].provenance?.references).toEqual([
+      { type: 'url', url: 'https://example.com/fetched', index: 1, is_search_result: false, relations: ['consulted'] },
+      { type: 'url', url: 'https://example.com/search', index: 2, is_search_result: true, relations: ['cited'] },
+    ]);
   });
 });
