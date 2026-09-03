@@ -50,6 +50,15 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function isWebUrl(value: string): boolean {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function provenance(message: KagiMessage): TurnProvenance {
   const content = text(message.content);
   const citedIndexes = new Set(
@@ -59,7 +68,7 @@ function provenance(message: KagiMessage): TurnProvenance {
 
   if (Array.isArray(message.references)) {
     for (const value of message.references) {
-      if (!isRecord(value) || typeof value.url !== 'string') continue;
+      if (!isRecord(value) || typeof value.url !== 'string' || !isWebUrl(value.url)) continue;
       const reference: UrlTurnReference = {
         type: 'url',
         url: value.url,

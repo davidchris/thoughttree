@@ -93,6 +93,45 @@ describe('parseKagiExport', () => {
     ).toEqual({ completeness: 'complete', references: [], activity: [] });
   });
 
+  it('keeps only valid http and https references', () => {
+    const conversation = parseKagiExport(JSON.stringify({
+      version: 1,
+      conversation: {
+        messages: [
+          { role: 'user', content: 'Find sources.' },
+          {
+            role: 'assistant',
+            content: 'Web source【1】 and unsafe source【2】.',
+            references: [
+              { url: 'https://example.com/safe', title: 'Safe source', index: 1 },
+              { url: 'http://example.com/also-safe', title: 'Also safe', index: 5 },
+              { url: 'file:///Users/alice/private.txt', title: 'Local evidence', index: 2 },
+              { url: 'javascript:alert(1)', title: 'Script', index: 3 },
+              { url: 'not a URL', title: 'Malformed', index: 4 },
+            ],
+          },
+        ],
+      },
+    }));
+
+    expect(conversation.turns[0].provenance?.references).toEqual([
+      {
+        type: 'url',
+        url: 'https://example.com/safe',
+        title: 'Safe source',
+        index: 1,
+        relations: ['cited'],
+      },
+      {
+        type: 'url',
+        url: 'http://example.com/also-safe',
+        title: 'Also safe',
+        index: 5,
+        relations: ['consulted'],
+      },
+    ]);
+  });
+
   it('pairs only adjacent user/assistant messages and marks a trailing user incomplete', () => {
     const conversation = parseKagiExport(JSON.stringify({
       version: 1,
