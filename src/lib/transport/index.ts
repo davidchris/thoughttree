@@ -15,5 +15,5 @@ export function setBackendTransport(transport: BackendTransport): void {
 }
 
 export type * from './types';
-export { StaleRevisionError } from './types';
+export { KagiImportError, StaleRevisionError } from './types';
 export { TauriTransport } from './TauriTransport';

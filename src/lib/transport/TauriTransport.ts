@@ -24,7 +24,8 @@ import type {
   Unsubscribe,
 } from './types';
 import { conversationToGraph, parseKagiExport } from '@thoughttree/graph-model';
-import { StaleRevisionError } from './types';
+import { KagiImportError, StaleRevisionError } from './types';
+import type { KagiImportErrorKind } from './types';
 
 interface BackendMessageImage {
   data: string;
@@ -92,14 +93,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function projectCommandErrorFromUnknown(error: unknown): ProjectCommandErrorPayload | null {
+interface TaggedCommandErrorPayload {
+  kind: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+function taggedCommandErrorFromUnknown(error: unknown): TaggedCommandErrorPayload | null {
   if (isRecord(error) && typeof error.kind === 'string') {
-    return error as unknown as ProjectCommandErrorPayload;
+    return error as TaggedCommandErrorPayload;
   }
   if (isRecord(error) && isRecord(error.error) && typeof error.error.kind === 'string') {
-    return error.error as unknown as ProjectCommandErrorPayload;
+    return error.error as TaggedCommandErrorPayload;
   }
   return null;
+}
+
+function projectCommandErrorFromUnknown(error: unknown): ProjectCommandErrorPayload | null {
+  return taggedCommandErrorFromUnknown(error) as ProjectCommandErrorPayload | null;
+}
+
+const KAGI_IMPORT_ERROR_KINDS: ReadonlySet<string> = new Set<KagiImportErrorKind>([
+  'io',
+  'input_too_large',
+  'invalid_utf8',
+]);
+
+function kagiImportErrorFromUnknown(error: unknown): KagiImportError | null {
+  const payload = taggedCommandErrorFromUnknown(error);
+  if (!payload || !KAGI_IMPORT_ERROR_KINDS.has(payload.kind)) return null;
+  return new KagiImportError(
+    payload.kind as KagiImportErrorKind,
+    typeof payload.message === 'string' ? payload.message : 'Unable to import Kagi export'
+  );
 }
 
 export class TauriTransport implements BackendTransport {
@@ -176,7 +202,12 @@ export class TauriTransport implements BackendTransport {
   }
 
   async importKagiExport(path: string): Promise<import('./types').ImportedGraph> {
-    const text = await invoke<string>('import_kagi_export', { path });
+    let text: string;
+    try {
+      text = await invoke<string>('import_kagi_export', { path });
+    } catch (error) {
+      throw kagiImportErrorFromUnknown(error) ?? error;
+    }
     const conversation = parseKagiExport(text);
     return { title: conversation.importKey, graph: conversationToGraph(conversation) };
   }

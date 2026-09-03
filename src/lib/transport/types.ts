@@ -32,6 +32,19 @@ export class StaleRevisionError extends Error {
   }
 }
 
+export type KagiImportErrorKind = 'io' | 'input_too_large' | 'invalid_utf8';
+
+/** Typed failure from the backend Kagi import file seam (before parsing). */
+export class KagiImportError extends Error {
+  constructor(
+    public readonly kind: KagiImportErrorKind,
+    message: string
+  ) {
+    super(message);
+    this.name = 'KagiImportError';
+  }
+}
+
 export type Unsubscribe = () => void;
 
 export interface PromptMessage {
