@@ -1,3 +1,4 @@
+import { normalizeGraphNode } from './normalize';
 import type { Graph, GraphEdge, GraphJSON, GraphNode, NodeId, Position } from './types';
 
 export const GRAPH_JSON_VERSION = 4;
@@ -22,11 +23,25 @@ interface LegacyV2ProjectFile {
   nodeData: Record<NodeId, GraphNode>;
 }
 
+function normalizedNodes(nodes: Iterable<unknown>): GraphNode[] {
+  const result: GraphNode[] = [];
+  for (const node of nodes) {
+    const normalized = normalizeGraphNode(node);
+    if (normalized) result.push(normalized);
+  }
+  return result;
+}
+
+/**
+ * Nodes are rebuilt from an explicit allowlist on both save and load so raw
+ * tool data, unknown payloads, absolute paths, or user-node provenance never
+ * reach a Project file, whatever a provider or an untrusted file supplied.
+ */
 export const GraphSerialize = {
   toJSON(g: Graph): GraphJSON {
     return {
       version: GRAPH_JSON_VERSION,
-      nodes: Array.from(g.nodes.values()),
+      nodes: normalizedNodes(g.nodes.values()),
       edges: g.edges.slice(),
       layout: Array.from(g.layout.entries()).map(([id, position]) => ({ id, position })),
     };
@@ -34,7 +49,7 @@ export const GraphSerialize = {
 
   fromJSON(json: GraphJSON): Graph {
     return {
-      nodes: new Map(json.nodes.map((n) => [n.id, n])),
+      nodes: new Map(normalizedNodes(json.nodes).map((n) => [n.id, n])),
       edges: json.edges.slice(),
       layout: new Map(json.layout.map((entry) => [entry.id, entry.position])),
     };
@@ -45,7 +60,7 @@ export const GraphSerialize = {
     const layout = new Map<NodeId, Position>();
 
     for (const flow of legacy.nodes) {
-      const data = legacy.nodeData[flow.id];
+      const data = normalizeGraphNode(legacy.nodeData[flow.id]);
       if (!data) continue;
       nodes.set(flow.id, data);
       layout.set(flow.id, flow.position);
