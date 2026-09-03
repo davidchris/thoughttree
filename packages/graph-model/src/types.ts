@@ -117,6 +117,8 @@ export interface AssistantGraphNode {
   summaryTimestamp?: number;
   provider?: GraphAgentProvider;
   model?: string;
+  /** True when the Turn ended without an assistant answer (e.g. an unanswered trailing user message). */
+  incomplete?: boolean;
   provenance?: TurnProvenance;
 }
 
