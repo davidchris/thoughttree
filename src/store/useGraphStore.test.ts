@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
 import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '@thoughttree/graph-model';
+import type { Graph } from '@thoughttree/graph-model';
 import type { BackendTransport } from '../lib/transport';
 import { setBackendTransport, StaleRevisionError } from '../lib/transport';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
@@ -208,6 +209,63 @@ describe('useGraphStore', () => {
     expect(exported).not.toMatch(/raw(Input|Output|Payload)|commandText|\/Users\//);
   });
 
+  it('autolinks only http(s) provenance URLs in Markdown export', async () => {
+    const project = JSON.parse(JSON.stringify(projectV4));
+    project.graph.nodes[1].provenance.references = [
+      { type: 'url', url: 'https://example.com/ok', title: 'Web', relations: ['cited'] },
+      { type: 'url', url: 'file:///Users/alice/private.txt', title: 'Local', relations: ['consulted'] },
+      { type: 'url', url: 'javascript:alert(1)', relations: ['consulted'] },
+      { type: 'url', url: 'ftp://example.com/`tricky`', relations: ['consulted'] },
+      { type: 'url', url: 'https://example.com/a><file:///Users/alice/private.txt', relations: ['fetched'] },
+    ];
+    project.graph.nodes[1].provenance.activity = [];
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify(project),
+      revision: 'rev-v4',
+    });
+
+    await useGraphStore.getState().loadProject('/tmp/project.thoughttree');
+
+    const exported = useGraphStore.getState().exportSubgraph(['answer']);
+
+    // The file: reference is dropped on load; the remaining entries renumber.
+    expect(exported).toContain('1. **URL:** Web — <https://example.com/ok> — Relations: cited');
+    expect(exported).toContain('2. **URL:** ` javascript:alert(1) ` — Relations: consulted');
+    expect(exported).toContain('3. **URL:** `` ftp://example.com/`tricky` `` — Relations: consulted');
+    expect(exported).toContain(
+      '4. **URL:** <https://example.com/a%3E%3Cfile:///Users/alice/private.txt> — Relations: fetched',
+    );
+    expect(exported).not.toContain('Local');
+    expect(exported).not.toMatch(/<file:|<javascript:|<ftp:/);
+    expect(exported.match(/<https:/g)).toHaveLength(2);
+  });
+
+  it('redacts file: URLs held in memory without going through load', () => {
+    const graph: Graph = {
+      nodes: new Map([
+        ['answer', {
+          id: 'answer',
+          role: 'assistant',
+          content: 'Answer',
+          timestamp: 1,
+          provenance: {
+            completeness: 'complete',
+            references: [{ type: 'url', url: 'file:///Users/alice/private.txt', title: 'Local', relations: ['consulted'] }],
+            activity: [],
+          },
+        }],
+      ]),
+      edges: [],
+      layout: new Map([['answer', { x: 0, y: 0 }]]),
+    };
+    useGraphStore.getState().importGraph('In memory', graph);
+
+    const exported = useGraphStore.getState().exportSubgraph(['answer']);
+
+    expect(exported).toContain('1. **URL:** Local — _(file URL redacted)_ — Relations: consulted');
+    expect(exported).not.toMatch(/\/Users\//);
+  });
+
   it('retains the existing Markdown shape when no assistant provenance exists', () => {
     const state = useGraphStore.getState();
     const userId = state.createUserNode();
@@ -229,6 +287,33 @@ describe('useGraphStore', () => {
         'Answer without provenance',
       ].join('\n'),
     );
+  });
+
+  it('importGraph resets project model and effort preferences from the previous project', async () => {
+    vi.mocked(transport.loadProject).mockResolvedValue({
+      data: JSON.stringify(projectV4),
+      revision: 'rev-v4',
+    });
+    vi.mocked(transport.saveProject).mockResolvedValue('rev-saved');
+    await useGraphStore.getState().loadProject('/tmp/project.thoughttree');
+    expect(useGraphStore.getState().projectModelPreferences).toEqual({ codex: 'gpt-5.5' });
+    expect(useGraphStore.getState().projectEffortPreferences).toEqual({ codex: 'high' });
+
+    useGraphStore.getState().importGraph('Imported', GraphMutations.empty());
+
+    expect(useGraphStore.getState()).toMatchObject({
+      projectTitle: 'Imported',
+      projectPath: null,
+      projectModelPreferences: null,
+      projectEffortPreferences: null,
+    });
+
+    useGraphStore.getState().setProjectPath('/tmp/imported.thoughttree');
+    await useGraphStore.getState().saveProject();
+
+    const saved = JSON.parse(vi.mocked(transport.saveProject).mock.calls[0][1]);
+    expect(saved.projectModelPreferences).toBeNull();
+    expect(saved.projectEffortPreferences).toBeNull();
   });
 
   it('round-trips project reasoning effort preferences in V4 files', async () => {

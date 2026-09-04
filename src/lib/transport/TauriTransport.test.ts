@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import kagiExport from '../../../test/fixtures/kagi-export-v1.json';
 import { TauriTransport } from './TauriTransport';
+import { KagiImportError } from './types';
 
 describe('TauriTransport', () => {
   beforeEach(() => {
@@ -41,5 +42,31 @@ describe('TauriTransport', () => {
       },
     });
     expect(invoke).toHaveBeenCalledWith('import_kagi_export', { path: '/tmp/export.json' });
+  });
+
+  it('maps typed backend Kagi import failures to KagiImportError', async () => {
+    vi.mocked(invoke).mockRejectedValue({
+      kind: 'input_too_large',
+      message: 'Kagi export exceeds the 16777216-byte input limit (16777217 bytes)',
+      input_bytes: 16777217,
+      limit_bytes: 16777216,
+    });
+
+    const transport = new TauriTransport();
+    const failure = transport.importKagiExport('/tmp/huge.json');
+
+    await expect(failure).rejects.toBeInstanceOf(KagiImportError);
+    await expect(failure).rejects.toMatchObject({
+      kind: 'input_too_large',
+      message: 'Kagi export exceeds the 16777216-byte input limit (16777217 bytes)',
+    });
+  });
+
+  it('rethrows untyped backend failures unchanged', async () => {
+    vi.mocked(invoke).mockRejectedValue('boom');
+
+    const transport = new TauriTransport();
+
+    await expect(transport.importKagiExport('/tmp/x.json')).rejects.toBe('boom');
   });
 });

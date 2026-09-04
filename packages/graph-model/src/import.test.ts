@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { conversationToGraph } from './index';
+import { conversationToGraph, parseKagiExport } from './index';
 import type { ImportedConversation } from './index';
 
 describe('conversationToGraph', () => {
@@ -170,6 +170,35 @@ describe('conversationToGraph', () => {
     expect(assistant).toMatchObject({
       role: 'assistant',
       provenance: conversation.turns[0].provenance,
+    });
+  });
+
+  it('marks the assistant node of an unanswered trailing Turn as incomplete', () => {
+    const conversation = parseKagiExport(JSON.stringify({
+      version: 1,
+      conversation: { title: 'Trailing' },
+      messages: [
+        { role: 'user', content: 'answered' },
+        { role: 'assistant', content: '' },
+        { role: 'user', content: 'unanswered' },
+      ],
+    }));
+
+    const graph = conversationToGraph(conversation);
+
+    expect(graph.nodes.get('import:Trailing:turn:0:assistant')).toEqual({
+      id: 'import:Trailing:turn:0:assistant',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      provenance: { completeness: 'complete', references: [], activity: [] },
+    });
+    expect(graph.nodes.get('import:Trailing:turn:1:assistant')).toEqual({
+      id: 'import:Trailing:turn:1:assistant',
+      role: 'assistant',
+      content: '',
+      timestamp: 3,
+      incomplete: true,
     });
   });
 });

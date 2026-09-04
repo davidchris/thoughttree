@@ -1,3 +1,4 @@
+import { TOOL_TITLE_MAX_LENGTH, isWebUrl } from '@thoughttree/graph-model';
 import type {
   ToolActivity,
   TurnActivity,
@@ -14,10 +15,6 @@ function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function isClickableUrl(url: string) {
-  return /^https?:\/\//i.test(url);
-}
-
 function Reference({ reference, cited }: { reference: TurnReference; cited: boolean }) {
   const relations = reference.relations.join(' · ');
 
@@ -31,7 +28,7 @@ function Reference({ reference, cited }: { reference: TurnReference; cited: bool
             Reference {reference.index} · {cited ? 'Cited' : 'Consulted'} · {sourceKind}
           </span>
         )}
-        {isClickableUrl(reference.url) ? (
+        {isWebUrl(reference.url) ? (
           <a href={reference.url} target="_blank" rel="noopener noreferrer">
             {reference.title || reference.url}
           </a>
@@ -57,8 +54,8 @@ function titleCase(value: string) {
 }
 
 function ToolDetails({ activity }: { activity: ToolActivity }) {
-  const title = activity.title.slice(0, 200);
-  const wasTruncated = activity.titleTruncated || activity.title.length > 200;
+  const title = activity.title.slice(0, TOOL_TITLE_MAX_LENGTH);
+  const wasTruncated = activity.titleTruncated || activity.title.length > TOOL_TITLE_MAX_LENGTH;
 
   return (
     <details className="side-panel-provenance-activity">
@@ -68,6 +65,9 @@ function ToolDetails({ activity }: { activity: ToolActivity }) {
       <div className="side-panel-provenance-activity-detail">
         <span>{title}</span>
         {wasTruncated && <span className="side-panel-provenance-truncated">Title truncated</span>}
+        {activity.titleRedacted && (
+          <span className="side-panel-provenance-truncated">Title replaced by a summary</span>
+        )}
       </div>
     </details>
   );

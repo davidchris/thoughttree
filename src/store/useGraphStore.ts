@@ -30,6 +30,7 @@ import {
   GraphModel,
   GraphMutations,
   GraphSerialize,
+  isWebUrl,
   type Graph,
   type GraphJSON,
   type NodeId,
@@ -167,12 +168,33 @@ function debounce<T extends (...args: unknown[]) => unknown>(fn: T, delay: numbe
   }) as T;
 }
 
+// Wraps text in a Markdown code span so it renders verbatim and never autolinks.
+function codeSpan(text: string): string {
+  const longestRun = Math.max(0, ...Array.from(text.matchAll(/`+/g), (match) => match[0].length));
+  const fence = '`'.repeat(longestRun + 1);
+  return `${fence} ${text} ${fence}`;
+}
+
+// Percent-encodes the characters that would end a Markdown autolink early
+// (`<`, `>`, whitespace) so a validated URL yields exactly one link.
+function autolink(url: string): string {
+  return `<${url.replace(/[<>\s]/g, (char) => encodeURIComponent(char))}>`;
+}
+
+// Only http(s) URLs are clickable. file: URLs may carry host paths and are
+// redacted; other schemes are emitted as non-clickable text.
+function formatUrl(url: string): string {
+  if (isWebUrl(url)) return autolink(url);
+  if (/^file:/i.test(url)) return '_(file URL redacted)_';
+  return codeSpan(url);
+}
+
 function formatReference(reference: TurnReference, index: number): string {
   const relations = reference.relations.join(', ');
 
   if (reference.type === 'url') {
     const title = reference.title ? `${reference.title} — ` : '';
-    return `${index}. **URL:** ${title}<${reference.url}> — Relations: ${relations}`;
+    return `${index}. **URL:** ${title}${formatUrl(reference.url)} — Relations: ${relations}`;
   }
 
   if (reference.scope === 'vault') {
@@ -753,6 +775,8 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     set({
       graph,
       ...projectGraph(graph, [], null),
+      projectModelPreferences: null,
+      projectEffortPreferences: null,
       projectPath: null,
       projectTitle: title,
       projectRevision: null,

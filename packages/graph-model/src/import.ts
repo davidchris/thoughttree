@@ -69,6 +69,7 @@ export function conversationToGraph(conversation: ImportedConversation, range: T
       content: turn.assistantAnswer,
       timestamp: assistantTimestamp,
       ...(turn.model === undefined ? {} : { model: turn.model }),
+      ...(turn.incomplete ? { incomplete: true } : {}),
       ...(turn.provenance === undefined ? {} : { provenance: cloneProvenance(turn.provenance) }),
     });
 
