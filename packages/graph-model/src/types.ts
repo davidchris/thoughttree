@@ -78,6 +78,8 @@ export interface ToolActivity extends TurnActivityBase {
   kind: ToolActivityKind;
   title: string;
   titleTruncated?: boolean;
+  /** True when the persisted title was replaced by a generic summary because it looked like a raw command or host path. */
+  titleRedacted?: boolean;
   status: ToolActivityStatus;
   completedAt?: number;
 }

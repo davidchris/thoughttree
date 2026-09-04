@@ -175,10 +175,16 @@ function codeSpan(text: string): string {
   return `${fence} ${text} ${fence}`;
 }
 
+// Percent-encodes the characters that would end a Markdown autolink early
+// (`<`, `>`, whitespace) so a validated URL yields exactly one link.
+function autolink(url: string): string {
+  return `<${url.replace(/[<>\s]/g, (char) => encodeURIComponent(char))}>`;
+}
+
 // Only http(s) URLs are clickable. file: URLs may carry host paths and are
 // redacted; other schemes are emitted as non-clickable text.
 function formatUrl(url: string): string {
-  if (isWebUrl(url)) return `<${url}>`;
+  if (isWebUrl(url)) return autolink(url);
   if (/^file:/i.test(url)) return '_(file URL redacted)_';
   return codeSpan(url);
 }

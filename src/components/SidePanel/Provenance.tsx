@@ -65,6 +65,9 @@ function ToolDetails({ activity }: { activity: ToolActivity }) {
       <div className="side-panel-provenance-activity-detail">
         <span>{title}</span>
         {wasTruncated && <span className="side-panel-provenance-truncated">Title truncated</span>}
+        {activity.titleRedacted && (
+          <span className="side-panel-provenance-truncated">Title replaced by a summary</span>
+        )}
       </div>
     </details>
   );

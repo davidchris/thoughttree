@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { GraphMutations } from './mutations';
+import { normalizeProvenance, safeToolTitle } from './normalize';
 import { GraphSerialize } from './serialize';
-import type { GraphJSON, GraphNode } from './types';
+import type { GraphJSON, GraphNode, ToolActivityKind } from './types';
 import projectV4 from '../../../test/fixtures/project-v4.json';
 
 function userNode(id: string, content = '', ts = 1): GraphNode {
@@ -106,7 +107,7 @@ describe('GraphSerialize.fromLegacyV2', () => {
 });
 
 describe('GraphSerialize provenance normalization', () => {
-  const forbiddenPattern = /raw(Input|Output|Payload)|commandText|payload|\/Users\/|secret contents|token/;
+  const forbiddenPattern = /raw(Input|Output|Payload)|commandText|payload|\/Users\/|secret contents|token|file:|\$TOKEN/;
 
   function adversarialJSON(): GraphJSON {
     return JSON.parse(JSON.stringify({
@@ -168,6 +169,21 @@ describe('GraphSerialize provenance normalization', () => {
                 path: '/Users/alice/outside.txt',
                 relations: ['read'],
               },
+              {
+                type: 'file',
+                scope: 'external',
+                displayName: '/Users/alice/Documents/report.pdf',
+                relations: ['read'],
+              },
+              { type: 'url', url: 'file:///Users/alice/secret.txt', title: 'Local', relations: ['consulted'] },
+              { type: 'url', url: '/Users/alice/secret.txt', relations: ['consulted'] },
+              {
+                type: 'url',
+                url: 'https://example.com/b',
+                title: 'Copy at /Users/alice/secret.txt',
+                domain: 'example.com',
+                relations: ['fetched'],
+              },
               { type: 'mystery', payload: { token: 'secret' } },
             ],
             activity: [
@@ -181,6 +197,9 @@ describe('GraphSerialize provenance normalization', () => {
                 commandText: 'cat /Users/alice/secret.txt',
               },
               { type: 'tool', kind: 'teleport', title: 'x'.repeat(250), status: 'done' },
+              { type: 'tool', kind: 'execute', title: 'cat /Users/alice/secret.txt', status: 'completed' },
+              { type: 'tool', kind: 'execute', title: 'echo $TOKEN | pbcopy', status: 'completed' },
+              { type: 'tool', kind: 'read', title: 'Read  src/App.tsx', status: 'completed' },
               { type: 'commentary', content: 'Checking.', rawPayload: { token: 'secret' } },
               { type: 'unknown', providerType: 'x', label: 'x', payload: { token: 'secret' } },
               { type: 'mystery', payload: { token: 'secret' } },
@@ -211,10 +230,15 @@ describe('GraphSerialize provenance normalization', () => {
         { type: 'file', scope: 'external', displayName: 'secret.txt', relations: ['read'] },
         { type: 'file', scope: 'vault', path: 'notes/ok.md', displayName: 'ok.md', relations: ['read'] },
         { type: 'file', scope: 'external', displayName: 'outside.txt', relations: ['read'] },
+        { type: 'file', scope: 'external', displayName: 'report.pdf', relations: ['read'] },
+        { type: 'url', url: 'https://example.com/b', domain: 'example.com', relations: ['fetched'] },
       ],
       activity: [
         { type: 'tool', kind: 'execute', title: 'Run command', status: 'completed' },
         { type: 'tool', kind: 'other', title: 'x'.repeat(200), titleTruncated: true, status: 'incomplete' },
+        { type: 'tool', kind: 'execute', title: 'Ran a command', titleRedacted: true, status: 'completed' },
+        { type: 'tool', kind: 'execute', title: 'Ran a command', titleRedacted: true, status: 'completed' },
+        { type: 'tool', kind: 'read', title: 'Read src/App.tsx', status: 'completed' },
         { type: 'commentary', content: 'Checking.' },
         { type: 'unknown', providerType: 'x', label: 'x' },
       ],
@@ -263,5 +287,72 @@ describe('GraphSerialize provenance normalization', () => {
     });
 
     expect(g.nodes.get('a')).toEqual({ id: 'a', role: 'assistant', content: 'r', timestamp: 2 });
+  });
+});
+
+describe('normalizeProvenance completeness', () => {
+  const okReference = { type: 'url', url: 'https://example.com', relations: ['cited'] };
+  const okTool = { type: 'tool', kind: 'read', title: 'Read notes.md', status: 'completed' };
+
+  it('keeps a complete claim when nothing is dropped or reduced', () => {
+    const provenance = normalizeProvenance({
+      completeness: 'complete',
+      references: [okReference],
+      activity: [okTool, { type: 'commentary', content: 'Checking.' }],
+    });
+    expect(provenance?.completeness).toBe('complete');
+  });
+
+  it.each([
+    ['an unsupported activity entry', { activity: [{ type: 'provider_status', label: 'x' }] }],
+    ['an unsupported reference entry', { references: [{ type: 'mystery' }] }],
+    ['retained Unknown activity', { activity: [{ type: 'unknown', providerType: 'x', label: 'x' }] }],
+    ['a redacted tool title', { activity: [{ ...okTool, title: 'cat /Users/alice/secret.txt' }] }],
+    ['a truncated tool title', { activity: [{ ...okTool, title: 'x'.repeat(201) }] }],
+    ['a dropped file: URL', { references: [{ type: 'url', url: 'file:///Users/alice/x', relations: [] }] }],
+    ['a Vault path that escapes the Vault', {
+      references: [{ type: 'file', scope: 'vault', path: '../x', displayName: 'x', relations: [] }],
+    }],
+    ['a display name reduced to its basename', {
+      references: [{ type: 'file', scope: 'external', displayName: '/Users/alice/x', relations: [] }],
+    }],
+    ['an unknown relation', { references: [{ ...okReference, relations: ['cited', 'bogus'] }] }],
+  ])('downgrades complete to partial after %s', (_label, overrides) => {
+    const provenance = normalizeProvenance({ completeness: 'complete', references: [], activity: [], ...overrides });
+    expect(provenance?.completeness).toBe('partial');
+  });
+
+  it('never upgrades unknown even when nothing is lost', () => {
+    const provenance = normalizeProvenance({ completeness: 'unknown', references: [okReference], activity: [] });
+    expect(provenance?.completeness).toBe('unknown');
+  });
+
+  it('keeps unknown rather than claiming partial when evidence is dropped', () => {
+    const provenance = normalizeProvenance({ completeness: 'unknown', references: [{ type: 'mystery' }], activity: [] });
+    expect(provenance?.completeness).toBe('unknown');
+  });
+});
+
+describe('safeToolTitle', () => {
+  it.each([
+    ['cat /Users/alice/secret.txt', 'execute', 'Ran a command'],
+    ['Read ~/notes.md', 'read', 'Read a file'],
+    ['Edit C:\\Users\\alice\\x.txt', 'edit', 'Edited a file'],
+    ['ls | grep x', 'execute', 'Ran a command'],
+    ['echo `whoami`', 'execute', 'Ran a command'],
+    ['rm -rf a && rm b', 'delete', 'Deleted a file'],
+    ['Search for=/etc/passwd', 'search', 'Ran a search'],
+    ['   ', 'other', 'Used a tool'],
+  ])('replaces %j with a generic %s summary', (title, kind, expected) => {
+    expect(safeToolTitle(title, kind as ToolActivityKind)).toEqual({ title: expected, redacted: true });
+  });
+
+  it.each([
+    ['Read src/App.tsx', 'Read src/App.tsx'],
+    ['Run  tests\n(vitest)', 'Run tests (vitest)'],
+    ['Search for "provenance"', 'Search for "provenance"'],
+    ['Fetch https://example.com/docs', 'Fetch https://example.com/docs'],
+  ])('keeps %j as a summary', (title, expected) => {
+    expect(safeToolTitle(title, 'other')).toEqual({ title: expected, redacted: false });
   });
 });

@@ -64,6 +64,50 @@ const PROVIDERS = keysOf<GraphAgentProvider>({ 'claude-code': true, 'gemini-cli'
 /** Tool titles are display summaries, never raw commands; cap them like the UI does. */
 export const TOOL_TITLE_MAX_LENGTH = 200;
 
+/** Generic per-kind summaries used when a tool title looks like a raw command or carries a host path. */
+const TOOL_TITLE_SUMMARIES: Record<ToolActivityKind, string> = {
+  read: 'Read a file',
+  edit: 'Edited a file',
+  delete: 'Deleted a file',
+  move: 'Moved a file',
+  search: 'Ran a search',
+  execute: 'Ran a command',
+  fetch: 'Fetched a resource',
+  delegate: 'Delegated a task',
+  other: 'Used a tool',
+};
+
+// An absolute host path token: `/Users/...`, `~/...`, `C:\...`, or a UNC path at
+// the start of the text or after a delimiter. Relative paths (`src/App.tsx`) pass.
+const HOST_PATH = /(?:^|[\s"'`(=:,<\[])(?:\/[^\s/]|~[\\/]|[A-Za-z]:[\\/]|\\\\)/;
+
+// Shell operators and substitutions that mark a title as a raw command rather than a summary.
+const SHELL_OPERATOR = /[`$|;<>]|&&|[\u0000-\u001f\u007f]/;
+
+/** True when text carries an absolute host path or a `file:` URL. */
+export function containsHostPath(text: string): boolean {
+  return isFileUrlOrBarePath(text) || HOST_PATH.test(text);
+}
+
+/** True for `file:` URLs and bare absolute paths, which are never acceptable URL reference text. */
+function isFileUrlOrBarePath(text: string): boolean {
+  return /^\s*(?:file:|\/|~[\\/]|[A-Za-z]:[\\/]|\\\\)/i.test(text);
+}
+
+/**
+ * Reduces an untrusted tool title to a safe display summary: raw commands and
+ * host paths are replaced by a generic per-kind summary, everything else is
+ * whitespace-collapsed and capped. `redacted` reports the replacement so the
+ * caller can record the loss.
+ */
+export function safeToolTitle(rawTitle: string, kind: ToolActivityKind): { title: string; redacted: boolean } {
+  const collapsed = rawTitle.replace(/\s+/g, ' ').trim();
+  if (collapsed.length === 0 || SHELL_OPERATOR.test(collapsed) || containsHostPath(collapsed)) {
+    return { title: TOOL_TITLE_SUMMARIES[kind], redacted: true };
+  }
+  return { title: collapsed.slice(0, TOOL_TITLE_MAX_LENGTH), redacted: false };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -88,11 +132,39 @@ function withOptional<T extends object>(base: T, extras: Record<string, unknown>
   return result as T;
 }
 
-function relations(value: unknown): TurnReferenceRelation[] {
+/** Counts evidence discarded or reduced during normalization so completeness can be downgraded. */
+class Loss {
+  count = 0;
+  note(): void {
+    this.count += 1;
+  }
+}
+
+function relations(value: unknown, loss: Loss): TurnReferenceRelation[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is TurnReferenceRelation =>
+  const kept = value.filter((entry): entry is TurnReferenceRelation =>
     typeof entry === 'string' && RELATIONS.has(entry as TurnReferenceRelation)
   );
+  if (kept.length !== value.length) loss.note();
+  return kept;
+}
+
+/** Strips directory components from a file display name; host paths never survive as names. */
+function safeDisplayName(value: string | undefined, loss: Loss): string | undefined {
+  if (value === undefined) return undefined;
+  const name = value.split(/[\\/]/).pop()?.trim() ?? '';
+  if (name !== value) loss.note();
+  return name.length > 0 && name !== '..' && name !== '.' ? name : undefined;
+}
+
+/** Drops an optional text field that would carry a host path into the Project file. */
+function safeText(value: string | undefined, loss: Loss): string | undefined {
+  if (value === undefined) return undefined;
+  if (containsHostPath(value)) {
+    loss.note();
+    return undefined;
+  }
+  return value;
 }
 
 /**
@@ -107,17 +179,18 @@ export function isVaultRelativePath(path: string): boolean {
   return !path.split(/[\\/]/).some((segment) => segment === '..');
 }
 
-function reference(value: unknown): TurnReference | undefined {
+function reference(value: unknown, loss: Loss): TurnReference | undefined {
   if (!isRecord(value)) return undefined;
-  const base = { relations: relations(value.relations) };
+  const base = { relations: relations(value.relations, loss) };
   const timestamp = num(value.timestamp);
 
   if (value.type === 'url') {
     const url = str(value.url);
-    if (url === undefined) return undefined;
+    // URL text is preserved exactly, but file: URLs and bare host paths are not URLs we keep.
+    if (url === undefined || isFileUrlOrBarePath(url)) return undefined;
     return withOptional({ type: 'url' as const, url, ...base }, {
-      title: str(value.title),
-      domain: str(value.domain),
+      title: safeText(str(value.title), loss),
+      domain: safeText(str(value.domain), loss),
       index: num(value.index),
       percentage: num(value.percentage),
       is_search_result: bool(value.is_search_result),
@@ -127,19 +200,20 @@ function reference(value: unknown): TurnReference | undefined {
 
   if (value.type === 'file') {
     const path = str(value.path);
-    const displayName = str(value.displayName) ?? (path === undefined ? undefined : path.split(/[\\/]/).pop());
+    const displayName = safeDisplayName(str(value.displayName) ?? path, loss);
     if (displayName === undefined) return undefined;
     if (value.scope === 'vault' && path !== undefined && isVaultRelativePath(path)) {
       return withOptional({ type: 'file' as const, scope: 'vault' as const, path, displayName, ...base }, { timestamp });
     }
     // External files, and vault references whose path escapes the Vault, keep only a display name.
+    if (value.scope === 'vault') loss.note();
     return withOptional({ type: 'file' as const, scope: 'external' as const, displayName, ...base }, { timestamp });
   }
 
   return undefined;
 }
 
-function activity(value: unknown): TurnActivity | undefined {
+function activityEntry(value: unknown, loss: Loss): TurnActivity | undefined {
   if (!isRecord(value)) return undefined;
   const timestamp = num(value.timestamp);
 
@@ -152,21 +226,29 @@ function activity(value: unknown): TurnActivity | undefined {
   if (value.type === 'tool') {
     const rawTitle = str(value.title);
     if (rawTitle === undefined) return undefined;
-    const kind = str(value.kind);
+    const rawKind = str(value.kind);
     const status = str(value.status);
-    const title = rawTitle.slice(0, TOOL_TITLE_MAX_LENGTH);
-    const titleTruncated = value.titleTruncated === true || rawTitle.length > TOOL_TITLE_MAX_LENGTH;
+    const kind: ToolActivityKind =
+      rawKind !== undefined && TOOL_KINDS.has(rawKind as ToolActivityKind) ? (rawKind as ToolActivityKind) : 'other';
+    const { title, redacted } = safeToolTitle(rawTitle, kind);
+    const titleTruncated = !redacted && (value.titleTruncated === true || rawTitle.trim().length > TOOL_TITLE_MAX_LENGTH);
+    if (redacted || titleTruncated) loss.note();
     return withOptional(
       {
         type: 'tool' as const,
-        kind: kind !== undefined && TOOL_KINDS.has(kind as ToolActivityKind) ? (kind as ToolActivityKind) : 'other',
+        kind,
         title,
         status:
           status !== undefined && TOOL_STATUSES.has(status as ToolActivityStatus)
             ? (status as ToolActivityStatus)
             : 'incomplete',
       },
-      { titleTruncated: titleTruncated ? true : undefined, completedAt: num(value.completedAt), timestamp }
+      {
+        titleTruncated: titleTruncated ? true : undefined,
+        titleRedacted: redacted ? true : undefined,
+        completedAt: num(value.completedAt),
+        timestamp,
+      }
     );
   }
 
@@ -180,21 +262,38 @@ function activity(value: unknown): TurnActivity | undefined {
   return undefined;
 }
 
+function normalizeList<T>(value: unknown, parse: (entry: unknown, loss: Loss) => T | undefined, loss: Loss): T[] {
+  if (!Array.isArray(value)) return [];
+  const kept: T[] = [];
+  for (const entry of value) {
+    const parsed = parse(entry, loss);
+    if (parsed === undefined) loss.note();
+    else kept.push(parsed);
+  }
+  return kept;
+}
+
+/**
+ * A `complete` claim only survives when nothing was discarded or reduced on
+ * the way through; any known loss (dropped entries, redacted titles, demoted
+ * Vault paths, retained Unknown activity) downgrades it to `partial`.
+ * `partial` and `unknown` are never upgraded.
+ */
 export function normalizeProvenance(value: unknown): TurnProvenance | undefined {
   if (!isRecord(value)) return undefined;
-  const completeness = str(value.completeness);
-  return {
-    completeness:
-      completeness !== undefined && COMPLETENESS.has(completeness as ProvenanceCompleteness)
-        ? (completeness as ProvenanceCompleteness)
-        : 'unknown',
-    references: Array.isArray(value.references)
-      ? value.references.flatMap((entry) => reference(entry) ?? [])
-      : [],
-    activity: Array.isArray(value.activity)
-      ? value.activity.flatMap((entry) => activity(entry) ?? [])
-      : [],
-  };
+  const loss = new Loss();
+  const claimed = str(value.completeness);
+  const references = normalizeList(value.references, reference, loss);
+  const activity = normalizeList(value.activity, activityEntry, loss);
+  if (activity.some((entry) => entry.type === 'unknown')) loss.note();
+
+  let completeness: ProvenanceCompleteness =
+    claimed !== undefined && COMPLETENESS.has(claimed as ProvenanceCompleteness)
+      ? (claimed as ProvenanceCompleteness)
+      : 'unknown';
+  if (completeness === 'complete' && loss.count > 0) completeness = 'partial';
+
+  return { completeness, references, activity };
 }
 
 function images(value: unknown): ImageAttachment[] | undefined {

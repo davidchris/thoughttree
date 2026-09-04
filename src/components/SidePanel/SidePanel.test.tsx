@@ -508,6 +508,13 @@ describe("SidePanel", () => {
                     status: "incomplete" as const,
                   },
                   {
+                    type: "tool" as const,
+                    kind: "read" as const,
+                    title: "Read a file",
+                    titleRedacted: true,
+                    status: "completed" as const,
+                  },
+                  {
                     type: "unknown" as const,
                     providerType: "future_item",
                     label: "Future provider item",
@@ -535,6 +542,8 @@ describe("SidePanel", () => {
       );
       expect(screen.getByText(displayedTitle)).toBeInTheDocument();
       expect(screen.getByText("Title truncated")).toBeInTheDocument();
+      expect(screen.getByText("Read a file")).toBeInTheDocument();
+      expect(screen.getByText("Title replaced by a summary")).toBeInTheDocument();
       expect(screen.getByText("future_item · Future provider item")).toBeInTheDocument();
       expect(screen.queryByText("SECRET RAW PAYLOAD")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Run me" })).not.toBeInTheDocument();

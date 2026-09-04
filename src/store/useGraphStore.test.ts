@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeChange } from '@xyflow/react';
 import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '@thoughttree/graph-model';
+import type { Graph } from '@thoughttree/graph-model';
 import type { BackendTransport } from '../lib/transport';
 import { setBackendTransport, StaleRevisionError } from '../lib/transport';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
@@ -215,6 +216,7 @@ describe('useGraphStore', () => {
       { type: 'url', url: 'file:///Users/alice/private.txt', title: 'Local', relations: ['consulted'] },
       { type: 'url', url: 'javascript:alert(1)', relations: ['consulted'] },
       { type: 'url', url: 'ftp://example.com/`tricky`', relations: ['consulted'] },
+      { type: 'url', url: 'https://example.com/a><file:///Users/alice/private.txt', relations: ['fetched'] },
     ];
     project.graph.nodes[1].provenance.activity = [];
     vi.mocked(transport.loadProject).mockResolvedValue({
@@ -226,11 +228,42 @@ describe('useGraphStore', () => {
 
     const exported = useGraphStore.getState().exportSubgraph(['answer']);
 
+    // The file: reference is dropped on load; the remaining entries renumber.
     expect(exported).toContain('1. **URL:** Web — <https://example.com/ok> — Relations: cited');
-    expect(exported).toContain('2. **URL:** Local — _(file URL redacted)_ — Relations: consulted');
-    expect(exported).toContain('3. **URL:** ` javascript:alert(1) ` — Relations: consulted');
-    expect(exported).toContain('4. **URL:** `` ftp://example.com/`tricky` `` — Relations: consulted');
-    expect(exported).not.toMatch(/\/Users\/|<file:|<javascript:|<ftp:/);
+    expect(exported).toContain('2. **URL:** ` javascript:alert(1) ` — Relations: consulted');
+    expect(exported).toContain('3. **URL:** `` ftp://example.com/`tricky` `` — Relations: consulted');
+    expect(exported).toContain(
+      '4. **URL:** <https://example.com/a%3E%3Cfile:///Users/alice/private.txt> — Relations: fetched',
+    );
+    expect(exported).not.toContain('Local');
+    expect(exported).not.toMatch(/<file:|<javascript:|<ftp:/);
+    expect(exported.match(/<https:/g)).toHaveLength(2);
+  });
+
+  it('redacts file: URLs held in memory without going through load', () => {
+    const graph: Graph = {
+      nodes: new Map([
+        ['answer', {
+          id: 'answer',
+          role: 'assistant',
+          content: 'Answer',
+          timestamp: 1,
+          provenance: {
+            completeness: 'complete',
+            references: [{ type: 'url', url: 'file:///Users/alice/private.txt', title: 'Local', relations: ['consulted'] }],
+            activity: [],
+          },
+        }],
+      ]),
+      edges: [],
+      layout: new Map([['answer', { x: 0, y: 0 }]]),
+    };
+    useGraphStore.getState().importGraph('In memory', graph);
+
+    const exported = useGraphStore.getState().exportSubgraph(['answer']);
+
+    expect(exported).toContain('1. **URL:** Local — _(file URL redacted)_ — Relations: consulted');
+    expect(exported).not.toMatch(/\/Users\//);
   });
 
   it('retains the existing Markdown shape when no assistant provenance exists', () => {
