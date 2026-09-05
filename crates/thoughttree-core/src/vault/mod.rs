@@ -2,6 +2,8 @@
 //! `docs/adr/0004-guarded-project-writes.md`.
 //! Local files write to a temp sibling and atomically rename into place after
 //! comparing the caller's last-read revision with the current file content hash.
+//! The compare and the rename run under an exclusive advisory lock on a sibling
+//! `.<name>.lock` file so a concurrent guarded writer cannot slip in between.
 
 use std::fs;
 use std::io::Write;
@@ -110,6 +112,11 @@ where
     F: FnOnce(&Path, &Path) -> Result<(), std::io::Error>,
 {
     let path = validate_absolute_file_path(path)?;
+    let parent = path.parent().ok_or(VaultError::InvalidPath)?;
+    // Held until this function returns: revision check and replacement are one
+    // critical section, so a concurrent guarded writer waits and then sees the
+    // new revision instead of overwriting it.
+    let _write_lock = WriteLock::acquire(parent, &path)?;
     let current = read_existing_file(&path)?;
 
     if let Some(expected) = expected {
@@ -121,7 +128,6 @@ where
         }
     }
 
-    let parent = path.parent().ok_or(VaultError::InvalidPath)?;
     let temp_path = temp_sibling_path(parent, &path);
     let write_result = (|| -> Result<(), VaultError> {
         let mut temp_file = fs::OpenOptions::new()
@@ -143,6 +149,32 @@ where
     }
 
     Ok(revision_for_content(content.as_bytes()))
+}
+
+/// Exclusive advisory lock on a persistent sibling lock file. The lock file is
+/// never removed: unlinking it would let a third writer create a fresh inode
+/// and bypass a waiter still blocked on the old one.
+struct WriteLock {
+    file: fs::File,
+}
+
+impl WriteLock {
+    fn acquire(parent: &Path, target: &Path) -> Result<Self, VaultError> {
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(lock_sibling_path(parent, target))?;
+        file.lock()?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for WriteLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
 }
 
 fn read_existing_file(path: &Path) -> Result<Option<ProjectDoc>, VaultError> {
@@ -241,12 +273,23 @@ fn validate_absolute_file_path(path: &Path) -> Result<PathBuf, VaultError> {
     Ok(canonical_parent.join(file_name))
 }
 
-fn temp_sibling_path(parent: &Path, target: &Path) -> PathBuf {
-    let file_name = target
+fn sibling_file_name(target: &Path) -> &str {
+    target
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("project.thoughttree");
-    parent.join(format!(".{file_name}.{}.tmp", Uuid::new_v4()))
+        .unwrap_or("project.thoughttree")
+}
+
+fn temp_sibling_path(parent: &Path, target: &Path) -> PathBuf {
+    parent.join(format!(
+        ".{}.{}.tmp",
+        sibling_file_name(target),
+        Uuid::new_v4()
+    ))
+}
+
+fn lock_sibling_path(parent: &Path, target: &Path) -> PathBuf {
+    parent.join(format!(".{}.lock", sibling_file_name(target)))
 }
 
 fn revision_for_content(content: &[u8]) -> Revision {
@@ -269,6 +312,9 @@ fn map_not_found(err: std::io::Error) -> VaultError {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
 
     use tempfile::tempdir;
     use tokio::runtime::Builder;
@@ -308,6 +354,85 @@ mod tests {
             other => panic!("expected stale revision error, got {other:?}"),
         }
         assert_eq!(fs::read_to_string(&path).unwrap(), "concurrent");
+    }
+
+    #[test]
+    fn concurrent_guarded_writer_blocks_until_replacement_and_then_sees_stale() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "before").unwrap();
+        let initial = read_project_file(&path).unwrap();
+
+        // Force the interleaving: a second guarded writer starts after the first
+        // writer has validated the revision but before it renames into place.
+        let (started_tx, started_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let mut concurrent = None;
+        let concurrent_slot = &mut concurrent;
+        let done_rx = &done_rx;
+        let expected = initial.revision.clone();
+        let first = guarded_write_file_inner(
+            &path,
+            "after",
+            Some(&initial.revision),
+            move |_temp_path, target_path| {
+                let target = target_path.to_path_buf();
+                let handle = thread::spawn(move || {
+                    started_tx.send(()).unwrap();
+                    let result = super::guarded_write_file(&target, "concurrent", Some(&expected));
+                    let _ = done_tx.send(());
+                    result
+                });
+                started_rx.recv().unwrap();
+                // The second writer must be blocked on the lock, not finished.
+                assert!(done_rx.recv_timeout(Duration::from_millis(200)).is_err());
+                assert_eq!(fs::read_to_string(target_path)?, "before");
+                *concurrent_slot = Some(handle);
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        let second = concurrent.unwrap().join().unwrap();
+
+        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
+        assert_eq!(read_project_file(&path).unwrap().revision, first);
+        match second {
+            Err(VaultError::Stale { current }) => assert_eq!(current, first),
+            other => panic!("expected stale revision error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn concurrent_guarded_writers_with_reload_never_lose_an_append() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "0").unwrap();
+
+        // Each writer follows the reload-and-reapply flow from ADR 0004.
+        let handles: Vec<_> = (1..=8)
+            .map(|i| {
+                let path = path.clone();
+                thread::spawn(move || loop {
+                    let current = read_project_file(&path).unwrap();
+                    let next = format!("{}{i}", current.content);
+                    match super::guarded_write_file(&path, &next, Some(&current.revision)) {
+                        Ok(_) => break,
+                        Err(VaultError::Stale { .. }) => continue,
+                        Err(other) => panic!("unexpected error: {other:?}"),
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Every writer appended exactly once; no append was overwritten.
+        let content = fs::read_to_string(&path).unwrap();
+        let mut digits: Vec<char> = content.chars().collect();
+        digits.sort_unstable();
+        assert_eq!(digits.into_iter().collect::<String>(), "012345678");
     }
 
     #[test]

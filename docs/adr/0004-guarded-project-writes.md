@@ -19,3 +19,9 @@ For shape C, the vault is mounted **read-only**; writes go through Nextcloud Web
 - Desktop save must migrate from bare `fs::write` to the core Guarded write when `thoughttree-core` is extracted.
 - Rejected saves become a user-visible state the frontend must handle (reload-and-reapply flow).
 - Torhaus needs no changes; its patch flow already honors base-hash semantics.
+
+## Amendment (2026-09): lock around check-and-replace
+
+The original local-FS implementation checked the revision, then wrote a temp file and renamed it into place with nothing holding the two steps together. A second guarded writer could pass its own check in that window and be silently overwritten by the pending rename, which is exactly the loss CAS exists to prevent.
+
+The local backend now holds an exclusive advisory lock (`std::fs::File::lock`) on a persistent sibling `.<name>.lock` file for the duration of check plus rename. A concurrent guarded writer blocks, then re-checks against the new content hash and receives the normal stale rejection. The lock file is never deleted: unlinking it would let a third writer create a fresh inode and bypass a waiter still blocked on the old one. It is not an owner lease; it is held only for the milliseconds a single write takes, and non-cooperating writers (editors, sync clients) are still reconciled by Nextcloud as before.

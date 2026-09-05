@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Security - Guarded project writes now hold an exclusive lock across the revision check and replacement, so a concurrent save can no longer overwrite a newer revision
+- Security - Project load and save now reject relative paths, and traversal and symlink escapes from the notes directory are covered by tests
+
 ## 0.4.1
 
 - Security - Restored the notes-directory boundary for project load and save commands
