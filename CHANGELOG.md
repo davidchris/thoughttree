@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Security - Guarded project writes now hold an exclusive lock across the revision check and replacement, so a concurrent save can no longer overwrite a newer revision
-- Security - Project load and save now reject relative paths, and traversal and symlink escapes from the notes directory are covered by tests
+- Security - Core Vault reads and writes reject file symlinks that escape the root. Desktop relative paths retain their existing behavior and notes-directory boundary checks.
 
 ## 0.4.1
 

@@ -31,14 +31,9 @@ pub(crate) struct ProjectEntry {
 
 /// Resolves `path` and confirms it stays inside the configured notes directory.
 /// Symlinks are followed before the check, so a link pointing outside the
-/// vault is rejected the same way a plain outside path is. Relative paths are
-/// rejected outright: they would resolve against the process working directory,
-/// not the vault.
+/// vault is rejected the same way a plain outside path is. Relative paths retain
+/// their filesystem meaning (relative to cwd) and pass the same boundary check.
 fn validate_path_in_notes_dir(path: &Path, notes_directory: &Path) -> Result<PathBuf, String> {
-    if !path.is_absolute() {
-        return Err("Security error: project path must be absolute".to_string());
-    }
-
     let canonical_notes = fs::canonicalize(notes_directory)
         .map_err(|err| format!("Failed to resolve notes directory: {err}"))?;
 
@@ -310,24 +305,33 @@ mod tests {
     }
 
     #[test]
-    fn load_and_save_reject_non_absolute_paths() {
-        let dir = tempdir().unwrap();
+    fn load_and_save_accept_relative_paths_inside_notes_directory() {
+        // Keep cwd unchanged so this test can run alongside other filesystem tests.
+        let cwd = std::env::current_dir().unwrap();
+        let dir = tempfile::tempdir_in(&cwd).unwrap();
         let notes_directory = dir.path().join("notes");
         fs::create_dir(&notes_directory).unwrap();
-        fs::write(notes_directory.join("inside.thoughttree"), "{}").unwrap();
+        let project_path = notes_directory.join("inside.thoughttree");
+        let relative = project_path.strip_prefix(&cwd).unwrap();
 
-        let relative = Path::new("inside.thoughttree");
+        let (_, revision) =
+            save_project_in_notes_dir(&notes_directory, relative, "first", None).unwrap();
+        let (_, loaded) = load_project_in_notes_dir(&notes_directory, relative).unwrap();
+        assert_eq!(loaded.content, "first");
+        assert_eq!(loaded.revision, revision.0);
 
-        for error in [
-            load_project_in_notes_dir(&notes_directory, relative).unwrap_err(),
-            save_project_in_notes_dir(&notes_directory, relative, "changed", None).unwrap_err(),
-        ] {
-            assert!(matches!(
-                error,
-                ProjectCommandError::Message { message }
-                    if message == "Security error: project path must be absolute"
-            ));
-        }
+        let outside = dir.path().join("outside.thoughttree");
+        fs::write(&outside, "outside").unwrap();
+        let traversal = notes_directory.join("..").join("outside.thoughttree");
+        let relative_traversal = traversal.strip_prefix(&cwd).unwrap();
+        assert_outside_notes_directory(
+            load_project_in_notes_dir(&notes_directory, relative_traversal).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, relative_traversal, "changed", None)
+                .unwrap_err(),
+        );
+        assert_eq!(fs::read_to_string(outside).unwrap(), "outside");
     }
 
     #[cfg(unix)]

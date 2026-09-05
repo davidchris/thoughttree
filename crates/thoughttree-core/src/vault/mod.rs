@@ -255,7 +255,11 @@ fn validate_relative_path(root: &Path, relative_path: &str) -> Result<PathBuf, V
         return Err(VaultError::InvalidPath);
     }
 
-    Ok(canonical_parent.join(file_name))
+    let path = validate_absolute_file_path(&canonical_parent.join(file_name))?;
+    if !path.starts_with(&canonical_root) {
+        return Err(VaultError::InvalidPath);
+    }
+    Ok(path)
 }
 
 fn validate_absolute_file_path(path: &Path) -> Result<PathBuf, VaultError> {
@@ -464,6 +468,28 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, VaultError::InvalidPath));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_fs_vault_rejects_file_symlinks_outside_root() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("vault");
+        fs::create_dir(&root).unwrap();
+        let outside = dir.path().join("outside.thoughttree");
+        fs::write(&outside, "outside").unwrap();
+        symlink(&outside, root.join("link.thoughttree")).unwrap();
+        let vault = LocalFsVault::new(root);
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+
+        let read = runtime.block_on(vault.read("link.thoughttree"));
+        let write = runtime.block_on(vault.write("link.thoughttree", "changed", None));
+
+        assert!(matches!(read, Err(VaultError::InvalidPath)));
+        assert!(matches!(write, Err(VaultError::InvalidPath)));
+        assert_eq!(fs::read_to_string(outside).unwrap(), "outside");
     }
 
     #[test]
