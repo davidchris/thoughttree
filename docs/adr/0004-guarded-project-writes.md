@@ -20,8 +20,12 @@ For shape C, the vault is mounted **read-only**; writes go through Nextcloud Web
 - Rejected saves become a user-visible state the frontend must handle (reload-and-reapply flow).
 - Torhaus needs no changes; its patch flow already honors base-hash semantics.
 
-## Amendment (2026-09): lock around check-and-replace
+## Implementation status (2026-09): local replacement is not CAS
 
-The original local-FS implementation checked the revision, then wrote a temp file and renamed it into place with nothing holding the two steps together. A second guarded writer could pass its own check in that window and be silently overwritten by the pending rename, which is exactly the loss CAS exists to prevent.
+The sibling advisory lock is removed. It contradicted the no-lock decision and did not protect against editors or sync clients.
 
-The local backend now holds an exclusive advisory lock (`std::fs::File::lock`) on a persistent sibling `.<name>.lock` file for the duration of check plus rename. A concurrent guarded writer blocks, then re-checks against the new content hash and receives the normal stale rejection. The lock file is never deleted: unlinking it would let a third writer create a fresh inode and bypass a waiter still blocked on the old one. It is not an owner lease; it is held only for the milliseconds a single write takes, and non-cooperating writers (editors, sync clients) are still reconciled by Nextcloud as before.
+The local backend compares the revision before and after it prepares the temp file, then atomically replaces the Project file. The second comparison catches changes during temp preparation. A writer can still change the Project file after that comparison and before replacement. This includes another ThoughtTree writer. The local backend therefore does not meet the strict CAS requirement in `thoughttree-m0p.1`, which remains unresolved.
+
+The regression test completes a plain filesystem write after the initial comparison and before revalidation. It proves detection within that interval only. Successful local writes still replace the whole file atomically and return its content revision. Detected stale writes retain the existing error and leave the newer content intact.
+
+[Linux rename](https://man7.org/linux/man-pages/man2/rename.2.html) and [Apple safe-save APIs](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/ToolsandAPIs/ToolsandAPIs.html) do not accept an expected content hash. Atomic exchange can retain displaced content, but it does not reject stale content before replacement. An unconditional rollback introduces another overwrite race. A stronger local implementation needs an explicit conflict recovery contract. The alternative is a backend that enforces conditional writes, such as the planned WebDAV backend.

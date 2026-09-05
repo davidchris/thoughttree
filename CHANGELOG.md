@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- Security - Guarded project writes now hold an exclusive lock across the revision check and replacement, so a concurrent save can no longer overwrite a newer revision
+- Fix - Local Project writes no longer create sibling lock files. Revision revalidation catches changes during temp-file preparation, but the final check-to-rename race remains unresolved.
 - Security - Core Vault reads and writes reject file symlinks that escape the root. Desktop relative paths retain their existing behavior and notes-directory boundary checks.
+- Fix - Desktop Project writes run on the blocking pool so filesystem operations do not block an async runtime worker.
 
 ## 0.4.1
 

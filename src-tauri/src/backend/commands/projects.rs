@@ -472,11 +472,12 @@ pub(crate) async fn save_project(
     base_revision: Option<String>,
 ) -> Result<String, ProjectCommandError> {
     let notes_directory = config::get_notes_directory_required(&app).map_err(command_message)?;
-    let revision = base_revision
-        .as_deref()
-        .map(|value| Revision(value.to_string()));
-    let (validated_path, next_revision) =
-        save_project_in_notes_dir(&notes_directory, Path::new(&path), &data, revision.as_ref())?;
+    let (validated_path, next_revision) = tauri::async_runtime::spawn_blocking(move || {
+        let revision = base_revision.map(Revision);
+        save_project_in_notes_dir(&notes_directory, Path::new(&path), &data, revision.as_ref())
+    })
+    .await
+    .map_err(|err| command_message(format!("Failed to run project write: {err}")))??;
 
     tracing::info!("Project saved to: {:?}", validated_path);
     Ok(next_revision.0)

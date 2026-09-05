@@ -2,8 +2,7 @@
 //! `docs/adr/0004-guarded-project-writes.md`.
 //! Local files write to a temp sibling and atomically rename into place after
 //! comparing the caller's last-read revision with the current file content hash.
-//! The compare and the rename run under an exclusive advisory lock on a sibling
-//! `.<name>.lock` file so a concurrent guarded writer cannot slip in between.
+//! The local filesystem does not provide a hash-conditioned rename.
 
 use std::fs;
 use std::io::Write;
@@ -106,29 +105,15 @@ fn guarded_write_file_inner<F>(
     path: &Path,
     content: &str,
     expected: Option<&Revision>,
-    before_rename: F,
+    after_temp_write: F,
 ) -> Result<Revision, VaultError>
 where
     F: FnOnce(&Path, &Path) -> Result<(), std::io::Error>,
 {
     let path = validate_absolute_file_path(path)?;
-    let parent = path.parent().ok_or(VaultError::InvalidPath)?;
-    // Held until this function returns: revision check and replacement are one
-    // critical section, so a concurrent guarded writer waits and then sees the
-    // new revision instead of overwriting it.
-    let _write_lock = WriteLock::acquire(parent, &path)?;
-    let current = read_existing_file(&path)?;
+    check_revision(&path, expected)?;
 
-    if let Some(expected) = expected {
-        let current = current.ok_or(VaultError::NotFound)?;
-        if current.revision != *expected {
-            return Err(VaultError::Stale {
-                current: current.revision,
-            });
-        }
-    }
-
-    let temp_path = temp_sibling_path(parent, &path);
+    let temp_path = temp_sibling_path(&path);
     let write_result = (|| -> Result<(), VaultError> {
         let mut temp_file = fs::OpenOptions::new()
             .create_new(true)
@@ -138,7 +123,10 @@ where
         temp_file.sync_all()?;
         drop(temp_file);
 
-        before_rename(&temp_path, &path)?;
+        after_temp_write(&temp_path, &path)?;
+        // Catch changes during temp-file preparation. This is still a separate
+        // operation from rename: it narrows the race window but is not CAS.
+        check_revision(&path, expected)?;
         fs::rename(&temp_path, &path)?;
         Ok(())
     })();
@@ -151,41 +139,15 @@ where
     Ok(revision_for_content(content.as_bytes()))
 }
 
-/// Exclusive advisory lock on a persistent sibling lock file. The lock file is
-/// never removed: unlinking it would let a third writer create a fresh inode
-/// and bypass a waiter still blocked on the old one.
-struct WriteLock {
-    file: fs::File,
-}
-
-impl WriteLock {
-    fn acquire(parent: &Path, target: &Path) -> Result<Self, VaultError> {
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(lock_sibling_path(parent, target))?;
-        file.lock()?;
-        Ok(Self { file })
+fn check_revision(path: &Path, expected: Option<&Revision>) -> Result<(), VaultError> {
+    if let Some(expected) = expected {
+        let content = fs::read(path).map_err(map_not_found)?;
+        let current = revision_for_content(&content);
+        if current != *expected {
+            return Err(VaultError::Stale { current });
+        }
     }
-}
-
-impl Drop for WriteLock {
-    fn drop(&mut self) {
-        let _ = self.file.unlock();
-    }
-}
-
-fn read_existing_file(path: &Path) -> Result<Option<ProjectDoc>, VaultError> {
-    match fs::read_to_string(path) {
-        Ok(content) => Ok(Some(ProjectDoc {
-            revision: revision_for_content(content.as_bytes()),
-            content,
-        })),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(VaultError::Io(err)),
-    }
+    Ok(())
 }
 
 fn list_projects_under_root(root: &Path) -> Result<Vec<ProjectEntry>, VaultError> {
@@ -277,23 +239,12 @@ fn validate_absolute_file_path(path: &Path) -> Result<PathBuf, VaultError> {
     Ok(canonical_parent.join(file_name))
 }
 
-fn sibling_file_name(target: &Path) -> &str {
-    target
+fn temp_sibling_path(target: &Path) -> PathBuf {
+    let file_name = target
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("project.thoughttree")
-}
-
-fn temp_sibling_path(parent: &Path, target: &Path) -> PathBuf {
-    parent.join(format!(
-        ".{}.{}.tmp",
-        sibling_file_name(target),
-        Uuid::new_v4()
-    ))
-}
-
-fn lock_sibling_path(parent: &Path, target: &Path) -> PathBuf {
-    parent.join(format!(".{}.lock", sibling_file_name(target)))
+        .unwrap_or("project.thoughttree");
+    target.with_file_name(format!(".{file_name}.{}.tmp", Uuid::new_v4()))
 }
 
 fn revision_for_content(content: &[u8]) -> Revision {
@@ -316,9 +267,6 @@ fn map_not_found(err: std::io::Error) -> VaultError {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::sync::mpsc;
-    use std::thread;
-    use std::time::Duration;
 
     use tempfile::tempdir;
     use tokio::runtime::Builder;
@@ -361,82 +309,31 @@ mod tests {
     }
 
     #[test]
-    fn concurrent_guarded_writer_blocks_until_replacement_and_then_sees_stale() {
+    fn update_during_temp_write_returns_stale_and_preserves_newer_content() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("project.thoughttree");
         fs::write(&path, "before").unwrap();
         let initial = read_project_file(&path).unwrap();
 
-        // Force the interleaving: a second guarded writer starts after the first
-        // writer has validated the revision but before it renames into place.
-        let (started_tx, started_rx) = mpsc::channel();
-        let (done_tx, done_rx) = mpsc::channel();
-        let mut concurrent = None;
-        let concurrent_slot = &mut concurrent;
-        let done_rx = &done_rx;
-        let expected = initial.revision.clone();
-        let first = guarded_write_file_inner(
-            &path,
-            "after",
-            Some(&initial.revision),
-            move |_temp_path, target_path| {
-                let target = target_path.to_path_buf();
-                let handle = thread::spawn(move || {
-                    started_tx.send(()).unwrap();
-                    let result = super::guarded_write_file(&target, "concurrent", Some(&expected));
-                    let _ = done_tx.send(());
-                    result
-                });
-                started_rx.recv().unwrap();
-                // The second writer must be blocked on the lock, not finished.
-                assert!(done_rx.recv_timeout(Duration::from_millis(200)).is_err());
-                assert_eq!(fs::read_to_string(target_path)?, "before");
-                *concurrent_slot = Some(handle);
-                Ok(())
-            },
-        )
-        .unwrap();
-
-        let second = concurrent.unwrap().join().unwrap();
-
-        assert_eq!(fs::read_to_string(&path).unwrap(), "after");
-        assert_eq!(read_project_file(&path).unwrap().revision, first);
-        match second {
-            Err(VaultError::Stale { current }) => assert_eq!(current, first),
-            other => panic!("expected stale revision error, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn concurrent_guarded_writers_with_reload_never_lose_an_append() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("project.thoughttree");
-        fs::write(&path, "0").unwrap();
-
-        // Each writer follows the reload-and-reapply flow from ADR 0004.
-        let handles: Vec<_> = (1..=8)
-            .map(|i| {
-                let path = path.clone();
-                thread::spawn(move || loop {
-                    let current = read_project_file(&path).unwrap();
-                    let next = format!("{}{i}", current.content);
-                    match super::guarded_write_file(&path, &next, Some(&current.revision)) {
-                        Ok(_) => break,
-                        Err(VaultError::Stale { .. }) => continue,
-                        Err(other) => panic!("unexpected error: {other:?}"),
-                    }
+        let result =
+            guarded_write_file_inner(&path, "after", Some(&initial.revision), |_temp, target| {
+                // Complete a non-cooperating write after the initial revision
+                // check. Joining proves the update happened, without a timeout.
+                std::thread::scope(|scope| {
+                    scope
+                        .spawn(|| fs::write(target, "concurrent"))
+                        .join()
+                        .unwrap()
                 })
-            })
-            .collect();
-        for handle in handles {
-            handle.join().unwrap();
-        }
+            });
 
-        // Every writer appended exactly once; no append was overwritten.
-        let content = fs::read_to_string(&path).unwrap();
-        let mut digits: Vec<char> = content.chars().collect();
-        digits.sort_unstable();
-        assert_eq!(digits.into_iter().collect::<String>(), "012345678");
+        assert!(matches!(
+            result,
+            Err(VaultError::Stale { current })
+                if current == read_project_file(&path).unwrap().revision
+        ));
+        assert_eq!(read_project_file(&path).unwrap().content, "concurrent");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]
