@@ -16,6 +16,7 @@ import type {
   BackendTransport,
   ProjectDoc,
   ProjectEntry,
+  RecoveryEntry,
   PromptMessage,
   PromptRequest,
   StreamChunk,
@@ -178,6 +179,22 @@ export class TauriTransport implements BackendTransport {
     return () => {
       this.permissionSubscribers.delete(cb);
     };
+  }
+
+  async saveProjectCopy(path: string, data: string): Promise<[string, string]> {
+    return invoke('save_project_copy', { path, data });
+  }
+
+  async snapshotProject(path: string | null, data: string): Promise<string> {
+    return invoke('snapshot_project', { path, data });
+  }
+
+  async listProjectRecovery(): Promise<RecoveryEntry[]> {
+    return invoke('list_project_recovery');
+  }
+
+  async readProjectRecovery(id: string): Promise<string> {
+    return invoke('read_project_recovery', { id });
   }
 
   async loadProject(path: string): Promise<ProjectDoc> {

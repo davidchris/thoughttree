@@ -484,6 +484,89 @@ pub(crate) async fn save_project(
 }
 
 #[tauri::command]
+pub(crate) async fn save_project_copy(
+    app: AppHandle,
+    path: String,
+    data: String,
+) -> Result<(PathBuf, String), ProjectCommandError> {
+    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = validate_path_in_notes_dir(Path::new(&path), &notes).map_err(command_message)?;
+        let (copy, revision) =
+            thoughttree_core::vault::write_project_copy(&path, &data).map_err(map_save_error)?;
+        Ok((copy, revision.0))
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
+pub(crate) async fn snapshot_project(
+    app: AppHandle,
+    path: Option<String>,
+    data: String,
+) -> Result<String, ProjectCommandError> {
+    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = path
+            .map(|path| validate_path_in_notes_dir(Path::new(&path), &notes))
+            .transpose()
+            .map_err(command_message)?;
+        let snapshot = thoughttree_core::vault::save_recovery_snapshot(source.as_deref(), &data)
+            .map_err(map_save_error)?;
+        Ok(snapshot.id)
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
+pub(crate) async fn list_project_recovery(
+    app: AppHandle,
+) -> Result<Vec<thoughttree_core::vault::RecoveryEntry>, ProjectCommandError> {
+    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let notes = fs::canonicalize(notes).map_err(|err| command_message(err.to_string()))?;
+        Ok(thoughttree_core::vault::list_recovery_snapshots()
+            .map_err(map_load_error)?
+            .into_iter()
+            .filter(|entry| {
+                entry
+                    .source_path
+                    .as_ref()
+                    .is_none_or(|path| path.starts_with(&notes))
+            })
+            .collect())
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
+pub(crate) async fn read_project_recovery(
+    app: AppHandle,
+    id: String,
+) -> Result<String, ProjectCommandError> {
+    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let notes = fs::canonicalize(notes).map_err(|err| command_message(err.to_string()))?;
+        let snapshot =
+            thoughttree_core::vault::read_recovery_snapshot(&id).map_err(map_load_error)?;
+        if snapshot
+            .entry
+            .source_path
+            .as_ref()
+            .is_some_and(|path| !path.starts_with(&notes))
+        {
+            return Err(map_load_error(VaultError::InvalidPath));
+        }
+        Ok(snapshot.content)
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
 pub(crate) async fn load_project(
     app: AppHandle,
     path: String,

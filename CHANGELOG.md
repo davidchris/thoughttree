@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- Fix - Local Project writes no longer create sibling lock files. Revision revalidation catches changes during temp-file preparation, but the final check-to-rename race remains unresolved.
-- Security - Core Vault reads and writes reject file symlinks that escape the root. Desktop relative paths retain their existing behavior and notes-directory boundary checks.
-- Fix - Desktop Project writes run on the blocking pool so filesystem operations do not block an async runtime worker.
+- Local Project writes share an advisory lock outside the Vault and recheck revisions before atomic replacement. External writers can bypass this protection.
+- Conflicts offer comparison, reload with a recovery snapshot, or a separate copy. Existing Projects cannot be overwritten without their loaded revision.
+- Independent recovery snapshots preserve completed ThoughtTree edits. The toolbar and opening screen can reopen snapshots as unsaved Projects.
+- Core Vault reads and writes reject file symlinks that escape the root. Desktop relative paths retain notes-directory boundary checks.
+- Desktop and local Vault writes run on a blocking pool.
 
 ## 0.4.1
 

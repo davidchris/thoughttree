@@ -3,6 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { Graph } from './components/Graph';
 import { Toolbar } from './components/Toolbar';
 import { PermissionDialog } from './components/PermissionDialog';
+import { RecoverySnapshots } from './components/RecoverySnapshots';
 import { StaleSaveDialog } from './components/StaleSaveDialog';
 import { SetupWizard } from './components/SetupWizard';
 import { ProjectOpeningWizard } from './components/ProjectOpeningWizard';
@@ -22,6 +23,7 @@ function App() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const transport = getBackendTransport();
   const projectPath = useGraphStore((state) => state.projectPath);
+  const recoveryError = useUIStore((state) => state.recoveryError);
   const projectTitle = useGraphStore((state) => state.projectTitle);
   const loadProject = useGraphStore((state) => state.loadProject);
   const newProject = useGraphStore((state) => state.newProject);
@@ -190,6 +192,7 @@ function App() {
   // Show project opening wizard if no project is loaded
   if (!projectPath && !projectTitle) {
     return (
+      <>
       <ProjectOpeningWizard
         onProjectSelected={handleProjectSelected}
         onOpenDialog={handleOpenDialog}
@@ -197,6 +200,8 @@ function App() {
         onImport={handleImport}
         nativeDialogsEnabled={transport.capabilities.nativeDialogs}
       />
+      <RecoverySnapshots />
+      </>
     );
   }
 
@@ -212,6 +217,7 @@ function App() {
       </ReactFlowProvider>
       <PermissionDialog />
       <StaleSaveDialog />
+      {recoveryError && <div role="alert" className="recovery-warning">{recoveryError}</div>}
     </div>
   );
 }

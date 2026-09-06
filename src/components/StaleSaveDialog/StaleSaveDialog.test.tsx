@@ -23,6 +23,10 @@ function createMockTransport(): BackendTransport {
     capabilities: { nativeDialogs: true },
     loadProject: vi.fn(),
     saveProject: vi.fn(),
+    saveProjectCopy: vi.fn(),
+    snapshotProject: vi.fn().mockResolvedValue('snapshot-1'),
+    listProjectRecovery: vi.fn().mockResolvedValue([]),
+    readProjectRecovery: vi.fn(),
     listProjects: vi.fn(),
     importKagiExport: vi.fn(),
     sendPrompt: vi.fn(),
@@ -78,22 +82,35 @@ describe('StaleSaveDialog', () => {
     });
   });
 
-  it('force-saves with a null base revision and dismisses the dialog', async () => {
-    vi.mocked(transport.saveProject).mockResolvedValue('rev-9');
+  it('compares versions without replacing the unsaved graph or its loaded revision', async () => {
+    const state = useGraphStore.getState();
+    const id = state.createUserNode();
+    state.updateNodeContent(id, 'Unsaved message');
+    const graph = useGraphStore.getState().graph;
+    vi.mocked(transport.loadProject).mockResolvedValue({ data: '{"external":true}', revision: 'rev-2' });
+    useUIStore.getState().setStaleProjectSave({ path: '/tmp/project.thoughttree', currentRevision: 'rev-2' });
+    render(<StaleSaveDialog />);
+    await userEvent.click(screen.getByRole('button', { name: 'Compare Versions' }));
+    await screen.findByRole('textbox', { name: 'Disk version at comparison' });
+    expect((screen.getByRole('textbox', { name: 'Unsaved version at comparison' }) as HTMLTextAreaElement).value).toContain('Unsaved message');
+    expect(useGraphStore.getState().graph).toBe(graph);
+    expect(useGraphStore.getState().projectRevision).toBe('rev-1');
+    expect(transport.saveProject).not.toHaveBeenCalled();
+  });
+
+  it('saves a separate copy and leaves the original file alone', async () => {
+    vi.mocked(transport.saveProjectCopy).mockResolvedValue(['/tmp/copy.thoughttree', 'rev-9']);
     useUIStore.getState().setStaleProjectSave({
       path: '/tmp/project.thoughttree',
       currentRevision: 'rev-2',
     });
 
     render(<StaleSaveDialog />);
-    await userEvent.click(screen.getByRole('button', { name: 'Overwrite' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save a Separate Copy' }));
 
     await waitFor(() => {
-      expect(transport.saveProject).toHaveBeenCalledWith(
-        '/tmp/project.thoughttree',
-        expect.any(String),
-        null
-      );
+      expect(transport.saveProjectCopy).toHaveBeenCalledWith('/tmp/project.thoughttree', expect.any(String));
+      expect(transport.saveProject).not.toHaveBeenCalled();
       expect(useGraphStore.getState().projectRevision).toBe('rev-9');
       expect(useUIStore.getState().staleProjectSave).toBeNull();
     });
