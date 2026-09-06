@@ -89,6 +89,7 @@ interface GraphState {
   nodeData: Map<NodeId, MessageNodeData>;
 
   // Project state
+  projectSession: string;
   projectPath: string | null;
   projectTitle: string | null;
   projectRevision: string | null;
@@ -148,7 +149,11 @@ interface GraphState {
 
   // Project actions
   setProjectPath: (path: string | null) => void;
-  saveProject: (options?: { force?: boolean }) => Promise<void>;
+  projectContent: () => string;
+  snapshotProject: () => Promise<string>;
+  saveProject: () => Promise<void>;
+  saveProjectCopy: () => Promise<void>;
+  restoreRecovery: (id: string) => Promise<void>;
   loadProject: (path: string) => Promise<void>;
   newProject: () => void;
   importGraph: (title: string, graph: Graph) => void;
@@ -157,6 +162,61 @@ interface GraphState {
   // Layout actions
   autoLayout: (options?: AutoLayoutOptions) => void;
 }
+
+function deserializeProjectFile(data: string) {
+  const parsed = JSON.parse(data) as ProjectFile;
+
+  let graph: Graph;
+  let projectModelPreferences: ModelPreferences | null = null;
+  let projectEffortPreferences: EffortPreferences | null = null;
+
+  if ((parsed.version === GRAPH_JSON_VERSION || parsed.version === 3) && 'graph' in parsed) {
+    graph = GraphSerialize.fromJSON(parsed.graph);
+    projectModelPreferences = parsed.projectModelPreferences
+      ? withoutNullEntries(parsed.projectModelPreferences)
+      : null;
+    projectEffortPreferences = parsed.projectEffortPreferences
+      ? withoutNullEntries(parsed.projectEffortPreferences)
+      : null;
+  } else if (parsed.version === 1 || parsed.version === 2) {
+    const legacy = parsed as ProjectFileLegacyV2;
+    const migratedNodeData = migrateLegacyV2NodeData(legacy.nodeData);
+    graph = GraphSerialize.fromLegacyV2({
+      version: legacy.version,
+      nodes: legacy.nodes,
+      edges: legacy.edges,
+      nodeData: migratedNodeData,
+    });
+    projectModelPreferences = legacy.projectModelPreferences
+      ? withoutNullEntries(legacy.projectModelPreferences)
+      : null;
+    projectEffortPreferences = null;
+  } else {
+    throw new Error(`Unsupported Project file version: ${String(parsed.version)}`);
+  }
+  return { graph, projectModelPreferences, projectEffortPreferences };
+}
+
+function sameEdits(left: GraphState, right: GraphState) {
+  return left.projectSession === right.projectSession && left.graph === right.graph &&
+    left.projectModelPreferences === right.projectModelPreferences &&
+    left.projectEffortPreferences === right.projectEffortPreferences;
+}
+
+async function preserveUnsavedWork() {
+  useGraphStore.getState().flushStreamingChunks();
+  const state = useGraphStore.getState();
+  if (state.streamingNodeIds.size > 0) throw new Error('Wait for the current response to finish before replacing the graph.');
+  if (!state.isDirty) return state;
+  await state.snapshotProject();
+  if (!sameEdits(state, useGraphStore.getState())) {
+    throw new Error('Edits changed while the recovery snapshot was saved. Try again.');
+  }
+  return state;
+}
+
+let saveQueue: Promise<unknown> = Promise.resolve();
+let recoveryRequest = 0;
 
 const generateId = () => crypto.randomUUID();
 
@@ -305,6 +365,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   nodes: [],
   edges: [],
   nodeData: new Map(),
+  projectSession: crypto.randomUUID(),
   projectPath: null,
   projectTitle: null,
   projectRevision: null,
@@ -661,79 +722,98 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
 
   setProjectPath: (path) =>
     set((state) => ({
+      projectSession: state.projectPath === path ? state.projectSession : crypto.randomUUID(),
       projectPath: path,
       projectTitle: path ? null : state.projectTitle,
       projectRevision: state.projectPath === path ? state.projectRevision : null,
     })),
 
-  saveProject: async (options) => {
+  projectContent: () => {
     get().flushStreamingChunks();
-    const transport = getBackendTransport();
-    const { projectPath, projectRevision, graph, projectModelPreferences, projectEffortPreferences } = get();
-    if (!projectPath) {
-      logger.warn('No project path set, cannot save');
-      return;
-    }
-    const content = serializeProjectFile(graph, projectModelPreferences, projectEffortPreferences);
-    const baseRevision = options?.force ? null : projectRevision;
+    const { graph, projectModelPreferences, projectEffortPreferences } = get();
+    return serializeProjectFile(graph, projectModelPreferences, projectEffortPreferences);
+  },
 
+  snapshotProject: async () => {
+    const content = get().projectContent();
+    const session = get().projectSession;
+    const request = ++recoveryRequest;
     try {
-      const revision = await transport.saveProject(projectPath, content, baseRevision);
-      set({ projectRevision: revision, lastSavedAt: Date.now(), isDirty: false });
-      useUIStore.getState().setStaleProjectSave(null);
-      logger.info('Project saved to:', projectPath);
+      const id = await getBackendTransport().snapshotProject(get().projectPath, content);
+      if (request === recoveryRequest && get().projectSession === session) useUIStore.getState().setRecoveryError(null);
+      return id;
     } catch (error) {
-      if (error instanceof StaleRevisionError) {
-        useUIStore.getState().setStaleProjectSave({
-          path: projectPath,
-          currentRevision: error.currentRevision,
-        });
+      if (request === recoveryRequest && get().projectSession === session) {
+        useUIStore.getState().setRecoveryError('Recovery snapshot failed. Keep this window open and save a separate copy.');
       }
-      logger.error('Failed to save project:', error);
       throw error;
     }
   },
 
+  saveProject: () => {
+    const session = get().projectSession;
+    const operation = saveQueue.then(async () => {
+      if (get().projectSession !== session) return;
+      const content = get().projectContent();
+      const state = get();
+      if (!state.projectPath) return;
+      const conflict = useUIStore.getState().staleProjectSave;
+      if (conflict?.path === state.projectPath) throw new StaleRevisionError(conflict.currentRevision);
+      try {
+        const revision = await getBackendTransport().saveProject(state.projectPath, content, state.projectRevision);
+        if (get().projectSession !== session) return;
+        set({ projectRevision: revision, lastSavedAt: Date.now(), isDirty: !sameEdits(state, get()) });
+        useUIStore.getState().setStaleProjectSave(null);
+      } catch (error) {
+        if (get().projectSession === session && error instanceof StaleRevisionError) {
+          set({ isDirty: true });
+          useUIStore.getState().setStaleProjectSave({ path: state.projectPath, currentRevision: error.currentRevision });
+        }
+        throw error;
+      }
+    });
+    saveQueue = operation.catch(() => {});
+    return operation;
+  },
+
+  saveProjectCopy: async () => {
+    const content = get().projectContent();
+    const state = get();
+    if (!state.projectPath) throw new Error('Choose a project location before saving a copy.');
+    const [path, revision] = await getBackendTransport().saveProjectCopy(state.projectPath, content);
+    if (get().projectSession !== state.projectSession) return;
+    set({ projectPath: path, projectRevision: revision, projectSession: crypto.randomUUID(),
+      lastSavedAt: Date.now(), isDirty: !sameEdits(state, get()) });
+    useUIStore.getState().setStaleProjectSave(null);
+  },
+
+  restoreRecovery: async (id) => {
+    const session = get().projectSession;
+    const content = await getBackendTransport().readProjectRecovery(id);
+    const { graph, projectModelPreferences, projectEffortPreferences } = deserializeProjectFile(content);
+    const preserved = await preserveUnsavedWork();
+    if (!sameEdits(preserved, get())) throw new Error('Edits changed during recovery. Try again.');
+    if (get().projectSession !== session) throw new Error('The active project changed during recovery.');
+    get().importGraph('Recovered project', graph);
+    set({ projectModelPreferences, projectEffortPreferences });
+  },
+
   loadProject: async (path) => {
+    const session = get().projectSession;
     const transport = getBackendTransport();
     try {
       const project = await transport.loadProject(path);
-      const parsed = JSON.parse(project.data) as ProjectFile;
-
-      let graph: Graph;
-      let projectModelPreferences: ModelPreferences | null = null;
-      let projectEffortPreferences: EffortPreferences | null = null;
-
-      if ((parsed.version === GRAPH_JSON_VERSION || parsed.version === 3) && 'graph' in parsed) {
-        graph = GraphSerialize.fromJSON(parsed.graph);
-        projectModelPreferences = parsed.projectModelPreferences
-          ? withoutNullEntries(parsed.projectModelPreferences)
-          : null;
-        projectEffortPreferences = parsed.projectEffortPreferences
-          ? withoutNullEntries(parsed.projectEffortPreferences)
-          : null;
-      } else if (parsed.version === 1 || parsed.version === 2) {
-        const legacy = parsed as ProjectFileLegacyV2;
-        const migratedNodeData = migrateLegacyV2NodeData(legacy.nodeData);
-        graph = GraphSerialize.fromLegacyV2({
-          version: legacy.version,
-          nodes: legacy.nodes,
-          edges: legacy.edges,
-          nodeData: migratedNodeData,
-        });
-        projectModelPreferences = legacy.projectModelPreferences
-          ? withoutNullEntries(legacy.projectModelPreferences)
-          : null;
-        projectEffortPreferences = null;
-      } else {
-        throw new Error(`Unsupported Project file version: ${String(parsed.version)}`);
-      }
+      const { graph, projectModelPreferences, projectEffortPreferences } = deserializeProjectFile(project.data);
+      const preserved = await preserveUnsavedWork();
+      if (!sameEdits(preserved, get())) throw new Error('Edits changed during reload. Try again.');
+      if (get().projectSession !== session) throw new Error('The active project changed during reload.');
 
       set({
         graph,
         ...projectGraph(graph, [], null),
         projectModelPreferences,
         projectEffortPreferences,
+        projectSession: crypto.randomUUID(),
         projectPath: path,
         projectTitle: null,
         projectRevision: project.revision,
@@ -760,6 +840,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       nodeData: graph.nodes,
       projectModelPreferences: null,
       projectEffortPreferences: null,
+      projectSession: crypto.randomUUID(),
       projectPath: null,
       projectTitle: null,
       projectRevision: null,
@@ -777,6 +858,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       ...projectGraph(graph, [], null),
       projectModelPreferences: null,
       projectEffortPreferences: null,
+      projectSession: crypto.randomUUID(),
       projectPath: null,
       projectTitle: title,
       projectRevision: null,
@@ -847,7 +929,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
 // Auto-save subscription: graph reference changes whenever domain content mutates.
 const debouncedSave = debounce(async () => {
   const state = useGraphStore.getState();
-  if (state.projectPath && state.isDirty) {
+  if (state.projectPath && state.isDirty && !useUIStore.getState().staleProjectSave) {
     try {
       await state.saveProject();
     } catch (error) {
@@ -856,8 +938,18 @@ const debouncedSave = debounce(async () => {
   }
 }, 2000);
 
+// At most one draft checkpoint per second, including continuous edits/streaming.
+// This timer is not reset by each edit, so a long stream cannot starve recovery.
+let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 useGraphStore.subscribe((state, prevState) => {
-  if (state.graph !== prevState.graph) {
+  if (!sameEdits(state, prevState)) {
     debouncedSave();
+    if (state.isDirty && recoveryTimer === null) {
+      recoveryTimer = setTimeout(() => {
+        recoveryTimer = null;
+        const current = useGraphStore.getState();
+        if (current.isDirty) void current.snapshotProject().catch((error) => logger.error('Recovery snapshot failed:', error));
+      }, 1000);
+    }
   }
 });

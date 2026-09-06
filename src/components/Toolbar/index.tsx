@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
+import { RecoverySnapshots } from '../RecoverySnapshots';
 import { SettingsDialog } from '../SettingsDialog';
 import { addRecentProject, exportMarkdown, newProjectDialog, openProjectDialog, pickKagiExport } from '../../lib/desktop';
 import { getBackendTransport } from '../../lib/transport';
@@ -239,6 +240,7 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar-right">
+        <RecoverySnapshots />
         <button
           onClick={() => setShowSettings(true)}
           title="Settings"

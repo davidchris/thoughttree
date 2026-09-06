@@ -15,6 +15,12 @@ export interface ProjectDoc {
   revision: string;
 }
 
+export interface RecoveryEntry {
+  id: string;
+  sourcePath: string | null;
+  createdEpochMs: number;
+}
+
 export interface ProjectEntry {
   relativePath: string;
   modifiedEpochMs: number;
@@ -79,6 +85,10 @@ export interface SummaryResult {
 export interface BackendTransport {
   loadProject(path: string): Promise<ProjectDoc>;
   saveProject(path: string, data: string, baseRevision: string | null): Promise<string>;
+  saveProjectCopy(path: string, data: string): Promise<[string, string]>;
+  snapshotProject(path: string | null, data: string): Promise<string>;
+  listProjectRecovery(): Promise<RecoveryEntry[]>;
+  readProjectRecovery(id: string): Promise<string>;
   listProjects(): Promise<ProjectEntry[]>;
   importKagiExport(path: string): Promise<ImportedGraph>;
 

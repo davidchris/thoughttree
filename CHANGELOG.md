@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Local Project writes share an advisory lock outside the Vault and recheck revisions before atomic replacement. External writers can bypass this protection.
+- Conflicts offer comparison, reload with a recovery snapshot, or a separate copy. Existing Projects cannot be overwritten without their loaded revision.
+- Independent recovery snapshots preserve completed ThoughtTree edits. The toolbar and opening screen can reopen snapshots as unsaved Projects.
+- Core Vault reads and writes reject file symlinks that escape the root. Desktop relative paths retain notes-directory boundary checks.
+- Desktop and local Vault writes run on a blocking pool.
+
 ## 0.4.1
 
 - Security - Restored the notes-directory boundary for project load and save commands

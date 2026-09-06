@@ -29,6 +29,10 @@ pub(crate) struct ProjectEntry {
     modified_epoch_ms: u64,
 }
 
+/// Resolves `path` and confirms it stays inside the configured notes directory.
+/// Symlinks are followed before the check, so a link pointing outside the
+/// vault is rejected the same way a plain outside path is. Relative paths retain
+/// their filesystem meaning (relative to cwd) and pass the same boundary check.
 fn validate_path_in_notes_dir(path: &Path, notes_directory: &Path) -> Result<PathBuf, String> {
     let canonical_notes = fs::canonicalize(notes_directory)
         .map_err(|err| format!("Failed to resolve notes directory: {err}"))?;
@@ -263,6 +267,205 @@ mod tests {
                 if message == "Security error: project path is outside the notes directory"
         ));
     }
+
+    fn assert_outside_notes_directory(error: ProjectCommandError) {
+        assert!(matches!(
+            error,
+            ProjectCommandError::Message { message }
+                if message == "Security error: project path is outside the notes directory"
+        ));
+    }
+
+    #[test]
+    fn load_and_save_reject_relative_traversal_paths() {
+        let dir = tempdir().unwrap();
+        let notes_directory = dir.path().join("notes");
+        let outside_path = dir.path().join("outside.thoughttree");
+        fs::create_dir(&notes_directory).unwrap();
+        fs::write(&outside_path, "outside content").unwrap();
+
+        let traversal = notes_directory.join("..").join("outside.thoughttree");
+        let missing_traversal = notes_directory.join("..").join("new.thoughttree");
+
+        assert_outside_notes_directory(
+            load_project_in_notes_dir(&notes_directory, &traversal).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, &traversal, "changed", None).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, &missing_traversal, "new", None)
+                .unwrap_err(),
+        );
+        assert_eq!(
+            fs::read_to_string(&outside_path).unwrap(),
+            "outside content"
+        );
+        assert!(!dir.path().join("new.thoughttree").exists());
+    }
+
+    #[test]
+    fn load_and_save_accept_relative_paths_inside_notes_directory() {
+        // Keep cwd unchanged so this test can run alongside other filesystem tests.
+        let cwd = std::env::current_dir().unwrap();
+        let dir = tempfile::tempdir_in(&cwd).unwrap();
+        let notes_directory = dir.path().join("notes");
+        fs::create_dir(&notes_directory).unwrap();
+        let project_path = notes_directory.join("inside.thoughttree");
+        let relative = project_path.strip_prefix(&cwd).unwrap();
+
+        let (_, revision) =
+            save_project_in_notes_dir(&notes_directory, relative, "first", None).unwrap();
+        let (_, loaded) = load_project_in_notes_dir(&notes_directory, relative).unwrap();
+        assert_eq!(loaded.content, "first");
+        assert_eq!(loaded.revision, revision.0);
+
+        let outside = dir.path().join("outside.thoughttree");
+        fs::write(&outside, "outside").unwrap();
+        let traversal = notes_directory.join("..").join("outside.thoughttree");
+        let relative_traversal = traversal.strip_prefix(&cwd).unwrap();
+        assert_outside_notes_directory(
+            load_project_in_notes_dir(&notes_directory, relative_traversal).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, relative_traversal, "changed", None)
+                .unwrap_err(),
+        );
+        assert_eq!(fs::read_to_string(outside).unwrap(), "outside");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_and_save_reject_symlink_escapes() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let notes_directory = dir.path().join("notes");
+        let outside_dir = dir.path().join("outside");
+        let outside_file = outside_dir.join("secret.thoughttree");
+        fs::create_dir(&notes_directory).unwrap();
+        fs::create_dir(&outside_dir).unwrap();
+        fs::write(&outside_file, "secret").unwrap();
+
+        // File symlink inside the vault pointing at a file outside it.
+        let file_link = notes_directory.join("link.thoughttree");
+        symlink(&outside_file, &file_link).unwrap();
+        // Directory symlink inside the vault pointing at a directory outside it.
+        let dir_link = notes_directory.join("linked-dir");
+        symlink(&outside_dir, &dir_link).unwrap();
+        let through_dir_link = dir_link.join("secret.thoughttree");
+        let new_through_dir_link = dir_link.join("planted.thoughttree");
+
+        assert_outside_notes_directory(
+            load_project_in_notes_dir(&notes_directory, &file_link).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, &file_link, "changed", None).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            load_project_in_notes_dir(&notes_directory, &through_dir_link).unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, &through_dir_link, "changed", None)
+                .unwrap_err(),
+        );
+        assert_outside_notes_directory(
+            save_project_in_notes_dir(&notes_directory, &new_through_dir_link, "planted", None)
+                .unwrap_err(),
+        );
+        assert_eq!(fs::read_to_string(&outside_file).unwrap(), "secret");
+        assert!(!outside_dir.join("planted.thoughttree").exists());
+    }
+
+    #[test]
+    fn valid_project_inside_notes_directory_saves_and_loads() {
+        let dir = tempdir().unwrap();
+        let notes_directory = dir.path().join("notes");
+        fs::create_dir_all(notes_directory.join("nested")).unwrap();
+        let project_path = notes_directory.join("nested").join("project.thoughttree");
+
+        let (saved_path, first_revision) =
+            save_project_in_notes_dir(&notes_directory, &project_path, "first", None).unwrap();
+        let (loaded_path, loaded) =
+            load_project_in_notes_dir(&notes_directory, &project_path).unwrap();
+
+        assert_eq!(saved_path, loaded_path);
+        assert_eq!(loaded.content, "first");
+        assert_eq!(loaded.revision, first_revision.0);
+
+        let (_, second_revision) = save_project_in_notes_dir(
+            &notes_directory,
+            &project_path,
+            "second",
+            Some(&first_revision),
+        )
+        .unwrap();
+        let (_, reloaded) = load_project_in_notes_dir(&notes_directory, &project_path).unwrap();
+
+        assert_ne!(second_revision, first_revision);
+        assert_eq!(reloaded.content, "second");
+        assert_eq!(reloaded.revision, second_revision.0);
+    }
+
+    #[test]
+    fn stale_save_reports_current_revision_and_keeps_newer_content() {
+        let dir = tempdir().unwrap();
+        let notes_directory = dir.path().join("notes");
+        fs::create_dir(&notes_directory).unwrap();
+        let project_path = notes_directory.join("project.thoughttree");
+
+        let (_, base_revision) =
+            save_project_in_notes_dir(&notes_directory, &project_path, "base", None).unwrap();
+        let (_, newer_revision) = save_project_in_notes_dir(
+            &notes_directory,
+            &project_path,
+            "newer",
+            Some(&base_revision),
+        )
+        .unwrap();
+
+        let error = save_project_in_notes_dir(
+            &notes_directory,
+            &project_path,
+            "stale",
+            Some(&base_revision),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ProjectCommandError::StaleRevision { current_revision }
+                if current_revision == newer_revision.0
+        ));
+        assert_eq!(fs::read_to_string(&project_path).unwrap(), "newer");
+    }
+
+    #[test]
+    fn recovery_commands_work_after_the_vault_is_removed() {
+        let dir = tempdir().unwrap();
+        let notes = dir.path().join("notes");
+        fs::create_dir(&notes).unwrap();
+        let (source, _) = save_project_in_notes_dir(
+            &notes,
+            &notes.join("project.thoughttree"),
+            "recoverable edits",
+            None,
+        )
+        .unwrap();
+        fs::remove_dir_all(&notes).unwrap();
+
+        tauri::async_runtime::block_on(async {
+            let entries = list_project_recovery().await.unwrap();
+            let entry = entries
+                .into_iter()
+                .find(|entry| entry.source_path.as_ref() == Some(&source))
+                .unwrap();
+            assert_eq!(
+                read_project_recovery(entry.id).await.unwrap(),
+                "recoverable edits"
+            );
+        });
+    }
 }
 
 #[tauri::command]
@@ -296,14 +499,74 @@ pub(crate) async fn save_project(
     base_revision: Option<String>,
 ) -> Result<String, ProjectCommandError> {
     let notes_directory = config::get_notes_directory_required(&app).map_err(command_message)?;
-    let revision = base_revision
-        .as_deref()
-        .map(|value| Revision(value.to_string()));
-    let (validated_path, next_revision) =
-        save_project_in_notes_dir(&notes_directory, Path::new(&path), &data, revision.as_ref())?;
+    let (validated_path, next_revision) = tauri::async_runtime::spawn_blocking(move || {
+        let revision = base_revision.map(Revision);
+        save_project_in_notes_dir(&notes_directory, Path::new(&path), &data, revision.as_ref())
+    })
+    .await
+    .map_err(|err| command_message(format!("Failed to run project write: {err}")))??;
 
     tracing::info!("Project saved to: {:?}", validated_path);
     Ok(next_revision.0)
+}
+
+#[tauri::command]
+pub(crate) async fn save_project_copy(
+    app: AppHandle,
+    path: String,
+    data: String,
+) -> Result<(PathBuf, String), ProjectCommandError> {
+    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = validate_path_in_notes_dir(Path::new(&path), &notes).map_err(command_message)?;
+        let (copy, revision) =
+            thoughttree_core::vault::write_project_copy(&path, &data).map_err(map_save_error)?;
+        Ok((copy, revision.0))
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
+pub(crate) async fn snapshot_project(
+    app: AppHandle,
+    path: Option<String>,
+    data: String,
+) -> Result<String, ProjectCommandError> {
+    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = path
+            .map(|path| validate_path_in_notes_dir(Path::new(&path), &notes))
+            .transpose()
+            .map_err(command_message)?;
+        let snapshot = thoughttree_core::vault::save_recovery_snapshot(source.as_deref(), &data)
+            .map_err(map_save_error)?;
+        Ok(snapshot.id)
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
+pub(crate) async fn list_project_recovery(
+) -> Result<Vec<thoughttree_core::vault::RecoveryEntry>, ProjectCommandError> {
+    // Recovery belongs to the OS user's app data, even when a Vault is unavailable.
+    tauri::async_runtime::spawn_blocking(|| {
+        thoughttree_core::vault::list_recovery_snapshots().map_err(map_load_error)
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
+}
+
+#[tauri::command]
+pub(crate) async fn read_project_recovery(id: String) -> Result<String, ProjectCommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let snapshot =
+            thoughttree_core::vault::read_recovery_snapshot(&id).map_err(map_load_error)?;
+        Ok(snapshot.content)
+    })
+    .await
+    .map_err(|err| command_message(err.to_string()))?
 }
 
 #[tauri::command]

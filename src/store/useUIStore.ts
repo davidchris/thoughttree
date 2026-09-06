@@ -21,6 +21,8 @@ interface UIState {
   flashNodeId: string | null;
   pendingPermission: PermissionRequest | null;
   staleProjectSave: { path: string; currentRevision: string } | null;
+  recoveryError: string | null;
+  setRecoveryError: (error: string | null) => void;
   settingsOpen: boolean;
   triggerSidePanelEdit: boolean;
 
@@ -47,6 +49,8 @@ export const useUIStore = create<UIState>()((set, get) => ({
   flashNodeId: null,
   pendingPermission: null,
   staleProjectSave: null,
+  recoveryError: null,
+  setRecoveryError: (recoveryError) => set({ recoveryError }),
   settingsOpen: false,
   triggerSidePanelEdit: false,
 

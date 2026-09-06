@@ -2,6 +2,13 @@
 //! `docs/adr/0004-guarded-project-writes.md`.
 //! Local files write to a temp sibling and atomically rename into place after
 //! comparing the caller's last-read revision with the current file content hash.
+//! The local filesystem does not provide a hash-conditioned rename.
+
+mod local_state;
+mod recovery;
+pub use recovery::{
+    list_recovery_snapshots, read_recovery_snapshot, save_recovery_snapshot, RecoveryEntry,
+};
 
 use std::fs;
 use std::io::Write;
@@ -79,7 +86,11 @@ impl VaultStorage for LocalFsVault {
         expected: Option<&Revision>,
     ) -> Result<Revision, VaultError> {
         let path = validate_relative_path(&self.root, relative_path)?;
-        guarded_write_file(&path, content, expected)
+        let content = content.to_owned();
+        let expected = expected.cloned();
+        tokio::task::spawn_blocking(move || guarded_write_file(path, &content, expected.as_ref()))
+            .await
+            .map_err(|err| std::io::Error::other(format!("Project write task failed: {err}")))?
     }
 }
 
@@ -100,29 +111,33 @@ pub fn guarded_write_file(
     guarded_write_file_inner(path.as_ref(), content, expected, |_temp, _target| Ok(()))
 }
 
+/// Creates a separate Project without replacing the source or an existing copy.
+pub fn write_project_copy(path: &Path, content: &str) -> Result<(PathBuf, Revision), VaultError> {
+    let path = validate_absolute_file_path(path)?;
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("project");
+    let copy = path.with_file_name(format!("{stem} (copy {}).thoughttree", Uuid::new_v4()));
+    let revision = guarded_write_file(&copy, content, None)?;
+    Ok((copy, revision))
+}
+
 fn guarded_write_file_inner<F>(
     path: &Path,
     content: &str,
     expected: Option<&Revision>,
-    before_rename: F,
+    after_temp_write: F,
 ) -> Result<Revision, VaultError>
 where
     F: FnOnce(&Path, &Path) -> Result<(), std::io::Error>,
 {
     let path = validate_absolute_file_path(path)?;
-    let current = read_existing_file(&path)?;
+    save_recovery_snapshot(Some(&path), content)?;
+    let _writer_lock = local_state::lock_project_writes()?;
+    check_revision(&path, expected)?;
 
-    if let Some(expected) = expected {
-        let current = current.ok_or(VaultError::NotFound)?;
-        if current.revision != *expected {
-            return Err(VaultError::Stale {
-                current: current.revision,
-            });
-        }
-    }
-
-    let parent = path.parent().ok_or(VaultError::InvalidPath)?;
-    let temp_path = temp_sibling_path(parent, &path);
+    let temp_path = temp_sibling_path(&path);
     let write_result = (|| -> Result<(), VaultError> {
         let mut temp_file = fs::OpenOptions::new()
             .create_new(true)
@@ -132,7 +147,10 @@ where
         temp_file.sync_all()?;
         drop(temp_file);
 
-        before_rename(&temp_path, &path)?;
+        after_temp_write(&temp_path, &path)?;
+        // Catch changes during temp-file preparation. This is still a separate
+        // operation from rename: it narrows the race window but is not CAS.
+        check_revision(&path, expected)?;
         fs::rename(&temp_path, &path)?;
         Ok(())
     })();
@@ -145,15 +163,25 @@ where
     Ok(revision_for_content(content.as_bytes()))
 }
 
-fn read_existing_file(path: &Path) -> Result<Option<ProjectDoc>, VaultError> {
-    match fs::read_to_string(path) {
-        Ok(content) => Ok(Some(ProjectDoc {
-            revision: revision_for_content(content.as_bytes()),
-            content,
-        })),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(VaultError::Io(err)),
+fn check_revision(path: &Path, expected: Option<&Revision>) -> Result<(), VaultError> {
+    if let Some(expected) = expected {
+        let content = fs::read(path).map_err(map_not_found)?;
+        let current = revision_for_content(&content);
+        if current != *expected {
+            return Err(VaultError::Stale { current });
+        }
+    } else {
+        match fs::read(path) {
+            Ok(content) => {
+                return Err(VaultError::Stale {
+                    current: revision_for_content(&content),
+                })
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
     }
+    Ok(())
 }
 
 fn list_projects_under_root(root: &Path) -> Result<Vec<ProjectEntry>, VaultError> {
@@ -223,7 +251,11 @@ fn validate_relative_path(root: &Path, relative_path: &str) -> Result<PathBuf, V
         return Err(VaultError::InvalidPath);
     }
 
-    Ok(canonical_parent.join(file_name))
+    let path = validate_absolute_file_path(&canonical_parent.join(file_name))?;
+    if !path.starts_with(&canonical_root) {
+        return Err(VaultError::InvalidPath);
+    }
+    Ok(path)
 }
 
 fn validate_absolute_file_path(path: &Path) -> Result<PathBuf, VaultError> {
@@ -241,12 +273,12 @@ fn validate_absolute_file_path(path: &Path) -> Result<PathBuf, VaultError> {
     Ok(canonical_parent.join(file_name))
 }
 
-fn temp_sibling_path(parent: &Path, target: &Path) -> PathBuf {
+fn temp_sibling_path(target: &Path) -> PathBuf {
     let file_name = target
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("project.thoughttree");
-    parent.join(format!(".{file_name}.{}.tmp", Uuid::new_v4()))
+    target.with_file_name(format!(".{file_name}.{}.tmp", Uuid::new_v4()))
 }
 
 fn revision_for_content(content: &[u8]) -> Revision {
@@ -311,16 +343,218 @@ mod tests {
     }
 
     #[test]
+    fn update_during_temp_write_returns_stale_and_preserves_newer_content() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "before").unwrap();
+        let initial = read_project_file(&path).unwrap();
+
+        let result =
+            guarded_write_file_inner(&path, "after", Some(&initial.revision), |_temp, target| {
+                // Complete a non-cooperating write after the initial revision
+                // check. Joining proves the update happened, without a timeout.
+                std::thread::scope(|scope| {
+                    scope
+                        .spawn(|| fs::write(target, "concurrent"))
+                        .join()
+                        .unwrap()
+                })
+            });
+
+        assert!(matches!(
+            result,
+            Err(VaultError::Stale { current })
+                if current == read_project_file(&path).unwrap().revision
+        ));
+        assert_eq!(read_project_file(&path).unwrap().content, "concurrent");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn concurrent_thoughttree_writers_with_reload_preserve_every_edit() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "0").unwrap();
+        let start = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            for digit in 1..=8 {
+                let path = &path;
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    for _ in 0..10 {
+                        loop {
+                            let doc = read_project_file(path).unwrap();
+                            match super::guarded_write_file(
+                                path,
+                                &format!("{}{digit}", doc.content),
+                                Some(&doc.revision),
+                            ) {
+                                Ok(_) => break,
+                                Err(VaultError::Stale { .. }) => continue,
+                                Err(err) => panic!("unexpected write error: {err}"),
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        let mut content: Vec<_> = read_project_file(&path).unwrap().content.chars().collect();
+        content.sort_unstable();
+        assert_eq!(
+            content.into_iter().collect::<String>(),
+            "011111111112222222222333333333344444444445555555555666666666677777777778888888888"
+        );
+    }
+
+    #[test]
+    fn rejected_edit_remains_recoverable_after_the_project_is_lost() {
+        let dir = tempdir().unwrap();
+        let path = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("project.thoughttree");
+        fs::write(&path, "loaded").unwrap();
+        let loaded = read_project_file(&path).unwrap();
+        fs::write(&path, "external").unwrap();
+        let result = super::guarded_write_file(&path, "unsaved edit", Some(&loaded.revision));
+        assert!(matches!(result, Err(VaultError::Stale { .. })));
+        fs::remove_file(&path).unwrap();
+        let snapshots = super::list_recovery_snapshots().unwrap();
+        let snapshot = snapshots
+            .iter()
+            .find(|entry| entry.source_path.as_deref() == Some(path.as_path()))
+            .unwrap();
+        assert_eq!(
+            super::read_recovery_snapshot(&snapshot.id).unwrap().content,
+            "unsaved edit"
+        );
+    }
+
+    #[test]
+    fn project_creation_never_overwrites_an_existing_project() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "existing").unwrap();
+        assert!(matches!(
+            super::guarded_write_file(&path, "new", None),
+            Err(VaultError::Stale { .. })
+        ));
+        assert_eq!(read_project_file(&path).unwrap().content, "existing");
+        let (copy, _) = super::write_project_copy(&path, "new").unwrap();
+        assert_ne!(copy, path);
+        assert_eq!(read_project_file(copy).unwrap().content, "new");
+        assert_eq!(read_project_file(path).unwrap().content, "existing");
+    }
+
+    #[test]
+    fn separate_processes_follow_the_same_writer_protocol() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "0").unwrap();
+        let mut children: Vec<_> = ["1", "2"]
+            .iter()
+            .map(|digit| {
+                std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["--ignored", "--exact", "vault::tests::subprocess_writer"])
+                    .env("THOUGHTTREE_TEST_PROJECT", &path)
+                    .env("THOUGHTTREE_TEST_DIGIT", digit)
+                    .stdout(std::process::Stdio::null())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        for child in &mut children {
+            assert!(child.wait().unwrap().success());
+        }
+        let mut digits: Vec<_> = read_project_file(&path).unwrap().content.chars().collect();
+        digits.sort_unstable();
+        assert_eq!(
+            digits.into_iter().collect::<String>(),
+            "011111111112222222222"
+        );
+    }
+
+    #[test]
+    fn process_exit_before_replacement_keeps_a_recovery_snapshot_and_releases_the_lock() {
+        let dir = tempdir().unwrap();
+        let path = dir
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("project.thoughttree");
+        fs::write(&path, "before").unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "vault::tests::subprocess_writer"])
+            .env("THOUGHTTREE_TEST_PROJECT", &path)
+            .env("THOUGHTTREE_TEST_CRASH", "1")
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(23));
+        assert_eq!(read_project_file(&path).unwrap().content, "before");
+        let snapshots = super::list_recovery_snapshots().unwrap();
+        let snapshot = snapshots
+            .iter()
+            .find(|entry| entry.source_path.as_deref() == Some(path.as_path()))
+            .unwrap();
+        assert_eq!(
+            super::read_recovery_snapshot(&snapshot.id).unwrap().content,
+            "edit before crash"
+        );
+        let current = read_project_file(&path).unwrap();
+        super::guarded_write_file(&path, "after restart", Some(&current.revision)).unwrap();
+    }
+
+    #[test]
+    #[ignore = "helper executed by separate_processes_follow_the_same_writer_protocol"]
+    fn subprocess_writer() {
+        let path = std::path::PathBuf::from(std::env::var_os("THOUGHTTREE_TEST_PROJECT").unwrap());
+        if std::env::var_os("THOUGHTTREE_TEST_CRASH").is_some() {
+            let doc = read_project_file(&path).unwrap();
+            let _ = guarded_write_file_inner(
+                &path,
+                "edit before crash",
+                Some(&doc.revision),
+                |_, _| std::process::exit(23),
+            );
+            unreachable!();
+        }
+        let digit = std::env::var("THOUGHTTREE_TEST_DIGIT").unwrap();
+        for _ in 0..10 {
+            loop {
+                let doc = read_project_file(&path).unwrap();
+                match super::guarded_write_file(
+                    &path,
+                    &format!("{}{digit}", doc.content),
+                    Some(&doc.revision),
+                ) {
+                    Ok(_) => break,
+                    Err(VaultError::Stale { .. }) => continue,
+                    Err(err) => panic!("unexpected write error: {err}"),
+                }
+            }
+        }
+    }
+
+    #[test]
     fn guarded_write_uses_temp_file_then_rename() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("project.thoughttree");
         fs::write(&path, "before").unwrap();
 
-        let revision = guarded_write_file_inner(&path, "after", None, |temp_path, target_path| {
-            assert_eq!(fs::read_to_string(target_path)?, "before");
-            assert_eq!(fs::read_to_string(temp_path)?, "after");
-            Ok(())
-        })
+        let initial = read_project_file(&path).unwrap();
+        let revision = guarded_write_file_inner(
+            &path,
+            "after",
+            Some(&initial.revision),
+            |temp_path, target_path| {
+                assert_eq!(fs::read_to_string(target_path)?, "before");
+                assert_eq!(fs::read_to_string(temp_path)?, "after");
+                Ok(())
+            },
+        )
         .unwrap();
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "after");
@@ -341,6 +575,28 @@ mod tests {
         assert!(matches!(err, VaultError::InvalidPath));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn local_fs_vault_rejects_file_symlinks_outside_root() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("vault");
+        fs::create_dir(&root).unwrap();
+        let outside = dir.path().join("outside.thoughttree");
+        fs::write(&outside, "outside").unwrap();
+        symlink(&outside, root.join("link.thoughttree")).unwrap();
+        let vault = LocalFsVault::new(root);
+        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+
+        let read = runtime.block_on(vault.read("link.thoughttree"));
+        let write = runtime.block_on(vault.write("link.thoughttree", "changed", None));
+
+        assert!(matches!(read, Err(VaultError::InvalidPath)));
+        assert!(matches!(write, Err(VaultError::InvalidPath)));
+        assert_eq!(fs::read_to_string(outside).unwrap(), "outside");
+    }
+
     #[test]
     fn local_fs_vault_lists_project_files_under_root() {
         let dir = tempdir().unwrap();
@@ -358,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn guarded_write_can_create_new_file_unconditionally() {
+    fn guarded_write_can_create_new_file_without_a_revision() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("new-project.thoughttree");
 

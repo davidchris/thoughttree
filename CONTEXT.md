@@ -61,8 +61,12 @@ The user's synced directory where Project files live, shared across devices and 
 _Avoid_: notes directory (config-key name, not the concept), workspace.
 
 **Guarded write**:
-The only legal way to persist a Project file: atomically replace the whole file, conditioned on the content read before mutating still being current. A stale write is rejected; the writer reloads and reapplies. No locks, no partial writes.
-_Avoid_: save (unqualified), lock, transaction.
+The way ThoughtTree persists a Project file: serialize ThoughtTree writers, reject a detected revision mismatch, and atomically replace the whole file. External writers can bypass this protection, so independent Recovery snapshots preserve observed ThoughtTree edits rather than promising strict compare-and-swap.
+_Avoid_: strict CAS, transaction.
+
+**Recovery snapshot**:
+An independent saved version of ThoughtTree edits, retained separately from the Project file for recovery after conflict or crash. It covers the edits in a completed snapshot, not external versions ThoughtTree never observed.
+_Avoid_: backup (implies broader protection), external version history.
 
 **ReactFlow projection**:
 The transformation `(Graph, uiState) → ReactFlow Node[]` that produces presentation nodes for `@xyflow/react`. ReactFlow `node.data` carries only `{ id }`; node components subscribe to the store by id for content.

@@ -30,6 +30,10 @@ function createMockTransport(): BackendTransport {
     capabilities: { nativeDialogs: true },
     loadProject: vi.fn(),
     saveProject: vi.fn(),
+    saveProjectCopy: vi.fn(),
+    snapshotProject: vi.fn().mockResolvedValue('snapshot-1'),
+    listProjectRecovery: vi.fn().mockResolvedValue([]),
+    readProjectRecovery: vi.fn(),
     listProjects: vi.fn(),
     importKagiExport: vi.fn(),
     sendPrompt: vi.fn(),
@@ -426,7 +430,85 @@ describe('useGraphStore', () => {
     ).rejects.toThrow('Unsupported Project file version: 5');
   });
 
-  it('surfaces stale saves in UI state and force-saves with a null base revision', async () => {
+  it('preserves unsaved work before reload and restores it as a separate Project', async () => {
+    const state = useGraphStore.getState();
+    state.setProjectPath('/tmp/project.thoughttree');
+    const id = state.createUserNode();
+    state.updateNodeContent(id, 'My unsaved edit');
+    const original = useGraphStore.getState().projectContent();
+    let savedSnapshot = '';
+    vi.mocked(transport.snapshotProject).mockImplementation(async (_path, content) => { savedSnapshot = content; return 'snapshot'; });
+    vi.mocked(transport.loadProject).mockResolvedValue({ data: JSON.stringify(projectV4), revision: 'external' });
+    await state.loadProject('/tmp/project.thoughttree');
+    expect(savedSnapshot).toBe(original);
+    expect(useGraphStore.getState().projectRevision).toBe('external');
+    vi.mocked(transport.readProjectRecovery).mockResolvedValue(savedSnapshot);
+    await state.restoreRecovery('snapshot');
+    expect(useGraphStore.getState().graph.nodes.get(id)?.content).toBe('My unsaved edit');
+    expect(useGraphStore.getState().projectPath).toBeNull();
+    expect(useGraphStore.getState().isDirty).toBe(true);
+    expect(transport.saveProject).not.toHaveBeenCalled();
+  });
+
+  it('does not mark edits made during an in-flight save as saved', async () => {
+    const state = useGraphStore.getState();
+    state.setProjectPath('/tmp/project.thoughttree');
+    const id = state.createUserNode();
+    let finish!: (revision: string) => void;
+    vi.mocked(transport.saveProject).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const save = state.saveProject();
+    await vi.waitFor(() => expect(transport.saveProject).toHaveBeenCalled());
+    state.updateNodeContent(id, 'Typed while saving');
+    finish('saved-old-content');
+    await save;
+    expect(useGraphStore.getState().isDirty).toBe(true);
+    expect(useGraphStore.getState().graph.nodes.get(id)?.content).toBe('Typed while saving');
+  });
+
+  it('aborts reload if local edits change while the snapshot is pending', async () => {
+    const state = useGraphStore.getState();
+    state.setProjectPath('/tmp/project.thoughttree');
+    const id = state.createUserNode();
+    let finish!: (id: string) => void;
+    vi.mocked(transport.snapshotProject).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    vi.mocked(transport.loadProject).mockResolvedValue({ data: JSON.stringify(projectV4), revision: 'external' });
+    const reload = state.loadProject('/tmp/project.thoughttree');
+    const rejected = expect(reload).rejects.toThrow('Edits changed');
+    await vi.waitFor(() => expect(transport.snapshotProject).toHaveBeenCalled());
+    state.updateNodeContent(id, 'Later edit');
+    finish('snapshot');
+    await rejected;
+    expect(useGraphStore.getState().graph.nodes.get(id)?.content).toBe('Later edit');
+    expect(useGraphStore.getState().isDirty).toBe(true);
+  });
+
+  it('does not send queued saves after an earlier save detects a conflict', async () => {
+    const state = useGraphStore.getState();
+    state.setProjectPath('/tmp/project.thoughttree');
+    state.createUserNode();
+    vi.mocked(transport.saveProject).mockRejectedValue(new StaleRevisionError('external'));
+    const first = state.saveProject();
+    const queued = state.saveProject();
+    await expect(first).rejects.toBeInstanceOf(StaleRevisionError);
+    await expect(queued).rejects.toBeInstanceOf(StaleRevisionError);
+    expect(transport.saveProject).toHaveBeenCalledTimes(1);
+    expect(useGraphStore.getState().isDirty).toBe(true);
+  });
+
+  it('keeps unsaved work when a recovery snapshot fails before reload', async () => {
+    const state = useGraphStore.getState();
+    state.setProjectPath('/tmp/project.thoughttree');
+    const id = state.createUserNode();
+    state.updateNodeContent(id, 'My unsaved edit');
+    const graph = useGraphStore.getState().graph;
+    vi.mocked(transport.loadProject).mockResolvedValue({ data: JSON.stringify(projectV4), revision: 'external' });
+    vi.mocked(transport.snapshotProject).mockRejectedValue(new Error('disk full'));
+    await expect(state.loadProject('/tmp/project.thoughttree')).rejects.toThrow('disk full');
+    expect(useGraphStore.getState().graph).toBe(graph);
+    expect(useGraphStore.getState().isDirty).toBe(true);
+  });
+
+  it('keeps a stale graph dirty and saves a separate copy without overwriting the source', async () => {
     vi.mocked(transport.saveProject).mockRejectedValueOnce(new StaleRevisionError('rev-2'));
     useGraphStore.setState({
       projectPath: '/tmp/project.thoughttree',
@@ -445,14 +527,14 @@ describe('useGraphStore', () => {
       currentRevision: 'rev-2',
     });
 
-    vi.mocked(transport.saveProject).mockResolvedValueOnce('rev-3');
-    await useGraphStore.getState().saveProject({ force: true });
+    vi.mocked(transport.saveProjectCopy).mockResolvedValueOnce(['/tmp/copy.thoughttree', 'rev-3']);
+    const unsaved = useGraphStore.getState().graph;
+    expect(useGraphStore.getState().isDirty).toBe(true);
+    await useGraphStore.getState().saveProjectCopy();
 
-    expect(transport.saveProject).toHaveBeenLastCalledWith(
-      '/tmp/project.thoughttree',
-      expect.any(String),
-      null
-    );
+    expect(transport.saveProjectCopy).toHaveBeenCalledWith('/tmp/project.thoughttree', expect.any(String));
+    expect(useGraphStore.getState().graph).toBe(unsaved);
+    expect(useGraphStore.getState().projectPath).toBe('/tmp/copy.thoughttree');
     expect(useGraphStore.getState().projectRevision).toBe('rev-3');
     expect(useUIStore.getState().staleProjectSave).toBeNull();
   });
