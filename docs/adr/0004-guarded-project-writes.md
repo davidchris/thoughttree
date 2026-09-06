@@ -20,7 +20,7 @@ A detected conflict preserves the unsaved graph and stops automatic Project-save
 
 Recovery snapshots contain the complete serialized graph and Project preferences. They are independent of the synced Project and use content-addressed records under `project-state-v1/recovery`. Snapshot files are synced before atomic publication. The snapshot content hash is checked on read. Identical source/content pairs share a snapshot. This version does not automatically prune completed snapshots.
 
-The frontend checkpoints dirty drafts at most once per second during edits, including streams and conflicts. Each write attempt also checkpoints its exact proposed content. Reload waits for an explicit checkpoint. The Recovery snapshots browser is available from both the toolbar and opening screen. A recovered snapshot opens as an unsaved Project, so recovery never automatically overwrites its original file.
+The frontend checkpoints dirty drafts at most once per second during edits, including streams and conflicts. Each write attempt also checkpoints its exact proposed content. Reload waits for an explicit checkpoint. The Recovery snapshots browser is available from both the toolbar and opening screen. It lists the current OS user's snapshots even if their source Vault is missing or the configured Vault changes. A recovered snapshot opens as an unsaved Project, so recovery never automatically overwrites its original file.
 
 Only completed snapshots are recoverable. A crash can lose edits since the most recent completed checkpoint. Snapshot failures remain visible, and destructive conflict reload is blocked when its checkpoint fails. Local recovery is not an off-machine backup and does not protect against loss of the application-data directory or storage failure.
 

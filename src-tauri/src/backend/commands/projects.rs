@@ -439,6 +439,33 @@ mod tests {
         ));
         assert_eq!(fs::read_to_string(&project_path).unwrap(), "newer");
     }
+
+    #[test]
+    fn recovery_commands_work_after_the_vault_is_removed() {
+        let dir = tempdir().unwrap();
+        let notes = dir.path().join("notes");
+        fs::create_dir(&notes).unwrap();
+        let (source, _) = save_project_in_notes_dir(
+            &notes,
+            &notes.join("project.thoughttree"),
+            "recoverable edits",
+            None,
+        )
+        .unwrap();
+        fs::remove_dir_all(&notes).unwrap();
+
+        tauri::async_runtime::block_on(async {
+            let entries = list_project_recovery().await.unwrap();
+            let entry = entries
+                .into_iter()
+                .find(|entry| entry.source_path.as_ref() == Some(&source))
+                .unwrap();
+            assert_eq!(
+                read_project_recovery(entry.id).await.unwrap(),
+                "recoverable edits"
+            );
+        });
+    }
 }
 
 #[tauri::command]
@@ -522,44 +549,20 @@ pub(crate) async fn snapshot_project(
 
 #[tauri::command]
 pub(crate) async fn list_project_recovery(
-    app: AppHandle,
 ) -> Result<Vec<thoughttree_core::vault::RecoveryEntry>, ProjectCommandError> {
-    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let notes = fs::canonicalize(notes).map_err(|err| command_message(err.to_string()))?;
-        Ok(thoughttree_core::vault::list_recovery_snapshots()
-            .map_err(map_load_error)?
-            .into_iter()
-            .filter(|entry| {
-                entry
-                    .source_path
-                    .as_ref()
-                    .is_none_or(|path| path.starts_with(&notes))
-            })
-            .collect())
+    // Recovery belongs to the OS user's app data, even when a Vault is unavailable.
+    tauri::async_runtime::spawn_blocking(|| {
+        thoughttree_core::vault::list_recovery_snapshots().map_err(map_load_error)
     })
     .await
     .map_err(|err| command_message(err.to_string()))?
 }
 
 #[tauri::command]
-pub(crate) async fn read_project_recovery(
-    app: AppHandle,
-    id: String,
-) -> Result<String, ProjectCommandError> {
-    let notes = config::get_notes_directory_required(&app).map_err(command_message)?;
+pub(crate) async fn read_project_recovery(id: String) -> Result<String, ProjectCommandError> {
     tauri::async_runtime::spawn_blocking(move || {
-        let notes = fs::canonicalize(notes).map_err(|err| command_message(err.to_string()))?;
         let snapshot =
             thoughttree_core::vault::read_recovery_snapshot(&id).map_err(map_load_error)?;
-        if snapshot
-            .entry
-            .source_path
-            .as_ref()
-            .is_some_and(|path| !path.starts_with(&notes))
-        {
-            return Err(map_load_error(VaultError::InvalidPath));
-        }
         Ok(snapshot.content)
     })
     .await

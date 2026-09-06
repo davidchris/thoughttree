@@ -55,7 +55,7 @@
   margin-top: 24px;
 }
 
-.stale-save-actions button {
+.stale-save-dialog button {
   border: none;
   border-radius: 8px;
   padding: 10px 16px;
@@ -64,12 +64,12 @@
   cursor: pointer;
 }
 
-.stale-save-actions button:disabled {
+.stale-save-dialog button:disabled {
   opacity: 0.65;
   cursor: wait;
 }
 
-.stale-save-actions .secondary {
+.stale-save-dialog .secondary {
   background: rgba(255, 244, 222, 0.1);
   color: #fff4de;
 }

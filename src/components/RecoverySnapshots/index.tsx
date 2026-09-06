@@ -40,7 +40,7 @@ export function RecoverySnapshots() {
           {!busy && entries.length === 0 && <p>No completed snapshots yet.</p>}
           <ul className="recovery-list">{entries.map((entry) => <li key={entry.id}>
             <span>{entry.sourcePath?.split(/[\\/]/).pop() ?? 'Untitled Project'}<small>{new Date(entry.createdEpochMs).toLocaleString()}</small></span>
-            <button disabled={busy} onClick={() => void restore(entry.id)}>Open snapshot</button>
+            <button className="secondary" disabled={busy} onClick={() => void restore(entry.id)}>Open snapshot</button>
           </li>)}</ul>
         </div>
         <div className="stale-save-actions"><button className="secondary" disabled={busy} onClick={() => setOpen(false)}>Close</button></div>

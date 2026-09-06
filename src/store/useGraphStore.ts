@@ -757,6 +757,8 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       const content = get().projectContent();
       const state = get();
       if (!state.projectPath) return;
+      const conflict = useUIStore.getState().staleProjectSave;
+      if (conflict?.path === state.projectPath) throw new StaleRevisionError(conflict.currentRevision);
       try {
         const revision = await getBackendTransport().saveProject(state.projectPath, content, state.projectRevision);
         if (get().projectSession !== session) return;

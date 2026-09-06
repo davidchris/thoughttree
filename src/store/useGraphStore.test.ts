@@ -482,6 +482,19 @@ describe('useGraphStore', () => {
     expect(useGraphStore.getState().isDirty).toBe(true);
   });
 
+  it('does not send queued saves after an earlier save detects a conflict', async () => {
+    const state = useGraphStore.getState();
+    state.setProjectPath('/tmp/project.thoughttree');
+    state.createUserNode();
+    vi.mocked(transport.saveProject).mockRejectedValue(new StaleRevisionError('external'));
+    const first = state.saveProject();
+    const queued = state.saveProject();
+    await expect(first).rejects.toBeInstanceOf(StaleRevisionError);
+    await expect(queued).rejects.toBeInstanceOf(StaleRevisionError);
+    expect(transport.saveProject).toHaveBeenCalledTimes(1);
+    expect(useGraphStore.getState().isDirty).toBe(true);
+  });
+
   it('keeps unsaved work when a recovery snapshot fails before reload', async () => {
     const state = useGraphStore.getState();
     state.setProjectPath('/tmp/project.thoughttree');
