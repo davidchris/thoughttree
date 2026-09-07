@@ -56,12 +56,17 @@ pub(crate) fn read_kagi_export(path: &Path) -> Result<String, KagiImportError> {
         .metadata()
         .map_err(|error| KagiImportError::io("Unable to inspect Kagi export", error))?
         .len();
+    read_kagi_text(file, size)
+}
+
+fn read_kagi_text(reader: impl Read, size: u64) -> Result<String, KagiImportError> {
     if size > KAGI_EXPORT_MAX_BYTES {
         return Err(KagiImportError::input_too_large(size));
     }
 
     let mut bytes = Vec::with_capacity(size.min(KAGI_EXPORT_MAX_BYTES) as usize);
-    file.take(KAGI_EXPORT_MAX_BYTES + 1)
+    reader
+        .take(KAGI_EXPORT_MAX_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| KagiImportError::io("Unable to read Kagi export", error))?;
     if bytes.len() as u64 > KAGI_EXPORT_MAX_BYTES {
@@ -88,7 +93,8 @@ pub(crate) async fn pick_kagi_export(app: AppHandle) -> Result<Option<String>, S
 
 #[cfg(test)]
 mod tests {
-    use super::{read_kagi_export, KagiImportError};
+    use super::{read_kagi_export, read_kagi_text, KagiImportError, KAGI_EXPORT_MAX_BYTES};
+    use std::io::{Cursor, Read};
     use std::path::Path;
 
     fn fixture_path() -> &'static Path {
@@ -102,6 +108,29 @@ mod tests {
     fn reads_sanitized_fixture_as_exact_text() {
         let expected = std::fs::read_to_string(fixture_path()).unwrap();
         assert_eq!(read_kagi_export(fixture_path()).unwrap(), expected);
+    }
+
+    #[test]
+    fn caps_bytes_consumed_even_when_the_reported_size_is_stale() {
+        // An endless source represents a file that keeps growing after metadata.
+        let mut source = std::io::repeat(b'a');
+        let mut counted = (&mut source).take(KAGI_EXPORT_MAX_BYTES * 2);
+        let error = read_kagi_text(&mut counted, 0).unwrap_err();
+
+        assert!(
+            matches!(error, KagiImportError::InputTooLarge { input_bytes, .. }
+            if input_bytes == KAGI_EXPORT_MAX_BYTES + 1)
+        );
+        assert_eq!(counted.limit(), KAGI_EXPORT_MAX_BYTES - 1);
+    }
+
+    #[test]
+    fn accepts_exactly_the_byte_limit() {
+        let bytes = vec![b'a'; KAGI_EXPORT_MAX_BYTES as usize];
+        assert_eq!(
+            read_kagi_text(Cursor::new(&bytes), KAGI_EXPORT_MAX_BYTES).unwrap(),
+            String::from_utf8(bytes).unwrap()
+        );
     }
 
     #[test]

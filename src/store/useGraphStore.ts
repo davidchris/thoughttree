@@ -30,6 +30,7 @@ import {
   GraphModel,
   GraphMutations,
   GraphSerialize,
+  isFileUrlOrBarePath,
   isWebUrl,
   type Graph,
   type GraphJSON,
@@ -245,7 +246,7 @@ function autolink(url: string): string {
 // redacted; other schemes are emitted as non-clickable text.
 function formatUrl(url: string): string {
   if (isWebUrl(url)) return autolink(url);
-  if (/^file:/i.test(url)) return '_(file URL redacted)_';
+  if (isFileUrlOrBarePath(url)) return '_(file URL redacted)_';
   return codeSpan(url);
 }
 

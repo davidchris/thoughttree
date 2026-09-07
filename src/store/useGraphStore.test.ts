@@ -244,7 +244,13 @@ describe('useGraphStore', () => {
     expect(exported.match(/<https:/g)).toHaveLength(2);
   });
 
-  it('redacts file: URLs held in memory without going through load', () => {
+  it.each([
+    'file:///Users/alice/private.txt',
+    '  FiLe:///Users/alice/private.txt',
+    '\u00a0file:///Users/alice/private.txt',
+    'fi\tle:///Users/alice/private.txt',
+    '\u0000file:///Users/alice/private.txt',
+  ])('redacts file URL %j held in memory without going through load', (url) => {
     const graph: Graph = {
       nodes: new Map([
         ['answer', {
@@ -254,7 +260,7 @@ describe('useGraphStore', () => {
           timestamp: 1,
           provenance: {
             completeness: 'complete',
-            references: [{ type: 'url', url: 'file:///Users/alice/private.txt', title: 'Local', relations: ['consulted'] }],
+            references: [{ type: 'url', url, title: 'Local', relations: ['consulted'] }],
             activity: [],
           },
         }],

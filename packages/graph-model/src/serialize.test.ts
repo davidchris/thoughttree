@@ -199,9 +199,11 @@ describe('GraphSerialize provenance normalization', () => {
               { type: 'tool', kind: 'teleport', title: 'x'.repeat(250), status: 'done' },
               { type: 'tool', kind: 'execute', title: 'cat /Users/alice/secret.txt', status: 'completed' },
               { type: 'tool', kind: 'execute', title: 'echo $TOKEN | pbcopy', status: 'completed' },
+              { type: 'tool', kind: 'execute', title: 'curl --token secret', status: 'completed' },
               { type: 'tool', kind: 'read', title: 'Read  src/App.tsx', status: 'completed' },
               { type: 'commentary', content: 'Checking.', rawPayload: { token: 'secret' } },
               { type: 'unknown', providerType: 'x', label: 'x', payload: { token: 'secret' } },
+              { type: 'unknown', providerType: '/Users/alice/tool', label: 'Read /Users/alice/secret.txt' },
               { type: 'mystery', payload: { token: 'secret' } },
             ],
           },
@@ -234,13 +236,15 @@ describe('GraphSerialize provenance normalization', () => {
         { type: 'url', url: 'https://example.com/b', domain: 'example.com', relations: ['fetched'] },
       ],
       activity: [
-        { type: 'tool', kind: 'execute', title: 'Run command', status: 'completed' },
+        { type: 'tool', kind: 'execute', title: 'Ran a command', titleRedacted: true, status: 'completed' },
         { type: 'tool', kind: 'other', title: 'x'.repeat(200), titleTruncated: true, status: 'incomplete' },
+        { type: 'tool', kind: 'execute', title: 'Ran a command', titleRedacted: true, status: 'completed' },
         { type: 'tool', kind: 'execute', title: 'Ran a command', titleRedacted: true, status: 'completed' },
         { type: 'tool', kind: 'execute', title: 'Ran a command', titleRedacted: true, status: 'completed' },
         { type: 'tool', kind: 'read', title: 'Read src/App.tsx', status: 'completed' },
         { type: 'commentary', content: 'Checking.' },
         { type: 'unknown', providerType: 'x', label: 'x' },
+        { type: 'unknown', providerType: 'unknown', label: 'Unknown activity' },
       ],
     },
   };
@@ -268,6 +272,24 @@ describe('GraphSerialize provenance normalization', () => {
       expectedAssistant,
     ]);
     expect(JSON.stringify(serialized)).not.toMatch(forbiddenPattern);
+    expect(GraphSerialize.toJSON(GraphSerialize.fromJSON(serialized))).toEqual(serialized);
+  });
+
+  it.each([
+    '  FiLe:///Users/alice/private.txt',
+    '\u00a0file:///Users/alice/private.txt',
+    'fi\tle:///Users/alice/private.txt',
+    '\u0000file:///Users/alice/private.txt',
+  ])('drops disguised file URL %j on both load and save', (url) => {
+    const json = adversarialJSON();
+    const assistant = json.nodes[1];
+    if (assistant.role !== 'assistant' || !assistant.provenance) throw new Error('Missing fixture provenance');
+    assistant.provenance.references = [{ type: 'url', url, relations: ['read'] }];
+    const graph = { nodes: new Map([[assistant.id, assistant]]), edges: [], layout: new Map() };
+
+    for (const normalized of [GraphSerialize.fromJSON(json).nodes.get('a'), GraphSerialize.toJSON(graph).nodes[0]]) {
+      expect(normalized).toMatchObject({ provenance: { references: [] } });
+    }
   });
 
   it('normalizes legacy v2 node data through the same allowlist', () => {
@@ -336,6 +358,8 @@ describe('normalizeProvenance completeness', () => {
 describe('safeToolTitle', () => {
   it.each([
     ['cat /Users/alice/secret.txt', 'execute', 'Ran a command'],
+    ['curl --token secret', 'execute', 'Ran a command'],
+    ['custom-command secret', 'execute', 'Ran a command'],
     ['Read ~/notes.md', 'read', 'Read a file'],
     ['Edit C:\\Users\\alice\\x.txt', 'edit', 'Edited a file'],
     ['ls | grep x', 'execute', 'Ran a command'],

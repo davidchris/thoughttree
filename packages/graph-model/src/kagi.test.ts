@@ -219,6 +219,36 @@ describe('parseKagiExport', () => {
     expect(parseKagiExport(valid).turns[0].assistantAnswer).toBe('a');
   });
 
+  it('checks exact UTF-8 size and preserves Unicode at the byte limit', () => {
+    const answer = 'é漢🙂';
+    const source = JSON.stringify({ version: 1, messages: [
+      { role: 'user', content: 'q' }, { role: 'assistant', content: answer },
+    ] });
+    const bytes = new TextEncoder().encode(source);
+
+    for (const input of [source, bytes]) {
+      expect(parseKagiExport(input, bytes.length).turns[0].assistantAnswer).toBe(answer);
+      expect(() => parseKagiExport(input, bytes.length - 1)).toThrowError(
+        new KagiExportError('input_too_large', { inputBytes: bytes.length, limitBytes: bytes.length - 1 })
+      );
+    }
+  });
+
+  it.each([
+    [0xc0, 0xaf], // overlong encoding
+    [0xed, 0xa0, 0x80], // encoded surrogate
+    [0xf4, 0x90, 0x80, 0x80], // beyond the Unicode range
+    [0xe2, 0x82], // incomplete sequence
+  ])('rejects malformed UTF-8 sequence %j inside JSON text', (...invalid) => {
+    const encoder = new TextEncoder();
+    const input = new Uint8Array([
+      ...encoder.encode('{"version":1,"messages":[{"role":"user","content":"'),
+      ...invalid,
+      ...encoder.encode('"}]}'),
+    ]);
+    expect(() => parseKagiExport(input)).toThrowError(new KagiExportError('invalid_json'));
+  });
+
   it('classifies an uncited fetched page as consulted independent of source kind', () => {
     const conversation = parseKagiExport(JSON.stringify({
       version: 1,
