@@ -4454,6 +4454,7 @@ dependencies = [
  "dirs 5.0.1",
  "fs2",
  "futures",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
@@ -4463,6 +4464,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

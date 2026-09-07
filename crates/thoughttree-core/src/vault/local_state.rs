@@ -35,7 +35,7 @@ pub(super) fn lock_project_writes() -> Result<fs::File, VaultError> {
         .read(true)
         .write(true)
         .open(root()?.join("project-writes.lock"))?;
-    fs2::FileExt::lock_exclusive(&file)?;
+    file.lock()?;
     // Closing this independently opened handle releases the OS advisory lock.
     Ok(file)
 }

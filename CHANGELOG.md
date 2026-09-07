@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Guarded saves now serialize local writers across revision validation and atomic replacement to prevent lost updates.
+- Building the core crate now requires Rust 1.89 or later.
+
 ## 0.5.0
 
 - New Look - Dark teal-black theme with a single mint accent across the canvas, side panel, dialogs, and palette. Tokens live in `design/tokens.css`

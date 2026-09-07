@@ -3,6 +3,8 @@
 //! Local files write to a temp sibling and atomically rename into place after
 //! comparing the caller's last-read revision with the current file content hash.
 //! The local filesystem does not provide a hash-conditioned rename.
+//! A persistent sibling lock serializes guarded writers across that comparison
+//! and replacement. Writers that bypass this lock are outside this guarantee.
 
 mod local_state;
 mod recovery;
@@ -135,6 +137,10 @@ where
     let path = validate_absolute_file_path(path)?;
     save_recovery_snapshot(Some(&path), content)?;
     let _writer_lock = local_state::lock_project_writes()?;
+    let parent = path.parent().ok_or(VaultError::InvalidPath)?;
+    // Keep the handle alive through revision validation and atomic replacement.
+    // Locking the project itself would not protect its new inode after rename.
+    let _write_lock = acquire_write_lock(parent, &path)?;
     check_revision(&path, expected)?;
 
     let temp_path = temp_sibling_path(&path);
@@ -161,6 +167,35 @@ where
     }
 
     Ok(revision_for_content(content.as_bytes()))
+}
+
+fn acquire_write_lock(parent: &Path, target: &Path) -> Result<fs::File, VaultError> {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(target.file_name().ok_or(VaultError::InvalidPath)?);
+    name.push(".lock");
+    // Never remove this file: a waiter may still hold its inode open, and a new
+    // file at the same path would let another writer bypass that waiter.
+    let mut options = fs::OpenOptions::new();
+    options.create(true).truncate(false).read(true).write(true);
+    // A pre-existing lock-file symlink must not create or open an outside file.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(parent.join(name))?;
+    if !file.metadata()?.file_type().is_file() {
+        return Err(VaultError::InvalidPath);
+    }
+    file.lock()?;
+    // Closing the handle releases the lock, including on errors and unwinding.
+    Ok(file)
 }
 
 fn check_revision(path: &Path, expected: Option<&Revision>) -> Result<(), VaultError> {
@@ -301,6 +336,11 @@ fn map_not_found(err: std::io::Error) -> VaultError {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use std::sync::{mpsc, Barrier};
+    use std::thread;
+    use std::time::Duration;
 
     use tempfile::tempdir;
     use tokio::runtime::Builder;
@@ -348,7 +388,6 @@ mod tests {
         let path = dir.path().join("project.thoughttree");
         fs::write(&path, "before").unwrap();
         let initial = read_project_file(&path).unwrap();
-
         let result =
             guarded_write_file_inner(&path, "after", Some(&initial.revision), |_temp, target| {
                 // Complete a non-cooperating write after the initial revision
@@ -368,6 +407,70 @@ mod tests {
         ));
         assert_eq!(read_project_file(&path).unwrap().content, "concurrent");
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn concurrent_guarded_writer_cannot_replace_a_validated_write() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("project.thoughttree");
+        fs::write(&path, "before").unwrap();
+        let initial = read_project_file(&path).unwrap();
+        let (contended_tx, contended_rx) = mpsc::channel();
+        let mut concurrent = None;
+
+        let first = guarded_write_file_inner(
+            &path,
+            "after",
+            Some(&initial.revision),
+            |_temp_path, target_path| {
+                // Start a competing save after validation, before replacement.
+                let target = target_path.to_path_buf();
+                let expected = initial.revision.clone();
+                concurrent = Some(std::thread::spawn(move || {
+                    // Probe the per-Project lock while the first save is paused.
+                    let lock = fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open(target.with_file_name(".project.thoughttree.lock"))
+                        .unwrap();
+                    let contended = matches!(lock.try_lock(), Err(fs::TryLockError::WouldBlock));
+                    drop(lock);
+                    contended_tx.send(contended).unwrap();
+                    super::guarded_write_file(&target, "concurrent", Some(&expected))
+                }));
+                assert!(contended_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+                Ok(())
+            },
+        )
+        .unwrap();
+        let second = concurrent.unwrap().join().unwrap();
+
+        match second {
+            Err(VaultError::Stale { current }) => assert_eq!(current, first),
+            other => panic!("expected stale revision error, got {other:?}"),
+        }
+        let saved = read_project_file(&path).unwrap();
+        assert_eq!(saved.content, "after");
+        assert_eq!(saved.revision, first);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn guarded_write_rejects_a_symlink_lock_without_creating_its_target() {
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let path = vault.path().join("project.thoughttree");
+        let destination = outside.path().join("must-not-exist");
+        fs::write(&path, "before").unwrap();
+        let initial = read_project_file(&path).unwrap();
+        std::os::unix::fs::symlink(&destination, vault.path().join(".project.thoughttree.lock"))
+            .unwrap();
+
+        let result = super::guarded_write_file(&path, "after", Some(&initial.revision));
+
+        assert!(!destination.exists());
+        assert!(result.is_err());
+        assert_eq!(read_project_file(&path).unwrap(), initial);
     }
 
     #[test]
