@@ -90,18 +90,24 @@ export function containsHostPath(text: string): boolean {
 }
 
 /** True for `file:` URLs and bare absolute paths, which are never acceptable URL reference text. */
-function isFileUrlOrBarePath(text: string): boolean {
-  return /^\s*(?:file:|\/|~[\\/]|[A-Za-z]:[\\/]|\\\\)/i.test(text);
+export function isFileUrlOrBarePath(text: string): boolean {
+  // Match URL parsing's treatment of ASCII tabs/newlines and leading controls.
+  const normalized = text.replace(/[\t\n\r]/g, '').replace(/^[\s\u0000-\u0020]+/, '');
+  return /^(?:file:|\/|~[\\/]|[A-Za-z]:[\\/]|\\\\)/i.test(normalized);
 }
 
 /**
- * Reduces an untrusted tool title to a safe display summary: raw commands and
- * host paths are replaced by a generic per-kind summary, everything else is
- * whitespace-collapsed and capped. `redacted` reports the replacement so the
- * caller can record the loss.
+ * Execute titles use a fixed summary. Other titles with shell operators or
+ * host paths use a per-kind summary; remaining titles are collapsed and capped.
+ * `redacted` reports replacement so the caller can record the loss.
  */
 export function safeToolTitle(rawTitle: string, kind: ToolActivityKind): { title: string; redacted: boolean } {
   const collapsed = rawTitle.replace(/\s+/g, ' ').trim();
+  // A command can be arbitrary text with no shell operators or host paths.
+  // Execute activity therefore uses only the canonical summary.
+  if (kind === 'execute') {
+    return { title: TOOL_TITLE_SUMMARIES.execute, redacted: rawTitle !== TOOL_TITLE_SUMMARIES.execute };
+  }
   if (collapsed.length === 0 || SHELL_OPERATOR.test(collapsed) || containsHostPath(collapsed)) {
     return { title: TOOL_TITLE_SUMMARIES[kind], redacted: true };
   }
@@ -232,7 +238,8 @@ function activityEntry(value: unknown, loss: Loss): TurnActivity | undefined {
       rawKind !== undefined && TOOL_KINDS.has(rawKind as ToolActivityKind) ? (rawKind as ToolActivityKind) : 'other';
     const { title, redacted } = safeToolTitle(rawTitle, kind);
     const titleTruncated = !redacted && (value.titleTruncated === true || rawTitle.trim().length > TOOL_TITLE_MAX_LENGTH);
-    if (redacted || titleTruncated) loss.note();
+    const titleRedacted = redacted || value.titleRedacted === true;
+    if (titleRedacted || titleTruncated) loss.note();
     return withOptional(
       {
         type: 'tool' as const,
@@ -245,7 +252,7 @@ function activityEntry(value: unknown, loss: Loss): TurnActivity | undefined {
       },
       {
         titleTruncated: titleTruncated ? true : undefined,
-        titleRedacted: redacted ? true : undefined,
+        titleRedacted: titleRedacted ? true : undefined,
         completedAt: num(value.completedAt),
         timestamp,
       }
@@ -256,7 +263,11 @@ function activityEntry(value: unknown, loss: Loss): TurnActivity | undefined {
     const providerType = str(value.providerType);
     const label = str(value.label);
     if (providerType === undefined || label === undefined) return undefined;
-    return withOptional({ type: 'unknown' as const, providerType, label }, { timestamp });
+    return withOptional({
+      type: 'unknown' as const,
+      providerType: safeText(providerType, loss) ?? 'unknown',
+      label: safeText(label, loss) ?? 'Unknown activity',
+    }, { timestamp });
   }
 
   return undefined;

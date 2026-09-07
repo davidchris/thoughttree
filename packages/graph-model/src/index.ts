@@ -4,6 +4,7 @@ export { GraphSerialize, GRAPH_JSON_VERSION } from './serialize';
 export { conversationToGraph } from './import';
 export {
   TOOL_TITLE_MAX_LENGTH,
+  isFileUrlOrBarePath,
   isVaultRelativePath,
   normalizeGraphNode,
   normalizeProvenance,
