@@ -1,3 +1,5 @@
+@import '../design/tokens.css';
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -10,9 +12,42 @@ html, body, #root {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #0f0f17;
-  color: #e0e0e0;
+  font-family: var(--tt-font);
+  font-size: var(--tt-size-md);
+  line-height: var(--tt-leading);
+  background: var(--tt-bg);
+  color: var(--tt-text);
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+a {
+  color: var(--tt-accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--tt-focus);
+}
+
+kbd {
+  font-family: var(--tt-mono);
+  font-size: var(--tt-size-xs);
+  background: var(--tt-surface-2);
+  border: var(--tt-border) solid var(--tt-line);
+  border-radius: var(--tt-radius-sm);
+  padding: 1px 6px;
+  color: var(--tt-text-muted);
 }
 
 .app {
@@ -25,7 +60,7 @@ body {
 .app.loading {
   align-items: center;
   justify-content: center;
-  color: #666;
+  color: var(--tt-text-muted);
 }
 
 .app-main {

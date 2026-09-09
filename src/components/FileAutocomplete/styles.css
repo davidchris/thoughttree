@@ -1,10 +1,9 @@
 .file-autocomplete {
   position: fixed;
   z-index: 1000;
-  background: #1a1a2e;
-  border: 1px solid #333;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  background: var(--tt-surface);
+  border: var(--tt-border) solid var(--tt-line);
+  border-radius: var(--tt-radius);
   max-width: 400px;
   min-width: 200px;
   max-height: 300px;
@@ -19,36 +18,36 @@
 .file-autocomplete-item {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: var(--tt-s2) var(--tt-s3);
   cursor: pointer;
-  gap: 8px;
+  gap: var(--tt-s2);
 }
 
-.file-autocomplete-item:hover,
-.file-autocomplete-item.selected {
-  background: #2a2a3e;
+.file-autocomplete-item:hover {
+  background: var(--tt-surface-2);
 }
 
 .file-autocomplete-item.selected {
-  background: #3b82f6;
+  background: var(--tt-accent-soft);
 }
 
 .file-path {
-  font-size: 13px;
-  color: #ccc;
+  font-family: var(--tt-mono);
+  font-size: var(--tt-size-sm);
+  color: var(--tt-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .file-autocomplete-item.selected .file-path {
-  color: #fff;
+  color: var(--tt-text);
 }
 
 .file-autocomplete-loading,
 .file-autocomplete-empty {
-  padding: 12px;
-  color: #666;
-  font-size: 13px;
+  padding: var(--tt-s3);
+  color: var(--tt-text-muted);
+  font-size: var(--tt-size-sm);
   text-align: center;
 }

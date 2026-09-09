@@ -1,0 +1,80 @@
+/*
+  ThoughtTree design tokens
+  Shared by the desktop app and the landing page. Dark only. One accent.
+  Source of truth: design/DESIGN.md
+*/
+:root {
+  color-scheme: dark;
+
+  /* ---- Neutrals (teal-black scale, from the app icon) ---- */
+  --tt-bg:            #04252c;  /* app window, canvas, page background */
+  --tt-surface:       #0a3038;  /* side panel, dialogs, toolbar */
+  --tt-surface-2:     #113b43;  /* inputs, code blocks, hover on surface */
+  --tt-line:          #1a464e;  /* hairlines, borders */
+  --tt-line-strong:   #2a5d66;  /* focused borders, edges on hover */
+
+  --tt-text:          #e6f4ee;  /* body, headings */
+  --tt-text-muted:    #9cbcb4;  /* secondary text, labels, captions */
+  --tt-text-faint:    #7fa39c;  /* placeholders, disabled, timestamps */
+
+  /* ---- Accent (mint, from the app icon) ---- */
+  --tt-accent:        #c0facc;  /* nodes, links, primary action, focus */
+  --tt-accent-soft:   rgba(192, 250, 204, 0.12);
+  --tt-on-accent:     #04252c;  /* text on accent fills */
+
+  /* ---- State ---- */
+  --tt-danger:        #f0857f;  /* errors, destructive confirm, stale save */
+  --tt-danger-soft:   rgba(240, 133, 127, 0.14);
+  --tt-edge:          #4f7a76;  /* graph edges */
+  --tt-edge-selected: #c0facc;
+
+  /* ---- Type ---- */
+  --tt-font:          -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
+  --tt-mono:          ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --tt-size-xs:       12px;
+  --tt-size-sm:       13px;
+  --tt-size-md:       15px;
+  --tt-size-lg:       18px;
+  --tt-size-xl:       26px;
+  --tt-size-hero:     44px;
+
+  --tt-leading:       1.6;
+  --tt-leading-tight: 1.2;
+  --tt-measure:       65ch;
+
+  /* ---- Shape ---- */
+  --tt-radius:        6px;
+  --tt-radius-sm:     4px;
+  --tt-border:        1px;
+
+  /* ---- Space (4px base) ---- */
+  --tt-s1:  4px;
+  --tt-s2:  8px;
+  --tt-s3:  12px;
+  --tt-s4:  16px;
+  --tt-s5:  24px;
+  --tt-s6:  32px;
+  --tt-s7:  48px;
+  --tt-s8:  64px;
+
+  /* ---- Motion ---- */
+  --tt-fast:  120ms;
+  --tt-base:  180ms;
+  --tt-ease:  cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- Node ---- */
+  --tt-node-width:    170px;  /* landscape, 1:√2 like DIN A paper */
+  --tt-node-height:   120px;
+  --tt-node-stroke:   2px;   /* outline weight for assistant nodes */
+
+  /* ---- Focus ---- */
+  --tt-focus: 0 0 0 2px var(--tt-bg), 0 0 0 4px var(--tt-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tt-fast: 0ms;
+    --tt-base: 0ms;
+  }
+}

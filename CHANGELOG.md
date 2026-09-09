@@ -1,7 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
+- New Look - Dark teal-black theme with a single mint accent across the canvas, side panel, dialogs, and palette. Tokens live in `design/tokens.css`
+- Role by Shape - User nodes show a filled mint dot, assistant nodes an outlined one. Streaming pulses the dot; nodes waiting on an ancestor dim
+- Landscape Nodes - Canvas nodes are now 170×120 (1:√2, like DIN A paper) instead of squares. Tidy graph spacing adjusted to match
+- Icon Toolbar - Toolbar buttons carry icons and collapse to icons only in narrow windows, so actions no longer overlap
+- Cmd+, Settings - Opens Settings with the standard macOS shortcut
+- New App Icon - Mint tree on teal-black; reduced mark used for the favicon and toolbar
 - Local Project writes share an advisory lock outside the Vault and recheck revisions before atomic replacement. External writers can bypass this protection.
 - Conflicts offer comparison, reload with a recovery snapshot, or a separate copy. Existing Projects cannot be overwritten without their loaded revision.
 - Independent recovery snapshots preserve completed ThoughtTree edits. The toolbar and opening screen can reopen snapshots as unsaved Projects.

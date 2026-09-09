@@ -4,7 +4,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(4, 37, 44, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -12,54 +12,56 @@
 }
 
 .permission-dialog {
-  background: #1a1a2e;
-  border: 1px solid #333;
-  border-radius: 12px;
-  padding: 24px;
+  background: var(--tt-surface);
+  border: var(--tt-border) solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  padding: var(--tt-s5);
   max-width: 480px;
   width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 .permission-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #333;
+  margin-bottom: var(--tt-s4);
+  padding-bottom: var(--tt-s4);
+  border-bottom: var(--tt-border) solid var(--tt-line);
 }
 
 .permission-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--tt-size-xl);
   font-weight: 600;
-  color: #fff;
+  line-height: var(--tt-leading-tight);
+  color: var(--tt-text);
 }
 
 .tool-type {
-  background: #2a2a3e;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #888;
-  text-transform: uppercase;
+  background: var(--tt-surface-2);
+  border: var(--tt-border) solid var(--tt-line);
+  padding: 2px var(--tt-s2);
+  border-radius: var(--tt-radius-sm);
+  font-family: var(--tt-mono);
+  font-size: var(--tt-size-xs);
+  color: var(--tt-text-muted);
 }
 
 .permission-content {
-  margin-bottom: 24px;
+  margin-bottom: var(--tt-s5);
 }
 
 .tool-name {
-  font-size: 16px;
-  font-weight: 500;
-  color: #fff;
-  margin: 0 0 8px 0;
+  font-size: var(--tt-size-lg);
+  font-weight: 600;
+  color: var(--tt-text);
+  margin: 0 0 var(--tt-s2) 0;
 }
 
 .tool-description {
-  font-size: 14px;
-  color: #aaa;
+  font-size: var(--tt-size-sm);
+  font-family: var(--tt-mono);
+  color: var(--tt-text-muted);
   line-height: 1.5;
   margin: 0;
   white-space: pre-wrap;
@@ -70,35 +72,37 @@
 
 .permission-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--tt-s3);
   justify-content: flex-end;
 }
 
 .permission-actions button {
-  padding: 10px 20px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: var(--tt-s2) 20px;
+  border-radius: var(--tt-radius);
+  font-size: var(--tt-size-sm);
+  font-weight: 600;
   cursor: pointer;
-  border: none;
-  transition: all 0.2s ease;
+  border: var(--tt-border) solid transparent;
+  transition: background var(--tt-fast) var(--tt-ease), border-color var(--tt-fast) var(--tt-ease), color var(--tt-fast) var(--tt-ease);
 }
 
 .permission-actions button.approve {
-  background: #4ade80;
-  color: #000;
+  background: var(--tt-accent);
+  border-color: var(--tt-accent);
+  color: var(--tt-on-accent);
 }
 
 .permission-actions button.approve:hover {
-  background: #22c55e;
+  background: var(--tt-text);
+  border-color: var(--tt-text);
 }
 
 .permission-actions button.deny {
-  background: #333;
-  color: #888;
+  background: transparent;
+  border-color: var(--tt-line);
+  color: var(--tt-text);
 }
 
 .permission-actions button.deny:hover {
-  background: #444;
-  color: #fff;
+  border-color: var(--tt-line-strong);
 }

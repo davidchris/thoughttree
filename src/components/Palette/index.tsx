@@ -10,7 +10,9 @@ import './styles.css';
 const MAX_VISIBLE_HITS = 20;
 const JUMP_ZOOM = 1;
 const JUMP_DURATION_MS = 400;
-const DEFAULT_NODE_SIZE = 120;
+// Keep in sync with --tt-node-width / --tt-node-height in design/tokens.css.
+const DEFAULT_NODE_WIDTH = 170;
+const DEFAULT_NODE_HEIGHT = 120;
 
 function roleLabel(node: GraphNode): string {
   if (node.role === 'user') return 'User';
@@ -80,8 +82,8 @@ export function Palette() {
       selectNode(nodeId);
       const flowNode = getNode(nodeId);
       if (flowNode) {
-        const width = flowNode.measured?.width ?? DEFAULT_NODE_SIZE;
-        const height = flowNode.measured?.height ?? DEFAULT_NODE_SIZE;
+        const width = flowNode.measured?.width ?? DEFAULT_NODE_WIDTH;
+        const height = flowNode.measured?.height ?? DEFAULT_NODE_HEIGHT;
         setCenter(flowNode.position.x + width / 2, flowNode.position.y + height / 2, {
           zoom: JUMP_ZOOM,
           duration: JUMP_DURATION_MS,

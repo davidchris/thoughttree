@@ -1,7 +1,7 @@
 .stale-save-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(7, 11, 18, 0.78);
+  background: rgba(4, 37, 44, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -10,37 +10,43 @@
 
 .stale-save-dialog {
   width: min(92vw, 480px);
-  padding: 24px;
-  border-radius: 14px;
-  border: 1px solid rgba(222, 167, 80, 0.35);
-  background:
-    linear-gradient(180deg, rgba(42, 28, 18, 0.98), rgba(21, 17, 15, 0.98));
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  max-height: 90vh;
+  overflow: auto;
+  padding: var(--tt-s5);
+  border-radius: var(--tt-radius);
+  border: var(--tt-border) solid var(--tt-line);
+  background: var(--tt-surface);
+  color: var(--tt-text);
+}
+
+.stale-save-dialog.with-comparison {
+  width: min(94vw, 1100px);
 }
 
 .stale-save-header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--tt-s3);
+  margin-bottom: var(--tt-s4);
 }
 
 .stale-save-header h2 {
   margin: 0;
-  color: #fff4de;
-  font-size: 20px;
+  color: var(--tt-text);
+  font-size: var(--tt-size-xl);
+  font-weight: 600;
+  line-height: var(--tt-leading-tight);
 }
 
 .stale-save-file {
-  font-size: 12px;
-  color: #dcb77a;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-family: var(--tt-mono);
+  font-size: var(--tt-size-xs);
+  color: var(--tt-text-muted);
 }
 
 .stale-save-content {
-  color: #f2e8d8;
+  color: var(--tt-text);
   line-height: 1.5;
 }
 
@@ -50,43 +56,116 @@
 
 .stale-save-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
+  gap: var(--tt-s3);
+  margin-top: var(--tt-s5);
 }
 
 .stale-save-dialog button {
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
+  border: var(--tt-border) solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  padding: var(--tt-s2) var(--tt-s4);
+  font-size: var(--tt-size-sm);
   font-weight: 600;
   cursor: pointer;
+  transition: border-color var(--tt-fast) var(--tt-ease), color var(--tt-fast) var(--tt-ease);
 }
 
 .stale-save-dialog button:disabled {
-  opacity: 0.65;
+  opacity: 0.5;
   cursor: wait;
 }
 
 .stale-save-dialog .secondary {
-  background: rgba(255, 244, 222, 0.1);
-  color: #fff4de;
+  background: transparent;
+  color: var(--tt-text);
 }
 
+.stale-save-dialog .secondary:hover:not(:disabled) {
+  border-color: var(--tt-line-strong);
+}
+
+/* Overwriting a newer file on disk is destructive */
 .stale-save-actions .primary {
-  background: #dea750;
-  color: #1c1108;
+  background: transparent;
+  border-color: var(--tt-danger);
+  color: var(--tt-danger);
 }
 
-.stale-save-dialog { max-height: 90vh; overflow: auto; }
-.stale-save-dialog.with-comparison { width: min(94vw, 1100px); }
-.stale-save-actions { flex-wrap: wrap; }
-.project-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.project-comparison label { min-width: 0; display: grid; gap: 8px; }
-.project-comparison textarea { width: 100%; box-sizing: border-box; height: 45vh; resize: vertical; color: #f2e8d8; background: #17130f; border: 1px solid #69502f; padding: 12px; font: 12px/1.5 monospace; }
-.recovery-list { padding: 0; list-style: none; }
-.recovery-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #69502f; padding: 12px 0; }
-.recovery-list small { display: block; }
-.recovery-warning { position: fixed; bottom: 16px; left: 16px; max-width: 480px; padding: 12px; background: #59271c; color: #fff; z-index: 1100; }
-@media (max-width: 650px) { .project-comparison { grid-template-columns: 1fr; } }
+.stale-save-actions .primary:hover:not(:disabled) {
+  background: var(--tt-danger-soft);
+}
+
+.project-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--tt-s4);
+}
+
+.project-comparison label {
+  min-width: 0;
+  display: grid;
+  gap: var(--tt-s2);
+  font-size: var(--tt-size-sm);
+  color: var(--tt-text-muted);
+}
+
+.project-comparison textarea {
+  width: 100%;
+  box-sizing: border-box;
+  height: 45vh;
+  resize: vertical;
+  color: var(--tt-text);
+  background: var(--tt-surface-2);
+  border: var(--tt-border) solid var(--tt-line);
+  border-radius: var(--tt-radius);
+  padding: var(--tt-s3);
+  font: var(--tt-size-xs) / 1.5 var(--tt-mono);
+}
+
+.project-comparison textarea:focus {
+  outline: none;
+  border-color: var(--tt-accent);
+  box-shadow: var(--tt-focus);
+}
+
+.recovery-list {
+  padding: 0;
+  list-style: none;
+}
+
+.recovery-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tt-s3);
+  border-bottom: var(--tt-border) solid var(--tt-line);
+  padding: var(--tt-s3) 0;
+}
+
+.recovery-list small {
+  display: block;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-size-xs);
+}
+
+.recovery-warning {
+  position: fixed;
+  bottom: var(--tt-s4);
+  left: var(--tt-s4);
+  max-width: 480px;
+  padding: var(--tt-s3);
+  background: var(--tt-surface);
+  border: var(--tt-border) solid var(--tt-danger);
+  border-radius: var(--tt-radius);
+  color: var(--tt-danger);
+  font-size: var(--tt-size-sm);
+  z-index: 1100;
+}
+
+@media (max-width: 650px) {
+  .project-comparison {
+    grid-template-columns: 1fr;
+  }
+}

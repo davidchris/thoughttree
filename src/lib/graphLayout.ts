@@ -32,9 +32,9 @@ export function computeAutoLayout(
   const direction: LayoutDirection = options.direction ?? 'TB';
   const gridSize = options.gridSize ?? 20;
 
-  // Tighter spacing for a cleaner look
-  const nodeGap = options.nodeGap ?? 160; // horizontal gap between siblings
-  const levelGap = options.levelGap ?? 160; // vertical gap between levels
+  // Slot pitch, centre to centre. Nodes are 170x120, so both leave a 40px gap.
+  const nodeGap = options.nodeGap ?? 210; // horizontal pitch between siblings
+  const levelGap = options.levelGap ?? 160; // vertical pitch between levels
 
   if (nodes.length === 0) return new Map();
 

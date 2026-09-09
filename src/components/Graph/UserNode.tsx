@@ -260,7 +260,7 @@ export function UserNode({ id, selected }: NodeProps) {
   return (
     <div
       ref={nodeRef}
-      className={`thought-node user-node ${selected ? "selected" : ""} ${isDragOver ? "drag-over" : ""} ${isFlashing ? "flash" : ""}`}
+      className={`thought-node user-node ${selected ? "selected" : ""} ${isBlocked ? "blocked" : ""} ${isDragOver ? "drag-over" : ""} ${isFlashing ? "flash" : ""}`}
       onDoubleClick={handleDoubleClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

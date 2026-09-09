@@ -2,6 +2,7 @@
     flex: 1;
     height: 100%;
     min-width: 0;
+    background: var(--tt-bg);
 }
 
 /* Pan mode cursor feedback (when holding spacebar) */
@@ -20,37 +21,36 @@
 /* Graph action panel */
 .graph-actions-panel {
     display: flex;
-    gap: 8px;
+    gap: var(--tt-s2);
 }
 
 .graph-action-button {
-    background: rgba(26, 26, 46, 0.92);
-    color: #e0e0e0;
-    border: 1px solid #444;
+    background: var(--tt-surface);
+    color: var(--tt-text-muted);
+    border: var(--tt-border) solid var(--tt-line);
     padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 13px;
+    border-radius: var(--tt-radius);
+    font-size: var(--tt-size-sm);
     cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
-    backdrop-filter: blur(6px);
+    transition: color var(--tt-fast) var(--tt-ease), border-color var(--tt-fast) var(--tt-ease);
 }
 
 .graph-action-button:hover {
-    background: rgba(37, 37, 56, 0.92);
-    border-color: #555;
+    color: var(--tt-text);
+    border-color: var(--tt-line-strong);
 }
 
-/* Base node styles - always 120x120, content viewed in side panel */
+/* Base node styles - fixed 170x120 (1:√2 landscape), content viewed in side panel */
 .thought-node {
-    background: #1a1a2e;
-    border: 2px solid #333;
-    border-radius: 8px;
-    padding: 8px;
-    width: 120px;
-    height: 120px;
-    max-width: 120px;
+    background: var(--tt-surface);
+    border: var(--tt-border) solid var(--tt-line);
+    border-radius: var(--tt-radius);
+    padding: var(--tt-s2);
+    width: var(--tt-node-width);
+    height: var(--tt-node-height);
+    max-width: var(--tt-node-width);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: border-color var(--tt-fast) var(--tt-ease), opacity var(--tt-fast) var(--tt-ease);
     position: relative;
     display: flex;
     flex-direction: column;
@@ -71,51 +71,30 @@
 }
 
 .thought-node:hover {
-    border-color: #555;
+    border-color: var(--tt-line-strong);
 }
 
-/* User node - blue accent */
-.user-node {
-    border-color: #3b82f6;
+/* Selected: border becomes accent. Nothing else changes. */
+.thought-node.selected {
+    border-color: var(--tt-accent);
 }
 
-.user-node:hover {
-    border-color: #60a5fa;
+/* Blocked: an ancestor is still streaming */
+.thought-node.blocked {
+    opacity: 0.5;
 }
 
-.user-node.selected {
-    border-color: #60a5fa;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+/* Error: border and role dot turn red */
+.thought-node.error {
+    border-color: var(--tt-danger);
 }
 
-
-/* Agent node - green accent */
-.agent-node {
-    border-color: #22c55e;
+.thought-node.error .node-role::before {
+    border-color: var(--tt-danger);
 }
 
-.agent-node:hover {
-    border-color: #4ade80;
-}
-
-.agent-node.selected {
-    border-color: #4ade80;
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
-}
-
-.agent-node.streaming {
-    border-color: #86efac;
-    animation: pulse-border 1.5s infinite;
-}
-
-@keyframes pulse-border {
-    0%,
-    100% {
-        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
-    }
-    50% {
-        box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.4);
-    }
+.user-node.error .node-role::before {
+    background: var(--tt-danger);
 }
 
 /* Node header */
@@ -123,51 +102,66 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: var(--tt-s1);
     overflow: hidden;
 }
 
+/* Role label with role dot. Fill means user, outline means assistant. */
 .node-role {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    font-size: var(--tt-size-xs);
+    color: var(--tt-text-muted);
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.user-node .node-role {
-    color: #60a5fa;
+.node-role::before {
+    content: "";
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: var(--tt-node-stroke) solid var(--tt-accent);
+    box-sizing: border-box;
 }
 
-.agent-node .node-role {
-    color: #4ade80;
+.user-node .node-role::before {
+    background: var(--tt-accent);
 }
 
-.streaming-badge {
-    font-size: 9px;
-    color: #4ade80;
-    animation: pulse 1s infinite;
-    position: absolute;
-    top: 4px;
-    right: 4px;
+/* Streaming: role dot pulses. Only animation on the canvas. */
+.agent-node.streaming .node-role::before {
+    animation: role-dot-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes role-dot-pulse {
     0%,
     100% {
         opacity: 1;
     }
     50% {
-        opacity: 0.5;
+        opacity: 0.4;
     }
+}
+
+.streaming-badge {
+    display: none;
 }
 
 /* Node content */
 .node-content {
-    font-size: 11px;
-    color: #ccc;
+    font-size: var(--tt-size-xs);
+    color: var(--tt-text-muted);
     line-height: 1.4;
     flex: 1;
     min-height: auto;
+    /* 4 lines max. line-clamp alone does not clip when flex stretches the box. */
+    max-height: calc(4 * 1.4em);
     overflow: hidden;
     white-space: normal;
     word-break: break-word;
@@ -186,8 +180,8 @@
 }
 
 .node-placeholder {
-    font-size: 12px;
-    color: #666;
+    font-size: var(--tt-size-xs);
+    color: var(--tt-text-faint);
     font-style: italic;
 }
 
@@ -196,119 +190,121 @@
     width: 100%;
     min-height: 60px;
     flex: 1;
-    background: #0d0d1a;
-    border: 1px solid #333;
-    border-radius: 4px;
-    color: #fff;
-    font-size: 13px;
+    background: var(--tt-surface-2);
+    border: var(--tt-border) solid var(--tt-line);
+    border-radius: var(--tt-radius);
+    color: var(--tt-text);
+    font-size: var(--tt-size-sm);
     font-family: inherit;
     line-height: 1.5;
-    padding: 8px;
+    padding: var(--tt-s2);
     resize: none;
     box-sizing: border-box;
 }
 
 .node-textarea:focus {
     outline: none;
-    border-color: #3b82f6;
+    border-color: var(--tt-accent);
+    box-shadow: var(--tt-focus);
 }
 
 .node-textarea::placeholder {
-    color: #666;
+    color: var(--tt-text-faint);
 }
 
-/* Buttons */
+/* Buttons (hidden on canvas nodes, see below) */
 .generate-button,
 .continue-button {
     display: block;
     width: 100%;
     margin-top: 10px;
-    padding: 6px 12px;
+    padding: 6px var(--tt-s3);
     border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
+    border-radius: var(--tt-radius);
+    font-size: var(--tt-size-xs);
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s;
+    background: var(--tt-accent);
+    color: var(--tt-on-accent);
+    transition: background var(--tt-fast) var(--tt-ease);
 }
 
-.generate-button {
-    background: #3b82f6;
-    color: white;
-}
-
-.generate-button:hover:not(:disabled) {
-    background: #2563eb;
-}
-
-.continue-button {
-    background: #22c55e;
-    color: white;
-}
-
+.generate-button:hover:not(:disabled),
 .continue-button:hover:not(:disabled) {
-    background: #16a34a;
+    background: var(--tt-text);
 }
 
 .generate-button:disabled,
 .continue-button:disabled {
-    background: #4b5563;
     cursor: not-allowed;
-    opacity: 0.6;
+    opacity: 0.5;
 }
 
 /* ReactFlow controls */
 .react-flow__controls {
-    background: #1a1a2e;
-    border: 1px solid #333;
-    border-radius: 8px;
+    background: var(--tt-surface);
+    border: var(--tt-border) solid var(--tt-line);
+    border-radius: var(--tt-radius);
+    box-shadow: none;
+    overflow: hidden;
 }
 
 .react-flow__controls-button {
-    background: #1a1a2e;
-    border-color: #333;
-    fill: #888;
+    background: var(--tt-surface);
+    border-color: var(--tt-line);
+    fill: var(--tt-text-muted);
 }
 
 .react-flow__controls-button:hover {
-    background: #252538;
+    background: var(--tt-surface-2);
+    fill: var(--tt-text);
+}
+
+/* Minimap */
+.react-flow__minimap {
+    background: var(--tt-surface);
+    border: var(--tt-border) solid var(--tt-line);
+    border-radius: var(--tt-radius);
 }
 
 /* Edge styling */
 .react-flow__edge-path {
-    stroke: #555;
-    stroke-width: 2;
+    stroke: var(--tt-edge);
+    stroke-width: 1.5;
 }
 
-.react-flow__edge.selected .react-flow__edge-path {
-    stroke: #888;
+.react-flow__edge:hover .react-flow__edge-path {
+    stroke: var(--tt-line-strong);
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+    stroke: var(--tt-edge-selected);
+}
+
+.react-flow__connection-path {
+    stroke: var(--tt-edge-selected);
+    stroke-width: 1.5;
 }
 
 /* Handle styling */
 .react-flow__handle {
-    width: 10px;
-    height: 10px;
-    background: #555;
-    border: 2px solid #1a1a2e;
+    width: 8px;
+    height: 8px;
+    background: var(--tt-edge);
+    border: var(--tt-border) solid var(--tt-surface);
 }
 
 .react-flow__handle:hover {
-    background: #888;
-}
-
-.user-node .react-flow__handle {
-    background: #3b82f6;
-}
-
-.agent-node .react-flow__handle {
-    background: #22c55e;
+    background: var(--tt-accent);
 }
 
 /* Markdown Content Styles */
 .markdown-content {
-    font-size: 13px;
-    color: #ccc;
-    line-height: 1.6;
+    font-size: var(--tt-size-sm);
+    color: var(--tt-text);
+    line-height: var(--tt-leading);
 }
 
 .markdown-content p {
@@ -326,10 +322,10 @@
 .markdown-content h4,
 .markdown-content h5,
 .markdown-content h6 {
-    color: #fff;
+    color: var(--tt-text);
     margin: 0.8em 0 0.4em 0;
     font-weight: 600;
-    line-height: 1.3;
+    line-height: var(--tt-leading-tight);
 }
 
 .markdown-content h1:first-child,
@@ -355,12 +351,12 @@
 }
 .markdown-content h6 {
     font-size: 0.9em;
-    color: #aaa;
+    color: var(--tt-text-muted);
 }
 
 /* Bold & Italic */
 .markdown-content strong {
-    color: #fff;
+    color: var(--tt-text);
     font-weight: 600;
 }
 
@@ -370,19 +366,20 @@
 
 /* Inline code */
 .markdown-content .inline-code {
-    background: #2d2d3f;
-    color: #e06c75;
+    background: var(--tt-surface-2);
+    color: var(--tt-text);
     padding: 0.15em 0.4em;
-    border-radius: 3px;
+    border-radius: var(--tt-radius-sm);
     font-size: 0.9em;
-    font-family: "SF Mono", Monaco, "Cascadia Code", monospace;
+    font-family: var(--tt-mono);
 }
 
 /* Code blocks */
 .markdown-content pre {
     margin: 0.5em 0;
-    border-radius: 4px;
+    border-radius: var(--tt-radius);
     overflow-x: auto;
+    background: var(--tt-surface-2);
 }
 
 /* Lists */
@@ -412,15 +409,15 @@
 /* Task lists (GFM) */
 .markdown-content input[type="checkbox"] {
     margin-right: 0.4em;
+    accent-color: var(--tt-accent);
 }
 
 /* Blockquotes */
 .markdown-content blockquote {
     margin: 0.5em 0;
     padding: 0.3em 0 0.3em 1em;
-    border-left: 3px solid #4a4a6a;
-    color: #aaa;
-    font-style: italic;
+    border-left: 2px solid var(--tt-line-strong);
+    color: var(--tt-text-muted);
 }
 
 .markdown-content blockquote p {
@@ -429,7 +426,7 @@
 
 /* Links */
 .markdown-content a {
-    color: #60a5fa;
+    color: var(--tt-accent);
     text-decoration: none;
 }
 
@@ -440,7 +437,7 @@
 /* Horizontal rule */
 .markdown-content hr {
     border: none;
-    border-top: 1px solid #444;
+    border-top: var(--tt-border) solid var(--tt-line);
     margin: 1em 0;
 }
 
@@ -454,31 +451,27 @@
 
 .markdown-content th,
 .markdown-content td {
-    border: 1px solid #444;
+    border: var(--tt-border) solid var(--tt-line);
     padding: 0.4em 0.6em;
     text-align: left;
 }
 
 .markdown-content th {
-    background: #2d2d3f;
-    color: #fff;
+    background: var(--tt-surface-2);
+    color: var(--tt-text);
     font-weight: 600;
-}
-
-.markdown-content tr:nth-child(even) {
-    background: rgba(255, 255, 255, 0.03);
 }
 
 /* Strikethrough */
 .markdown-content del {
-    color: #888;
+    color: var(--tt-text-faint);
 }
 
 /* Images */
 .markdown-content img {
     max-width: 100%;
     height: auto;
-    border-radius: 4px;
+    border-radius: var(--tt-radius);
 }
 
 /* Hide action buttons on small nodes */
@@ -491,59 +484,50 @@
 .expand-toggle {
     background: none;
     border: none;
-    color: #888;
+    color: var(--tt-text-faint);
     cursor: pointer;
     padding: 2px 6px;
     font-size: 10px;
-    border-radius: 3px;
-    transition: all 0.15s ease;
+    border-radius: var(--tt-radius-sm);
+    transition: color var(--tt-fast) var(--tt-ease), background var(--tt-fast) var(--tt-ease);
     line-height: 1;
     margin-left: auto;
 }
 
 .expand-toggle:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #ccc;
-}
-
-.user-node .expand-toggle:hover {
-    color: #60a5fa;
-}
-
-.agent-node .expand-toggle:hover {
-    color: #4ade80;
+    background: var(--tt-surface-2);
+    color: var(--tt-text);
 }
 
 /* Context menu */
 .context-menu {
     position: fixed;
-    background: #1a1a2e;
-    border: 1px solid #444;
-    border-radius: 6px;
-    padding: 4px 0;
+    background: var(--tt-surface);
+    border: var(--tt-border) solid var(--tt-line);
+    border-radius: var(--tt-radius);
+    padding: var(--tt-s1) 0;
     min-width: 120px;
     z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .context-menu button {
     display: block;
     width: 100%;
-    padding: 8px 16px;
+    padding: var(--tt-s2) var(--tt-s4);
     background: none;
     border: none;
-    color: #e0e0e0;
+    color: var(--tt-text);
     text-align: left;
     cursor: pointer;
-    font-size: 13px;
+    font-size: var(--tt-size-sm);
 }
 
 .context-menu button:hover:not(:disabled) {
-    background: #2a2a3e;
+    background: var(--tt-surface-2);
 }
 
 .context-menu button:disabled {
-    color: #666;
+    color: var(--tt-text-faint);
     cursor: not-allowed;
 }
 
@@ -553,17 +537,17 @@
 }
 
 .alignment-guide {
-    stroke: #f472b6;
+    stroke: var(--tt-text-muted);
     stroke-width: 1;
     stroke-dasharray: 6 4;
     opacity: 0.8;
 }
 
-/* Mermaid diagrams - Catppuccin Mocha */
+/* Mermaid diagrams */
 .mermaid-diagram {
-    background: #1e1e2e;
-    border-radius: 8px;
-    padding: 16px;
+    background: var(--tt-surface-2);
+    border-radius: var(--tt-radius);
+    padding: var(--tt-s4);
     margin: 0.5em 0;
     overflow-x: auto;
 }
@@ -576,48 +560,47 @@
 }
 
 .mermaid-loading {
-    background: #313244;
-    border-radius: 8px;
+    background: var(--tt-surface-2);
+    border-radius: var(--tt-radius);
     padding: 20px;
     margin: 0.5em 0;
-    color: #a6adc8;
+    color: var(--tt-text-muted);
     font-style: italic;
     text-align: center;
 }
 
 .mermaid-error {
-    background: #1e1e2e;
-    border: 1px solid #f38ba8;
-    border-radius: 8px;
-    padding: 12px;
+    background: var(--tt-surface-2);
+    border: var(--tt-border) solid var(--tt-danger);
+    border-radius: var(--tt-radius);
+    padding: var(--tt-s3);
     margin: 0.5em 0;
 }
 
 .mermaid-error-label {
-    color: #f38ba8;
+    color: var(--tt-danger);
     font-weight: 600;
-    font-size: 12px;
-    margin-bottom: 8px;
+    font-size: var(--tt-size-xs);
+    margin-bottom: var(--tt-s2);
 }
 
 .mermaid-error pre {
     margin: 0;
     font-size: 11px;
-    color: #eba0ac;
+    color: var(--tt-danger);
     white-space: pre-wrap;
     word-break: break-word;
 }
 
 .mermaid-error .mermaid-source {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid #45475a;
-    color: #a6adc8;
+    margin-top: var(--tt-s3);
+    padding-top: var(--tt-s3);
+    border-top: var(--tt-border) solid var(--tt-line);
+    color: var(--tt-text-muted);
 }
 
-/* Catppuccin Mocha text color for mermaid */
 .mermaid-diagram svg text {
-    fill: #cdd6f4 !important;
+    fill: var(--tt-text) !important;
 }
 
 /* Image attachment styles */
@@ -625,17 +608,17 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: 8px;
+    margin-bottom: var(--tt-s2);
 }
 
 .image-thumbnail {
     position: relative;
     width: 48px;
     height: 48px;
-    border-radius: 4px;
+    border-radius: var(--tt-radius-sm);
     overflow: hidden;
-    border: 1px solid #444;
-    background: #0d0d1a;
+    border: var(--tt-border) solid var(--tt-line);
+    background: var(--tt-surface-2);
 }
 
 .image-thumbnail img {
@@ -651,15 +634,15 @@
     width: 16px;
     height: 16px;
     padding: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--tt-bg);
     border: none;
     border-radius: 50%;
-    color: #ccc;
+    color: var(--tt-text-muted);
     font-size: 12px;
     line-height: 1;
     cursor: pointer;
     opacity: 0;
-    transition: opacity 0.15s ease;
+    transition: opacity var(--tt-fast) var(--tt-ease), color var(--tt-fast) var(--tt-ease);
 }
 
 .image-thumbnail:hover .image-remove {
@@ -667,8 +650,7 @@
 }
 
 .image-thumbnail .image-remove:hover {
-    background: rgba(239, 68, 68, 0.8);
-    color: white;
+    color: var(--tt-danger);
 }
 
 /* Image count badge in header */
@@ -679,24 +661,19 @@
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
-    background: #3b82f6;
-    border-radius: 9px;
+    background: var(--tt-surface-2);
+    border: var(--tt-border) solid var(--tt-line);
+    border-radius: var(--tt-radius-sm);
     font-size: 10px;
     font-weight: 600;
-    color: white;
+    color: var(--tt-text-muted);
     margin-left: 6px;
-}
-
-.image-count::before {
-    content: "📷 ";
-    font-size: 9px;
 }
 
 /* Drag-over state for image drop */
 .user-node.drag-over {
-    border-color: #60a5fa;
-    background: rgba(59, 130, 246, 0.1);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+    border-color: var(--tt-accent);
+    background: var(--tt-accent-soft);
 }
 
 /* Hide image thumbnails on small nodes - show image count badge instead */
@@ -704,27 +681,18 @@
     display: none;
 }
 
-/* Palette jump flash: brief pulse so the jumped-to node stands out in a dense
+/* Palette jump flash: brief ring so the jumped-to node stands out in a dense
    cluster. Duration must stay in sync with FLASH_DURATION_MS in
    src/store/useUIStore.ts (the timeout that removes this class). */
 .thought-node.flash {
-    animation: palette-flash 1s ease-out;
-}
-
-/* Both classes set `animation`; without this rule the flash would replace the
-   streaming pulse for its duration instead of running alongside it. */
-.agent-node.streaming.flash {
-    animation: palette-flash 1s ease-out, pulse-border 1.5s infinite;
+    animation: palette-flash 1s var(--tt-ease);
 }
 
 @keyframes palette-flash {
     0% {
-        box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9), 0 0 24px rgba(250, 204, 21, 0.6);
-    }
-    70% {
-        box-shadow: 0 0 0 6px rgba(250, 204, 21, 0.4), 0 0 32px rgba(250, 204, 21, 0.3);
+        box-shadow: 0 0 0 3px var(--tt-accent);
     }
     100% {
-        box-shadow: 0 0 0 3px rgba(250, 204, 21, 0);
+        box-shadow: 0 0 0 3px transparent;
     }
 }

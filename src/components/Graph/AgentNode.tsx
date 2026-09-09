@@ -58,7 +58,7 @@ export function AgentNode({ id, selected }: NodeProps) {
 
   return (
     <div
-      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} ${isFlashing ? "flash" : ""}`}
+      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} ${isBlocked && !isStreaming ? "blocked" : ""} ${isFlashing ? "flash" : ""}`}
       onDoubleClick={handleDoubleClick}
     >
       <Handle type="target" position={Position.Top} />

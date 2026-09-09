@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { getBackendTransport, type RecoveryEntry } from '../../lib/transport';
 import { useGraphStore } from '../../store/useGraphStore';
+import { ToolbarButton } from '../Toolbar/ToolbarButton';
+import { HistoryIcon } from '../Toolbar/ToolbarIcons';
 import '../StaleSaveDialog/styles.css';
 
 export function RecoverySnapshots() {
@@ -29,7 +31,7 @@ export function RecoverySnapshots() {
   };
 
   return <>
-    <button onClick={() => void show()}>Recovery snapshots</button>
+    <ToolbarButton icon={<HistoryIcon />} label="Recovery snapshots" onClick={() => void show()} />
     {open && <div className="stale-save-overlay">
       <div className="stale-save-dialog" role="dialog" aria-modal="true" aria-label="Recovery snapshots">
         <div className="stale-save-header"><h2>Recovery snapshots</h2></div>

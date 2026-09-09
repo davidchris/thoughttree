@@ -3,6 +3,19 @@ import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { RecoverySnapshots } from '../RecoverySnapshots';
 import { SettingsDialog } from '../SettingsDialog';
+import { LogoMark } from '../LogoMark';
+import { ToolbarButton } from './ToolbarButton';
+import {
+  ExportAllIcon,
+  ExportThreadIcon,
+  ImportIcon,
+  NewIcon,
+  OpenIcon,
+  ReplyIcon,
+  SaveIcon,
+  SettingsIcon,
+  TidyIcon,
+} from './ToolbarIcons';
 import { addRecentProject, exportMarkdown, newProjectDialog, openProjectDialog, pickKagiExport } from '../../lib/desktop';
 import { getBackendTransport } from '../../lib/transport';
 import { logger } from '../../lib/logger';
@@ -180,6 +193,7 @@ export function Toolbar() {
   return (
     <div className="toolbar">
       <div className="toolbar-left">
+        <LogoMark className="toolbar-mark" />
         <span className="project-name">
           {projectName}
           {isDirty && <span className="unsaved-indicator">*</span>}
@@ -190,64 +204,75 @@ export function Toolbar() {
       </div>
 
       <div className="toolbar-center">
-        <button onClick={handleNewProject} title="New Project" disabled={!nativeDialogsEnabled}>
-          New
-        </button>
-        <button onClick={handleOpenProject} title="Open Project" disabled={!nativeDialogsEnabled}>
-          Open
-        </button>
-        <button onClick={handleImport} title="Import Kagi export" disabled={!nativeDialogsEnabled}>
-          Import
-        </button>
-        <button
+        <ToolbarButton
+          icon={<NewIcon />}
+          label="New"
+          title="New Project"
+          onClick={handleNewProject}
+          disabled={!nativeDialogsEnabled}
+        />
+        <ToolbarButton
+          icon={<OpenIcon />}
+          label="Open"
+          title="Open Project"
+          onClick={handleOpenProject}
+          disabled={!nativeDialogsEnabled}
+        />
+        <ToolbarButton
+          icon={<ImportIcon />}
+          label="Import"
+          title="Import Kagi export"
+          onClick={handleImport}
+          disabled={!nativeDialogsEnabled}
+        />
+        <ToolbarButton
+          icon={<SaveIcon />}
+          label={isSaving ? 'Saving...' : 'Save'}
+          title="Save Project"
           onClick={handleSaveProject}
           disabled={isSaving || (!isDirty && projectPath !== null)}
-          title="Save Project"
-        >
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
+        />
         <span className="toolbar-divider" />
-        <button
+        <ToolbarButton
+          icon={<TidyIcon />}
+          label="Tidy graph"
+          title="Tidy graph (Cmd/Ctrl+L)"
           onClick={handleCleanUp}
           disabled={nodes.length === 0}
-          title="Tidy graph (Cmd/Ctrl+L)"
-        >
-          Tidy graph
-        </button>
+        />
         <span className="toolbar-divider" />
-        <button
+        <ToolbarButton
+          icon={<ReplyIcon />}
+          label="Reply"
+          title="Reply to selected agent node (Enter)"
           onClick={handleReply}
           disabled={!canReply}
-          title="Reply to selected agent node (Enter)"
-        >
-          Reply
-        </button>
+        />
         <span className="toolbar-divider" />
-        <button
+        <ToolbarButton
+          icon={<ExportThreadIcon />}
+          label="Export Thread"
+          title="Export conversation to selected node"
           onClick={handleExportSelected}
           disabled={!selectedNodeId || !nativeDialogsEnabled}
-          title="Export conversation to selected node"
-        >
-          Export Thread
-        </button>
-        <button
+        />
+        <ToolbarButton
+          icon={<ExportAllIcon />}
+          label="Export All"
+          title="Export all nodes"
           onClick={handleExportAll}
           disabled={nodes.length === 0 || !nativeDialogsEnabled}
-          title="Export all nodes"
-        >
-          Export All
-        </button>
+        />
       </div>
 
       <div className="toolbar-right">
         <RecoverySnapshots />
-        <button
-          onClick={() => setShowSettings(true)}
-          title="Settings"
+        <ToolbarButton
+          icon={<SettingsIcon />}
+          label="Settings"
           className="settings-button"
-        >
-          Settings
-        </button>
+          onClick={() => setShowSettings(true)}
+        />
         <span className="node-count">{nodes.length} nodes</span>
       </div>
 

@@ -94,8 +94,17 @@ function App() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+
+      // Cmd/Ctrl + , opens settings (macOS convention), even while typing
+      if (e.key === ',' || e.code === 'Comma') {
+        e.preventDefault();
+        useUIStore.getState().setSettingsOpen(true);
+        return;
+      }
+
       // Cmd/Ctrl + O to open project
-      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
+      if (e.key === 'o') {
         e.preventDefault();
         const target = e.target as HTMLElement;
         // Don't trigger if typing in an input or textarea

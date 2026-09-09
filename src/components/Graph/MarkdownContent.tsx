@@ -12,49 +12,50 @@ import 'katex/dist/katex.min.css';
 mermaid.initialize({
   startOnLoad: false,
   theme: 'base',
+  // Mermaid renders into an SVG that does not resolve CSS variables.
+  // Values mirror design/tokens.css: teal-black neutrals, one mint accent.
   themeVariables: {
-    // Catppuccin Mocha palette - ALL backgrounds dark
-    background: '#1e1e2e',
-    // Force all node types to dark background
-    primaryColor: '#313244',
-    secondaryColor: '#313244',
-    tertiaryColor: '#313244',
-    quaternaryColor: '#313244',
+    background: '#113b43', // --tt-surface-2
+    // Force all node types to the same dark surface
+    primaryColor: '#0a3038', // --tt-surface
+    secondaryColor: '#0a3038',
+    tertiaryColor: '#0a3038',
+    quaternaryColor: '#0a3038',
     // Text colors - all light
-    primaryTextColor: '#cdd6f4',
-    secondaryTextColor: '#cdd6f4',
-    tertiaryTextColor: '#cdd6f4',
+    primaryTextColor: '#e6f4ee', // --tt-text
+    secondaryTextColor: '#e6f4ee',
+    tertiaryTextColor: '#e6f4ee',
     // Borders
-    primaryBorderColor: '#89b4fa',
-    secondaryBorderColor: '#89b4fa',
-    tertiaryBorderColor: '#89b4fa',
-    lineColor: '#6c7086',
+    primaryBorderColor: '#c0facc', // --tt-accent
+    secondaryBorderColor: '#c0facc',
+    tertiaryBorderColor: '#c0facc',
+    lineColor: '#4f7a76', // --tt-edge
     // Node styling
-    mainBkg: '#313244',
-    nodeBkg: '#313244',
-    nodeBorder: '#89b4fa',
-    nodeTextColor: '#cdd6f4',
+    mainBkg: '#0a3038',
+    nodeBkg: '#0a3038',
+    nodeBorder: '#c0facc',
+    nodeTextColor: '#e6f4ee',
     // Default/base colors
-    defaultLinkColor: '#6c7086',
+    defaultLinkColor: '#4f7a76',
     // Clusters
-    clusterBkg: '#181825',
-    clusterBorder: '#45475a',
+    clusterBkg: '#04252c', // --tt-bg
+    clusterBorder: '#1a464e', // --tt-line
     // Labels
-    titleColor: '#cdd6f4',
-    edgeLabelBackground: '#1e1e2e',
+    titleColor: '#e6f4ee',
+    edgeLabelBackground: '#113b43',
     // Notes
-    noteBkgColor: '#313244',
-    noteTextColor: '#cdd6f4',
-    noteBorderColor: '#45475a',
+    noteBkgColor: '#0a3038',
+    noteTextColor: '#e6f4ee',
+    noteBorderColor: '#1a464e',
     // Flowchart specific
-    fillType0: '#313244',
-    fillType1: '#313244',
-    fillType2: '#313244',
-    fillType3: '#313244',
-    fillType4: '#313244',
-    fillType5: '#313244',
-    fillType6: '#313244',
-    fillType7: '#313244',
+    fillType0: '#0a3038',
+    fillType1: '#0a3038',
+    fillType2: '#0a3038',
+    fillType3: '#0a3038',
+    fillType4: '#0a3038',
+    fillType5: '#0a3038',
+    fillType6: '#0a3038',
+    fillType7: '#0a3038',
   },
   flowchart: {
     curve: 'basis',
@@ -187,8 +188,9 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
                 PreTag="div"
                 customStyle={{
                   margin: '0.5em 0',
-                  borderRadius: '4px',
-                  fontSize: '12px',
+                  borderRadius: 'var(--tt-radius)',
+                  fontSize: 'var(--tt-size-xs)',
+                  background: 'var(--tt-surface-2)',
                 }}
               >
                 {String(children).replace(/\n$/, '')}

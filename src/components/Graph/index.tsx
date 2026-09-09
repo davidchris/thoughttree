@@ -1,7 +1,6 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import {
   ReactFlow,
-  Background,
   Controls,
   MiniMap,
   NodeTypes,
@@ -22,7 +21,14 @@ import { useUIStore } from '../../store/useUIStore';
 import './styles.css';
 
 const SNAP_THRESHOLD = 8;
-const DEFAULT_NODE_SIZE = 120;
+// Keep in sync with --tt-node-width / --tt-node-height in design/tokens.css.
+const DEFAULT_NODE_WIDTH = 170;
+const DEFAULT_NODE_HEIGHT = 120;
+
+// MiniMap paints into an SVG that does not resolve CSS variables reliably.
+// Keep in sync with --tt-accent and --tt-surface in design/tokens.css.
+const MINT = '#c0facc';
+const SURFACE = '#0a3038';
 
 const nodeTypes: NodeTypes = {
   user: UserNode,
@@ -54,8 +60,8 @@ export function Graph() {
 
   // Get node dimensions (use measured if available, otherwise default)
   const getNodeDimensions = useCallback((node: Node) => {
-    const width = node.measured?.width ?? DEFAULT_NODE_SIZE;
-    const height = node.measured?.height ?? DEFAULT_NODE_SIZE;
+    const width = node.measured?.width ?? DEFAULT_NODE_WIDTH;
+    const height = node.measured?.height ?? DEFAULT_NODE_HEIGHT;
     return { width, height };
   }, []);
 
@@ -407,11 +413,13 @@ export function Graph() {
         zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#333" gap={20} />
         <Controls />
+        {/* Same grammar as the icon: user = filled mint, assistant = mint outline */}
         <MiniMap
-          nodeColor={(node) => node.type === 'user' ? '#3b82f6' : '#22c55e'}
-          maskColor="rgba(0,0,0,0.8)"
+          nodeColor={(node) => (node.type === 'user' ? MINT : SURFACE)}
+          nodeStrokeColor={MINT}
+          nodeStrokeWidth={4}
+          maskColor="rgba(4, 37, 44, 0.75)"
         />
         <AlignmentGuides guides={alignmentGuides} />
       </ReactFlow>

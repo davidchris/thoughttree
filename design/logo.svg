@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="ThoughtTree icon: a filled root node branches into a tree of outlined nodes; two branches merge into one node in the centre">
+  <!-- Vector recreation of the app icon. One accent: mint on teal-black. -->
+  <rect width="1024" height="1024" rx="228" fill="#04252c"/>
+  <g fill="none" stroke="#c0facc" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+    <!-- edges -->
+    <line x1="512" y1="150" x2="296" y2="376"/>
+    <line x1="512" y1="150" x2="728" y2="376"/>
+    <line x1="296" y1="376" x2="136" y2="694"/>
+    <line x1="296" y1="376" x2="370" y2="626"/>
+    <line x1="296" y1="376" x2="512" y2="582"/>
+    <line x1="728" y1="376" x2="512" y2="582"/>
+    <line x1="728" y1="376" x2="654" y2="626"/>
+    <line x1="728" y1="376" x2="860" y2="600"/>
+    <line x1="512" y1="582" x2="512" y2="806"/>
+    <line x1="860" y1="600" x2="748" y2="806"/>
+    <line x1="860" y1="600" x2="900" y2="806"/>
+    <!-- outlined nodes (assistant) -->
+    <circle cx="296" cy="376" r="40" fill="#04252c"/>
+    <circle cx="728" cy="376" r="40" fill="#04252c"/>
+    <circle cx="136" cy="694" r="40" fill="#04252c"/>
+    <circle cx="370" cy="626" r="40" fill="#04252c"/>
+    <circle cx="512" cy="582" r="40" fill="#04252c"/>
+    <circle cx="654" cy="626" r="40" fill="#04252c"/>
+    <circle cx="860" cy="600" r="40" fill="#04252c"/>
+    <circle cx="512" cy="806" r="40" fill="#04252c"/>
+    <circle cx="748" cy="806" r="40" fill="#04252c"/>
+    <circle cx="900" cy="806" r="40" fill="#04252c"/>
+  </g>
+  <!-- filled root (user) -->
+  <circle cx="512" cy="150" r="52" fill="#c0facc"/>
+</svg>
