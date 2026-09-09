@@ -34,7 +34,7 @@ echo "  Updating Cargo.lock..."
 (cd src-tauri && cargo check --quiet)
 
 # Commit and tag
-git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml Cargo.lock
 git commit -m "chore: release v$VERSION"
 git tag "v$VERSION"
 
