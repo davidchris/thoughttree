@@ -33,7 +33,7 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
       }
 
       setIsLoading(true);
-      const timeoutId = setTimeout(async () => {
+      const runSearch = async () => {
         try {
           const results = await getBackendTransport().searchFiles(query, 15);
           setFiles(results);
@@ -44,7 +44,8 @@ export const FileAutocomplete = forwardRef<FileAutocompleteRef, FileAutocomplete
         } finally {
           setIsLoading(false);
         }
-      }, 100);
+      };
+      const timeoutId = setTimeout(() => void runSearch(), 100);
 
       return () => clearTimeout(timeoutId);
     }, [isOpen, query]);

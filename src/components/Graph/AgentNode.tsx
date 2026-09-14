@@ -11,6 +11,51 @@ import "./styles.css";
 
 const SUMMARY_THRESHOLD = 100;
 
+interface NodeStateFlags {
+  selected?: boolean;
+  isStreaming: boolean;
+  isBlocked: boolean;
+  isFlashing: boolean;
+}
+
+function agentNodeClassName({ selected, isStreaming, isBlocked, isFlashing }: NodeStateFlags) {
+  const classes = ["thought-node", "agent-node"];
+  if (selected) classes.push("selected");
+  if (isStreaming) classes.push("streaming");
+  if (isBlocked && !isStreaming) classes.push("blocked");
+  if (isFlashing) classes.push("flash");
+  return classes.join(" ");
+}
+
+interface AgentNodeBodyProps {
+  collapsedText: string;
+  hasContent: boolean;
+  isGeneratingSummary: boolean;
+  isStreaming: boolean;
+}
+
+function AgentNodeBody({
+  collapsedText,
+  hasContent,
+  isGeneratingSummary,
+  isStreaming,
+}: AgentNodeBodyProps) {
+  if (!hasContent) {
+    return (
+      <span className="node-placeholder">
+        {isStreaming ? "Waiting for response..." : "Empty response"}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      {collapsedText}
+      {isGeneratingSummary && <span className="summary-loading"> ⋯</span>}
+    </>
+  );
+}
+
 export function AgentNode({ id, selected }: NodeProps) {
   const nodeData = useGraphStore((state) => state.nodeData.get(id) as AgentNodeData | undefined);
   const content = nodeData?.content ?? '';
@@ -58,7 +103,7 @@ export function AgentNode({ id, selected }: NodeProps) {
 
   return (
     <div
-      className={`thought-node agent-node ${selected ? "selected" : ""} ${isStreaming ? "streaming" : ""} ${isBlocked && !isStreaming ? "blocked" : ""} ${isFlashing ? "flash" : ""}`}
+      className={agentNodeClassName({ selected, isStreaming, isBlocked, isFlashing })}
       onDoubleClick={handleDoubleClick}
     >
       <Handle type="target" position={Position.Top} />
@@ -80,16 +125,12 @@ export function AgentNode({ id, selected }: NodeProps) {
       </div>
 
       <div className="node-content">
-        {content ? (
-          <>
-            {collapsedText}
-            {isGeneratingSummary && <span className="summary-loading"> ⋯</span>}
-          </>
-        ) : (
-          <span className="node-placeholder">
-            {isStreaming ? "Waiting for response..." : "Empty response"}
-          </span>
-        )}
+        <AgentNodeBody
+          collapsedText={collapsedText}
+          hasContent={Boolean(content)}
+          isGeneratingSummary={isGeneratingSummary}
+          isStreaming={isStreaming}
+        />
       </div>
 
       {!isStreaming && content.trim() && (

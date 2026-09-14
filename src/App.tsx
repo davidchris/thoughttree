@@ -67,7 +67,7 @@ function App() {
       }
     };
 
-    initialize();
+    void initialize();
     return () => {
       unsubscribeStream();
       unsubscribePermission();
@@ -111,7 +111,7 @@ function App() {
         if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
           return;
         }
-        handleOpenProject();
+        void handleOpenProject();
       }
     };
 
@@ -203,10 +203,10 @@ function App() {
     return (
       <>
       <ProjectOpeningWizard
-        onProjectSelected={handleProjectSelected}
-        onOpenDialog={handleOpenDialog}
-        onNewProject={handleNewProject}
-        onImport={handleImport}
+        onProjectSelected={(path) => void handleProjectSelected(path)}
+        onOpenDialog={() => void handleOpenDialog()}
+        onNewProject={() => void handleNewProject()}
+        onImport={() => void handleImport()}
         nativeDialogsEnabled={transport.capabilities.nativeDialogs}
       />
       <RecoverySnapshots />

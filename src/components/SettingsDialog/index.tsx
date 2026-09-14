@@ -121,7 +121,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         (p) => p.provider === provider && p.available
       );
       if (isAvailable) {
-        fetchModels(provider);
+        void fetchModels(provider);
       }
     });
   }, [isOpen, availableProviders, fetchModels]);
@@ -300,12 +300,12 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                       placeholder="(auto-detect)"
                       value={pathInputs[provider] ?? ''}
                       onChange={(e) => handlePathInputChange(provider, e.target.value)}
-                      onBlur={() => handlePathBlur(provider)}
+                      onBlur={() => void handlePathBlur(provider)}
                       disabled={validation.status === 'validating'}
                     />
                     <button
                       className="provider-path-button"
-                      onClick={() => handleBrowse(provider)}
+                      onClick={() => void handleBrowse(provider)}
                       disabled={validation.status === 'validating'}
                       title="Browse for executable"
                     >
@@ -314,7 +314,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     {hasCustomPath && (
                       <button
                         className="provider-path-button provider-path-reset"
-                        onClick={() => handleResetPath(provider)}
+                        onClick={() => void handleResetPath(provider)}
                         disabled={validation.status === 'validating'}
                         title="Reset to auto-detect"
                       >
@@ -370,14 +370,14 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                       <ModelSelector
                         provider={provider}
                         value={globalModelPreferences[provider]}
-                        onChange={(modelId) => handleGlobalModelChange(provider, modelId)}
+                        onChange={(modelId) => void handleGlobalModelChange(provider, modelId)}
                         availableModels={availableModels[provider] ?? []}
                         loading={loadingModels[provider]}
                       />
                       <EffortSelector
                         provider={provider}
                         value={globalEffortPreferences[provider]}
-                        onChange={(effort) => handleGlobalEffortChange(provider, effort)}
+                        onChange={(effort) => void handleGlobalEffortChange(provider, effort)}
                       />
                     </div>
                   ) : (

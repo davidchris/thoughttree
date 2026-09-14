@@ -1,4 +1,4 @@
-import type { Graph, GraphEdge, ImageAttachment, NodeId } from './types';
+import type { Graph, GraphEdge, GraphNode, ImageAttachment, NodeId } from './types';
 
 interface Adjacency {
   parents: Map<NodeId, NodeId[]>;
@@ -148,6 +148,59 @@ function lineageMap(
   return `<graph-map>\n${LINEAGE_MAP_INTRO}\n${lines.join('\n')}\n</graph-map>`;
 }
 
+/** Appends one node's text, merging into the previous message when the role repeats. */
+function appendNodeMessage(
+  merged: ConversationMessage[],
+  node: GraphNode,
+  content: string,
+): void {
+  const images = node.role === 'user' ? node.images : undefined;
+  const last = merged[merged.length - 1];
+  if (last && last.role === node.role) {
+    last.content = `${last.content}\n\n${content}`;
+    if (images?.length) last.images = [...(last.images ?? []), ...images];
+    return;
+  }
+
+  const message: ConversationMessage = { role: node.role, content };
+  if (images?.length) message.images = [...images];
+  merged.push(message);
+}
+
+/** Plain linearization: node text only, no graph markers. */
+function linearConversation(g: Graph, ids: NodeId[]): ConversationMessage[] {
+  const merged: ConversationMessage[] = [];
+  for (const id of ids) {
+    const node = g.nodes.get(id);
+    if (!node?.content.trim()) continue;
+    appendNodeMessage(merged, node, node.content);
+  }
+  return merged;
+}
+
+/** Non-linear lineage: every segment carries a <node id> marker and the path ends with the graph map. */
+function annotatedConversation(g: Graph, targetId: NodeId, ids: NodeId[]): ConversationMessage[] {
+  const adj = adjacency(g.edges);
+  const include = new Set(ids);
+  const pathIndex = new Map(ids.map((id, index) => [id, index]));
+  const shortIds = assignShortIds(ids);
+  const merged: ConversationMessage[] = [];
+
+  for (const id of ids) {
+    const node = g.nodes.get(id);
+    if (!node?.content.trim()) continue;
+    const content = nodeMarker(id, node.role, node.content, adj, include, pathIndex, shortIds);
+    appendNodeMessage(merged, node, content);
+  }
+
+  const final = merged[merged.length - 1];
+  if (final) {
+    final.content = `${final.content}\n\n${lineageMap(ids, targetId, g, adj, include, pathIndex, shortIds)}`;
+  }
+
+  return merged;
+}
+
 export const GraphModel = {
   parents(g: Graph, id: NodeId): NodeId[] {
     return adjacency(g.edges).parents.get(id) ?? [];
@@ -228,65 +281,8 @@ export const GraphModel = {
 
   conversationPath(g: Graph, targetId: NodeId): ConversationMessage[] {
     const ids = GraphModel.conversationPathIds(g, targetId);
-    const merged: ConversationMessage[] = [];
-
-    if (GraphModel.hasNonLinearLineage(g, targetId)) {
-      const adj = adjacency(g.edges);
-      const include = new Set(ids);
-      const pathIndex = new Map(ids.map((id, index) => [id, index]));
-      const shortIds = assignShortIds(ids);
-
-      for (const id of ids) {
-        const node = g.nodes.get(id);
-        if (!node) continue;
-        if (!node.content.trim()) continue;
-
-        const content = nodeMarker(id, node.role, node.content, adj, include, pathIndex, shortIds);
-        const last = merged[merged.length - 1];
-        if (last && last.role === node.role) {
-          last.content = `${last.content}\n\n${content}`;
-          if (node.role === 'user' && node.images?.length) {
-            last.images = [...(last.images ?? []), ...node.images];
-          }
-          continue;
-        }
-
-        const message: ConversationMessage = { role: node.role, content };
-        if (node.role === 'user' && node.images?.length) {
-          message.images = [...node.images];
-        }
-        merged.push(message);
-      }
-
-      if (merged.length > 0) {
-        const final = merged[merged.length - 1];
-        final.content = `${final.content}\n\n${lineageMap(ids, targetId, g, adj, include, pathIndex, shortIds)}`;
-      }
-
-      return merged;
-    }
-
-    for (const id of ids) {
-      const node = g.nodes.get(id);
-      if (!node) continue;
-      if (!node.content.trim()) continue;
-
-      const last = merged[merged.length - 1];
-      if (last && last.role === node.role) {
-        last.content = `${last.content}\n\n${node.content}`;
-        if (node.role === 'user' && node.images?.length) {
-          last.images = [...(last.images ?? []), ...node.images];
-        }
-        continue;
-      }
-
-      const message: ConversationMessage = { role: node.role, content: node.content };
-      if (node.role === 'user' && node.images?.length) {
-        message.images = [...node.images];
-      }
-      merged.push(message);
-    }
-
-    return merged;
+    return GraphModel.hasNonLinearLineage(g, targetId)
+      ? annotatedConversation(g, targetId, ids)
+      : linearConversation(g, ids);
   },
 };

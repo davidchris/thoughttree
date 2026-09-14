@@ -208,28 +208,28 @@ export function Toolbar() {
           icon={<NewIcon />}
           label="New"
           title="New Project"
-          onClick={handleNewProject}
+          onClick={() => void handleNewProject()}
           disabled={!nativeDialogsEnabled}
         />
         <ToolbarButton
           icon={<OpenIcon />}
           label="Open"
           title="Open Project"
-          onClick={handleOpenProject}
+          onClick={() => void handleOpenProject()}
           disabled={!nativeDialogsEnabled}
         />
         <ToolbarButton
           icon={<ImportIcon />}
           label="Import"
           title="Import Kagi export"
-          onClick={handleImport}
+          onClick={() => void handleImport()}
           disabled={!nativeDialogsEnabled}
         />
         <ToolbarButton
           icon={<SaveIcon />}
           label={isSaving ? 'Saving...' : 'Save'}
           title="Save Project"
-          onClick={handleSaveProject}
+          onClick={() => void handleSaveProject()}
           disabled={isSaving || (!isDirty && projectPath !== null)}
         />
         <span className="toolbar-divider" />
@@ -253,14 +253,14 @@ export function Toolbar() {
           icon={<ExportThreadIcon />}
           label="Export Thread"
           title="Export conversation to selected node"
-          onClick={handleExportSelected}
+          onClick={() => void handleExportSelected()}
           disabled={!selectedNodeId || !nativeDialogsEnabled}
         />
         <ToolbarButton
           icon={<ExportAllIcon />}
           label="Export All"
           title="Export all nodes"
-          onClick={handleExportAll}
+          onClick={() => void handleExportAll()}
           disabled={nodes.length === 0 || !nativeDialogsEnabled}
         />
       </div>

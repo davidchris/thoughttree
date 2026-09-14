@@ -18,12 +18,26 @@ bun run build         # TypeScript check + Vite build
 bun test              # Run tests in watch mode
 bun test:run          # Run tests once
 
+# Before committing TypeScript changes (CI enforces both; lint runs with --max-warnings 0)
+bunx tsc --noEmit
+bun run lint
+
 # Before committing Rust changes (CI enforces all four)
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ./scripts/check-core-no-tauri.sh
 ```
+
+## Lint Rules
+
+ESLint (`eslint.config.js`, type-aware via typescript-eslint) and Clippy (`clippy.toml`) enforce nesting and complexity budgets:
+
+- `max-depth` 3, `complexity` 20 (modified variant), `no-else-return` — warnings locally, but CI fails on any warning
+- `@typescript-eslint/no-floating-promises`, `no-misused-promises` — errors; wrap async handlers as `() => void fn()` and route rejections through the component's existing error path
+- `clippy::excessive_nesting` at threshold 5 — counts fn/impl/mod blocks, not just branches
+- Test files are exempt from the complexity budget, not from the promise rules
+- Suppressions need a reason: `// eslint-disable-next-line <rule> -- <why>`
 
 ## Architecture Summary
 

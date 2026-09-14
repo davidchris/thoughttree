@@ -40,7 +40,8 @@ export function ProjectOpeningWizard({
             } catch {
               try {
                 await removeRecentProject(path);
-              } catch {
+              } catch (removeError) {
+                logger.warn('Failed to drop unreadable recent project:', removeError);
               }
               return null;
             }
@@ -54,7 +55,7 @@ export function ProjectOpeningWizard({
       }
     };
 
-    loadRecentProjects();
+    void loadRecentProjects();
   }, [nativeDialogsEnabled]);
 
   const handleProjectClick = async (path: string) => {
@@ -117,7 +118,7 @@ export function ProjectOpeningWizard({
                     <div
                       key={path}
                       className="recent-project-item"
-                      onClick={() => handleProjectClick(path)}
+                      onClick={() => void handleProjectClick(path)}
                     >
                       <div className="project-info">
                         <div className="project-name">{getProjectName(path)}</div>
@@ -125,7 +126,7 @@ export function ProjectOpeningWizard({
                       </div>
                       <button
                         className="remove-project-button"
-                        onClick={(e) => handleRemoveProject(e, path)}
+                        onClick={(e) => void handleRemoveProject(e, path)}
                         title="Remove from recent"
                       >
                         ×

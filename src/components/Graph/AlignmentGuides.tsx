@@ -47,18 +47,17 @@ export function AlignmentGuides({ guides }: AlignmentGuidesProps) {
                 y2={guide.position}
               />
             );
-          } else {
-            return (
-              <line
-                key={`v-${index}`}
-                className="alignment-guide"
-                x1={guide.position}
-                y1={-extent}
-                x2={guide.position}
-                y2={extent}
-              />
-            );
           }
+          return (
+            <line
+              key={`v-${index}`}
+              className="alignment-guide"
+              x1={guide.position}
+              y1={-extent}
+              x2={guide.position}
+              y2={extent}
+            />
+          );
         })}
       </g>
     </svg>
