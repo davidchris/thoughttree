@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol::{
@@ -14,12 +15,22 @@ use crate::events::{
 };
 use crate::permissions::PermissionBroker;
 
+/// Markdown inserted between assistant message segments that were split by
+/// tool calls or thinking, so intermediary commentary and the final answer
+/// don't run together as one paragraph.
+pub const SEGMENT_SEPARATOR: &str = "\n\n---\n\n";
+
 /// ACP Client that streams to frontend and handles permissions via UI
 pub struct StreamingClient<S> {
     sink: S,
     node_id: String,
     broker: PermissionBroker,
     notes_directory: PathBuf,
+    /// Some message text has been streamed for this turn.
+    has_message_text: AtomicBool,
+    /// A non-message update (tool call, thought, plan) arrived after message
+    /// text, so the next message chunk starts a new segment.
+    segment_boundary_pending: AtomicBool,
 }
 
 impl<S: SessionEventSink> StreamingClient<S> {
@@ -34,6 +45,31 @@ impl<S: SessionEventSink> StreamingClient<S> {
             node_id,
             broker,
             notes_directory,
+            has_message_text: AtomicBool::new(false),
+            segment_boundary_pending: AtomicBool::new(false),
+        }
+    }
+
+    /// Record that the agent did something other than emit message text.
+    /// Only matters once some text exists; a boundary before the first
+    /// segment would render as a leading rule.
+    fn note_segment_boundary(&self) {
+        if self.has_message_text.load(Ordering::Relaxed) {
+            self.segment_boundary_pending.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Prefix `text` with a separator when it opens a new message segment.
+    fn with_segment_separator(&self, text: String) -> String {
+        if text.is_empty() {
+            return text;
+        }
+        let needs_separator = self.segment_boundary_pending.swap(false, Ordering::Relaxed);
+        self.has_message_text.store(true, Ordering::Relaxed);
+        if needs_separator {
+            format!("{SEGMENT_SEPARATOR}{text}")
+        } else {
+            text
         }
     }
 
@@ -223,22 +259,26 @@ impl<S: SessionEventSink> Client for StreamingClient<S> {
                 if let ContentBlock::Text(text) = chunk.content {
                     self.sink.stream_chunk(StreamChunkEvent {
                         node_id: self.node_id.clone(),
-                        chunk: text.text,
+                        chunk: self.with_segment_separator(text.text),
                     });
                 }
             }
             SessionUpdate::AgentThoughtChunk(chunk) => {
+                self.note_segment_boundary();
                 if let ContentBlock::Text(text) = chunk.content {
                     debug!("[Thought] {}", text.text);
                 }
             }
             SessionUpdate::ToolCall(tc) => {
+                self.note_segment_boundary();
                 info!("[Tool Call] {:?}", tc);
             }
             SessionUpdate::ToolCallUpdate(update) => {
+                self.note_segment_boundary();
                 debug!("[Tool Update] {:?}", update);
             }
             SessionUpdate::Plan(plan) => {
+                self.note_segment_boundary();
                 debug!("[Plan] {:?}", plan);
             }
             _ => {
@@ -351,10 +391,10 @@ mod tests {
     use agent_client_protocol::{
         Client, ContentBlock, ContentChunk, PermissionOption, PermissionOptionKind,
         RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
-        TextContent, ToolCallUpdate, ToolCallUpdateFields,
+        TextContent, ToolCall, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
     };
 
-    use super::{is_allowed_summary_tool, StreamingClient};
+    use super::{is_allowed_summary_tool, StreamingClient, SEGMENT_SEPARATOR};
     use crate::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
     use crate::permissions::PermissionBroker;
 
@@ -367,6 +407,57 @@ mod tests {
     impl RecordingSink {
         fn stream_chunks(&self) -> Vec<StreamChunkEvent> {
             self.stream_chunks.lock().unwrap().clone()
+        }
+
+        /// What the frontend renders: chunks concatenated in order.
+        fn content(&self) -> String {
+            self.stream_chunks()
+                .into_iter()
+                .map(|event| event.chunk)
+                .collect()
+        }
+    }
+
+    fn streaming_client(sink: RecordingSink) -> StreamingClient<RecordingSink> {
+        StreamingClient::new(
+            sink,
+            "node-42".to_string(),
+            PermissionBroker::new(),
+            PathBuf::from("/tmp"),
+        )
+    }
+
+    fn message_chunk(text: &str) -> SessionNotification {
+        SessionNotification::new(
+            "session-1",
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(text),
+            ))),
+        )
+    }
+
+    fn thought_chunk(text: &str) -> SessionNotification {
+        SessionNotification::new(
+            "session-1",
+            SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(text),
+            ))),
+        )
+    }
+
+    fn tool_call() -> SessionNotification {
+        SessionNotification::new(
+            "session-1",
+            SessionUpdate::ToolCall(ToolCall::new(ToolCallId::new("tc-1"), "Read file")),
+        )
+    }
+
+    async fn notify_all(
+        client: &StreamingClient<RecordingSink>,
+        updates: Vec<SessionNotification>,
+    ) {
+        for update in updates {
+            client.session_notification(update).await.unwrap();
         }
     }
 
@@ -438,6 +529,97 @@ mod tests {
                     chunk: "hello world".to_string(),
                 }]
             );
+        });
+    }
+
+    #[test]
+    fn streaming_client_separates_message_segments_split_by_tool_calls() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let sink = RecordingSink::default();
+            let client = streaming_client(sink.clone());
+
+            // Shape observed with Codex: commentary, tool, commentary, tool, answer.
+            notify_all(
+                &client,
+                vec![
+                    message_chunk("I'm retrieving the note."),
+                    tool_call(),
+                    message_chunk("IMP has a physics component."),
+                    tool_call(),
+                    message_chunk("**HU IMP** is worth it."),
+                ],
+            )
+            .await;
+
+            assert_eq!(
+                sink.content(),
+                format!(
+                    "I'm retrieving the note.{SEGMENT_SEPARATOR}IMP has a physics component.\
+                     {SEGMENT_SEPARATOR}**HU IMP** is worth it."
+                )
+            );
+        });
+    }
+
+    #[test]
+    fn streaming_client_separates_message_segments_split_by_thoughts() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let sink = RecordingSink::default();
+            let client = streaming_client(sink.clone());
+
+            notify_all(
+                &client,
+                vec![
+                    message_chunk("Looking."),
+                    thought_chunk("hmm"),
+                    message_chunk("Found it."),
+                ],
+            )
+            .await;
+
+            assert_eq!(
+                sink.content(),
+                format!("Looking.{SEGMENT_SEPARATOR}Found it.")
+            );
+        });
+    }
+
+    #[test]
+    fn streaming_client_keeps_contiguous_chunks_and_leading_activity_untouched() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let sink = RecordingSink::default();
+            let client = streaming_client(sink.clone());
+
+            // Thinking and tools before any text must not produce a leading rule;
+            // token-level streaming chunks of one message must not be split.
+            notify_all(
+                &client,
+                vec![
+                    thought_chunk("plan"),
+                    tool_call(),
+                    message_chunk("Hel"),
+                    message_chunk("lo "),
+                    message_chunk("world"),
+                ],
+            )
+            .await;
+
+            assert_eq!(sink.content(), "Hello world");
         });
     }
 
