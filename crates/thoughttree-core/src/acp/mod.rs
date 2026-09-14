@@ -1,3 +1,4 @@
+pub mod attachments;
 pub mod clients;
 pub mod process;
 pub mod session_setup;

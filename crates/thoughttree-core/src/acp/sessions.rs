@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ImageContent, Implementation, InitializeRequest, InitializeResponse,
-    PromptRequest, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    ContentBlock, Implementation, InitializeRequest, InitializeResponse, PromptRequest,
+    RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
     SessionNotification, TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
@@ -16,6 +16,7 @@ use tokio::task::JoinHandle;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{info, warn};
 
+use crate::acp::attachments::build_prompt_blocks;
 use crate::acp::clients::{ModelDiscoveryClient, SessionClient, StreamingClient, SummaryClient};
 use crate::acp::process::spawn_agent_subprocess;
 use crate::acp::session_setup::{new_session, set_model, SessionSetup};
@@ -196,6 +197,15 @@ pub async fn run_prompt_session<S: SessionEventSink>(
         effort,
         provider_paths,
     } = params;
+
+    // Build content blocks before spawning anything: images, then file
+    // pointers, then the text. Attachment errors (missing file, over-limit
+    // image) surface here, so no adapter process is started for a prompt that
+    // cannot be sent.
+    let current_date = Local::now().format("%B %d, %Y").to_string();
+    let date_prefix = format!("Current date: {current_date}\n\n");
+    let content_blocks = build_prompt_blocks(&notes_directory, &messages, &date_prefix)?;
+
     // Spawn the ACP subprocess in the notes directory so skills are loaded
     let child = spawn_agent_subprocess(
         &provider,
@@ -231,7 +241,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
 
         // Create session with notes directory as cwd
         info!("Creating session with cwd: {:?}", notes_directory);
-        let session = new_session(&cx, notes_directory).await?;
+        let session = new_session(&cx, &notes_directory).await?;
 
         info!("Session created: {}", session.session_id);
 
@@ -253,54 +263,17 @@ pub async fn run_prompt_session<S: SessionEventSink>(
             }
         }
 
-        // Get current date and format it
-        let current_date = Local::now().format("%B %d, %Y").to_string();
-        let date_prefix = format!("Current date: {current_date}\n\n");
-
-        // Build prompt from conversation messages
-        let prompt_text = messages
-            .iter()
-            .map(|msg| format!("{}: {}", msg.role, msg.content))
-            .collect::<Vec<_>>()
-            .join("\n\n");
-
-        // Prepend current date to the prompt
-        let prompt_text = format!("{date_prefix}{prompt_text}");
-
-        // Build content blocks: images first, then text
-        // Claude processes images before text for better understanding
-        let mut content_blocks: Vec<ContentBlock> = Vec::new();
-
-        // Add all images from all messages
-        for msg in &messages {
-            if let Some(images) = &msg.images {
-                for img in images {
-                    info!("Adding image: mime_type={}", img.mime_type);
-                    content_blocks.push(ContentBlock::Image(ImageContent::new(
-                        img.data.clone(),
-                        img.mime_type.clone(),
-                    )));
-                }
-            }
-        }
-
-        // Validate we have content to send
-        if prompt_text.trim().is_empty() && content_blocks.is_empty() {
-            return Err(anyhow::anyhow!("Cannot send empty prompt"));
-        }
-
-        // Add text content if present
-        if !prompt_text.trim().is_empty() {
-            content_blocks.push(ContentBlock::Text(TextContent::new(prompt_text)));
-        }
-
         // Send prompt
         info!(
-            "Sending prompt with {} content blocks ({} images)...",
+            "Sending prompt with {} content blocks ({} images, {} resource links)...",
             content_blocks.len(),
             content_blocks
                 .iter()
                 .filter(|b| matches!(b, ContentBlock::Image(_)))
+                .count(),
+            content_blocks
+                .iter()
+                .filter(|b| matches!(b, ContentBlock::ResourceLink(_)))
                 .count()
         );
         let prompt_response = cx

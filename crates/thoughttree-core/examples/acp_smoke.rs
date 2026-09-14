@@ -98,6 +98,7 @@ async fn run() -> anyhow::Result<()> {
                     role: "user".to_string(),
                     content: "Read smoke.md in the current directory and tell me the secret word in one short sentence.".to_string(),
                     images: None,
+                    files: None,
                 }],
                 broker: PermissionBroker::new(),
                 notes_directory,

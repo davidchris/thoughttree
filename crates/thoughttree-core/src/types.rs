@@ -168,11 +168,21 @@ pub type EffortPreferences = PerProvider<ReasoningEffort>;
 /// Custom executable paths for providers (user-configured overrides)
 pub type ProviderPaths = PerProvider<String>;
 
-// Message types from frontend (with optional images)
+// Message types from frontend (with optional images and Vault file references)
 #[derive(Clone, Deserialize)]
 pub struct MessageImage {
     pub data: String,
     pub mime_type: String,
+}
+
+/// A Vault file attached to a message (File node). `path` is Vault-relative;
+/// the backend resolves and reads it at send time (see `acp::attachments`).
+#[derive(Clone, Debug, Deserialize)]
+pub struct MessageFile {
+    pub path: String,
+    pub name: String,
+    pub mime_type: String,
+    pub size: u64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -180,6 +190,8 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub images: Option<Vec<MessageImage>>,
+    #[serde(default)]
+    pub files: Option<Vec<MessageFile>>,
 }
 
 #[derive(Clone, Serialize)]
