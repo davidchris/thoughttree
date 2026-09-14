@@ -13,6 +13,8 @@ interface GenerationControlsProps {
   onModelChange: (model: string | undefined) => void;
   disabled: boolean;
   generateDisabled: boolean;
+  /** Why generating is refused right now (e.g. a missing file node); shown as the button tooltip. */
+  generateBlockedReason?: string | null;
   onGenerate: () => void;
 }
 
@@ -27,6 +29,7 @@ export function GenerationControls({
   onModelChange,
   disabled,
   generateDisabled,
+  generateBlockedReason,
   onGenerate,
 }: GenerationControlsProps) {
   const availableProviders = useProviderStore((state) => state.availableProviders);
@@ -84,7 +87,7 @@ export function GenerationControls({
         className="side-panel-generate-button"
         onClick={onGenerate}
         disabled={generateDisabled}
-        title="Generate response (Cmd+Enter)"
+        title={generateBlockedReason ?? 'Generate response (Cmd+Enter)'}
       >
         {disabled ? 'Generating...' : 'Generate'}
       </button>

@@ -8,8 +8,10 @@ import { useNodeGeneration } from '../../hooks/useNodeGeneration';
 import { logger } from '../../lib/logger';
 import { usePanelResize } from './usePanelResize';
 import { EditArea } from './EditArea';
+import { FilePanel } from './FilePanel';
 import { GenerationControls } from './GenerationControls';
 import { Provenance } from './Provenance';
+import { fileTypeBadge } from '../../lib/fileNodes';
 import './styles.css';
 
 export function SidePanel() {
@@ -36,6 +38,10 @@ export function SidePanel() {
   const images = isUserNode ? (data as UserNodeData).images || [] : [];
   const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
   const isBlocked = previewNodeId ? isNodeBlockedFn(previewNodeId) : false;
+  // Why this user node must not be sent right now (broken file node in its Lineage subgraph).
+  const sendBlockedReason = useGraphStore((state) =>
+    isUserNode && previewNodeId ? state.sendBlocker(previewNodeId) : null
+  );
 
   // Initialize selectedModel from effective model when user node is selected
   useEffect(() => {
@@ -139,7 +145,7 @@ export function SidePanel() {
           <span className={`side-panel-badge ${isAgent ? 'agent' : 'user'}`}>
             {isAgent
               ? providerShortName((data as AgentNodeData).provider)
-              : isUserNode ? 'User' : 'File'}
+              : isUserNode ? 'User' : fileTypeBadge(data.name)}
           </span>
           {isStreaming && <span className="side-panel-streaming">Generating...</span>}
           <span className="side-panel-timestamp">{formattedTime}</span>
@@ -170,7 +176,8 @@ export function SidePanel() {
               onProviderChange={setSelectedProvider}
               onModelChange={setSelectedModel}
               disabled={isBlocked}
-              generateDisabled={isBlocked || !data?.content.trim()}
+              generateDisabled={isBlocked || !data?.content.trim() || sendBlockedReason !== null}
+              generateBlockedReason={sendBlockedReason}
               onGenerate={handleGenerate}
             />
           )}
@@ -192,7 +199,9 @@ export function SidePanel() {
         </div>
       </div>
       <div className="side-panel-content">
-        {isEditing ? (
+        {data.role === 'file' ? (
+          <FilePanel key={previewNodeId} node={data} />
+        ) : isEditing ? (
           <EditArea
             nodeId={previewNodeId}
             initialContent={data.content}

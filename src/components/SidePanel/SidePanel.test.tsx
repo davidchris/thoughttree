@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { SidePanel } from "./index";
 import type { BackendTransport } from "../../lib/transport";
 import { setBackendTransport } from "../../lib/transport";
+import { createMockTransport } from "../../test/mockTransport";
+import { resetFilePreviewCache } from "../../hooks/useFilePreview";
 import { useGraphStore } from "../../store/useGraphStore";
 import { useUIStore } from "../../store/useUIStore";
 import { useProviderStore } from "../../store/useProviderStore";
@@ -22,40 +24,6 @@ const sanitizedV4Answer = (projectV4.graph as GraphJSON).nodes.find(
   (node) => node.id === "answer"
 )!;
 
-function createMockTransport(): BackendTransport {
-  return {
-    capabilities: { nativeDialogs: true },
-    loadProject: vi.fn(),
-    saveProject: vi.fn(),
-    saveProjectCopy: vi.fn(),
-    snapshotProject: vi.fn().mockResolvedValue('snapshot-1'),
-    listProjectRecovery: vi.fn().mockResolvedValue([]),
-    readProjectRecovery: vi.fn(),
-    listProjects: vi.fn(),
-    importKagiExport: vi.fn(),
-    sendPrompt: vi.fn(() => Promise.resolve("")),
-    respondToPermission: vi.fn(),
-    checkAcpAvailable: vi.fn(),
-    searchFiles: vi.fn(),
-    getAvailableProviders: vi.fn(),
-    getDefaultProvider: vi.fn(),
-    setDefaultProvider: vi.fn(),
-    getModelPreferences: vi.fn(),
-    setModelPreference: vi.fn(),
-    getEffortPreferences: vi.fn(),
-    setEffortPreference: vi.fn(),
-    getAvailableModels: vi.fn(() => Promise.resolve([])),
-    generateSummary: vi.fn(),
-    onStreamChunk: vi.fn(() => () => {}),
-    onPermissionRequest: vi.fn(() => () => {}),
-    pickVaultFile: vi.fn(),
-    resolveDroppedFile: vi.fn(),
-    statVaultFile: vi.fn(),
-    readVaultFilePreview: vi.fn(),
-    getAttachmentLimits: vi.fn(),
-  };
-}
-
 describe("SidePanel", () => {
   let transport: BackendTransport;
   const mockSetPreviewNode = vi.fn();
@@ -70,8 +38,12 @@ describe("SidePanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    transport = createMockTransport();
+    transport = createMockTransport({
+      sendPrompt: vi.fn(() => Promise.resolve("")),
+      getAvailableModels: vi.fn(() => Promise.resolve([])),
+    });
     setBackendTransport(transport);
+    resetFilePreviewCache();
   });
 
   const mockGetEffectiveModel = vi.fn(() => undefined);
@@ -111,6 +83,8 @@ describe("SidePanel", () => {
       appendToNode: mockAppendToNode,
       stopStreaming: mockStopStreaming,
       isNodeBlocked: overrides.isNodeBlocked ?? mockIsNodeBlocked,
+      sendBlocker: vi.fn(() => null),
+      fileNodeStatus: new Map(),
       defaultProvider: "claude-code",
       availableProviders: [
         { provider: "claude-code", available: true, error_message: null },
@@ -189,6 +163,16 @@ describe("SidePanel", () => {
       expect(generateButton).toBeDisabled();
     });
 
+    it("disables Generate and explains why when a lineage file node is broken", () => {
+      const reason = '"plan.md" is missing from the vault. Restore it or delete its node before sending.';
+      setupMockStore({ sendBlocker: vi.fn(() => reason) });
+      render(<SidePanel />);
+
+      const generateButton = screen.getByRole("button", { name: /generate/i });
+      expect(generateButton).toBeDisabled();
+      expect(generateButton).toHaveAttribute("title", reason);
+    });
+
     it("creates downstream agent node when Generate is clicked", async () => {
       setupMockStore();
       render(<SidePanel />);
@@ -250,6 +234,41 @@ describe("SidePanel", () => {
       render(<SidePanel />);
 
       expect(screen.getByText("User")).toBeInTheDocument();
+    });
+
+    it("shows a file node with its type badge, path and preview, without generation controls", async () => {
+      vi.mocked(transport.readVaultFilePreview).mockResolvedValue({
+        info: { name: "plan.md", mimeType: "text/markdown", size: 2048, modifiedEpochMs: 1 },
+        preview: { kind: "text", excerpt: "# Plan", truncated: true },
+      });
+      setupMockStore({
+        previewNodeId: "file-1",
+        nodeData: new Map([
+          [
+            "file-1",
+            {
+              id: "file-1",
+              role: "file" as const,
+              content: "",
+              timestamp: 1,
+              path: "notes/plan.md",
+              name: "plan.md",
+              mimeType: "text/markdown",
+              size: 2048,
+              seenMtime: 1,
+              seenSize: 2048,
+            },
+          ],
+        ]),
+      });
+      render(<SidePanel />);
+
+      expect(screen.getByText("MD")).toBeInTheDocument();
+      expect(screen.getByText("notes/plan.md")).toBeInTheDocument();
+      expect(screen.getByText("2.0 KB")).toBeInTheDocument();
+      expect(await screen.findByText(/# Plan/)).toHaveTextContent("…");
+      expect(screen.queryByRole("button", { name: /generate/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /edit/i })).not.toBeInTheDocument();
     });
 
     it("shows Assistant badge for agent nodes without provider", () => {

@@ -24,6 +24,7 @@ function App() {
   const transport = getBackendTransport();
   const projectPath = useGraphStore((state) => state.projectPath);
   const recoveryError = useUIStore((state) => state.recoveryError);
+  const notice = useUIStore((state) => state.notice);
   const projectTitle = useGraphStore((state) => state.projectTitle);
   const loadProject = useGraphStore((state) => state.loadProject);
   const newProject = useGraphStore((state) => state.newProject);
@@ -227,6 +228,7 @@ function App() {
       <PermissionDialog />
       <StaleSaveDialog />
       {recoveryError && <div role="alert" className="recovery-warning">{recoveryError}</div>}
+      {notice && <div role="status" className="app-notice">{notice}</div>}
     </div>
   );
 }

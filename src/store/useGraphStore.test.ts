@@ -5,6 +5,7 @@ import type { Graph } from '@thoughttree/graph-model';
 import type { BackendTransport } from '../lib/transport';
 import type { UserNodeData } from '../types';
 import { setBackendTransport, StaleRevisionError } from '../lib/transport';
+import { createMockTransport } from '../test/mockTransport';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
@@ -30,40 +31,6 @@ function resetStore() {
     globalEffortPreferences: {},
   });
   useUIStore.getState().reset();
-}
-
-function createMockTransport(): BackendTransport {
-  return {
-    capabilities: { nativeDialogs: true },
-    loadProject: vi.fn(),
-    saveProject: vi.fn(),
-    saveProjectCopy: vi.fn(),
-    snapshotProject: vi.fn().mockResolvedValue('snapshot-1'),
-    listProjectRecovery: vi.fn().mockResolvedValue([]),
-    readProjectRecovery: vi.fn(),
-    listProjects: vi.fn(),
-    importKagiExport: vi.fn(),
-    sendPrompt: vi.fn(),
-    respondToPermission: vi.fn(),
-    checkAcpAvailable: vi.fn(),
-    searchFiles: vi.fn(),
-    getAvailableProviders: vi.fn(),
-    getDefaultProvider: vi.fn(),
-    setDefaultProvider: vi.fn(),
-    getModelPreferences: vi.fn(),
-    setModelPreference: vi.fn(),
-    getEffortPreferences: vi.fn(),
-    setEffortPreference: vi.fn(),
-    getAvailableModels: vi.fn(),
-    generateSummary: vi.fn(),
-    onStreamChunk: vi.fn(() => () => {}),
-    onPermissionRequest: vi.fn(() => () => {}),
-    pickVaultFile: vi.fn(),
-    resolveDroppedFile: vi.fn(),
-    statVaultFile: vi.fn(),
-    readVaultFilePreview: vi.fn(),
-    getAttachmentLimits: vi.fn(),
-  };
 }
 
 describe('useGraphStore', () => {

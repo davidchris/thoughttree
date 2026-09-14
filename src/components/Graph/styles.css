@@ -696,3 +696,168 @@
         box-shadow: 0 0 0 3px transparent;
     }
 }
+
+/* ---- File node: a Vault file linked by reference ----
+   Grammar: the mono type badge (MD, PNG, …) replaces the role dot, the preview
+   sits on a recessed surface, and the footer says how the agent gets the bytes. */
+.file-node .node-header {
+    gap: 6px;
+}
+
+.file-node .node-role::before {
+    display: none;
+}
+
+.file-type-badge {
+    font-family: var(--tt-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    line-height: 12px;
+    padding: 1px 5px;
+    border: var(--tt-border) solid var(--tt-accent);
+    border-radius: var(--tt-radius-sm);
+    color: var(--tt-accent);
+    flex-shrink: 0;
+}
+
+.file-node-name {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--tt-size-xs);
+    font-weight: 600;
+    color: var(--tt-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-node-size {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--tt-text-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+.file-node-preview {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--tt-radius-sm);
+    background: var(--tt-surface-2);
+    overflow: hidden;
+}
+
+.file-node-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.file-node-excerpt {
+    align-self: stretch;
+    width: 100%;
+    margin: 0;
+    padding: 4px 6px;
+    font-family: var(--tt-mono);
+    font-size: 9px;
+    line-height: 1.4;
+    color: var(--tt-text-muted);
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+}
+
+/* Ghosted badge while loading or when the type has no preview */
+.file-node-ghost {
+    font-family: var(--tt-mono);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: var(--tt-line-strong);
+    user-select: none;
+}
+
+.file-node-ghost.broken {
+    color: var(--tt-danger);
+    opacity: 0.6;
+}
+
+.file-node-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: var(--tt-s1);
+    min-height: 14px;
+    font-size: 10px;
+    line-height: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.file-node-hint {
+    color: var(--tt-text-faint);
+    font-style: italic;
+}
+
+.file-node-flag {
+    color: var(--tt-accent);
+    font-weight: 600;
+}
+
+.file-node-flag.danger {
+    color: var(--tt-danger);
+}
+
+.file-node-refresh {
+    flex-shrink: 0;
+    padding: 1px 7px;
+    border: none;
+    border-radius: var(--tt-radius-sm);
+    background: var(--tt-accent);
+    color: var(--tt-on-accent);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 12px;
+    cursor: pointer;
+    transition: background var(--tt-fast) var(--tt-ease);
+}
+
+.file-node-refresh:hover {
+    background: var(--tt-text);
+}
+
+/* States. A newer version on disk: dashed accent edge. Broken: dimmed on danger. */
+.file-node.state-changed {
+    border-style: dashed;
+    border-color: var(--tt-accent);
+}
+
+.file-node.state-missing,
+.file-node.state-invalid {
+    opacity: 0.55;
+    border-style: dashed;
+    border-color: var(--tt-danger);
+}
+
+.file-node.state-too-large {
+    border-color: var(--tt-danger);
+}
+
+.file-node.state-missing .file-node-preview,
+.file-node.state-invalid .file-node-preview,
+.file-node.state-too-large .file-node-preview {
+    background: var(--tt-danger-soft);
+}
+
+.thought-node.file-node.selected {
+    border-color: var(--tt-accent);
+    border-style: solid;
+}

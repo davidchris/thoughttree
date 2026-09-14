@@ -2,6 +2,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { withoutNullEntries } from '../types';
 import type { AgentProvider, ProviderPaths, StoredProviderRecord } from '../types';
 
+/** True inside the Tauri webview (Tauri 2 injects `window.isTauri`); false in a browser or jsdom. */
+export function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && Boolean((window as Window & { isTauri?: boolean }).isTauri);
+}
+
 export function getNotesDirectory(): Promise<string | null> {
   return invoke<string | null>('get_notes_directory');
 }
