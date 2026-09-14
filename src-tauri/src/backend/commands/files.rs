@@ -1,13 +1,16 @@
 //! Vault file commands for File nodes. Every path the frontend hands us is
 //! Vault-relative and resolved by `thoughttree_core::vault::files`; no
-//! frontend-supplied absolute path is opened directly.
+//! frontend-supplied absolute path is opened directly. Filesystem work runs
+//! on the blocking pool so the async runtime is never stalled by disk I/O.
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 use thoughttree_core::vault::files::{
-    self, AttachmentLimits, FilePreviewResponse, FileStat, VaultFileError,
+    self, AttachmentLimits, FilePreviewResponse, FileStat, OpenedVaultFile, PreviewCache,
+    VaultFileError,
 };
 
 use crate::backend::config;
@@ -38,18 +41,17 @@ fn relativize(root: &Path, absolute: &Path) -> Result<String, String> {
     })
 }
 
+/// One open: stat, mime and name all come from the same handle.
 fn status_for(root: &Path, relative: &str) -> Result<VaultFileStatus, String> {
-    let resolved = files::resolve_vault_file(root, relative)
-        .and_then(|path| files::stat_vault_file(root, relative).map(|stat| (path, stat)));
-    match resolved {
-        Ok((path, stat)) => Ok(VaultFileStatus::Ok {
-            stat,
-            mime_type: files::mime_for_file(&path),
-            name: path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-        }),
+    let status = OpenedVaultFile::open(root, relative).and_then(|opened| {
+        Ok(VaultFileStatus::Ok {
+            stat: opened.stat().clone(),
+            mime_type: opened.mime_type()?,
+            name: opened.name(),
+        })
+    });
+    match status {
+        Ok(status) => Ok(status),
         Err(VaultFileError::NotFound) => Ok(VaultFileStatus::Missing),
         Err(VaultFileError::InvalidPath | VaultFileError::NotAFile) => Ok(VaultFileStatus::Invalid),
         Err(other) => Err(other.to_string()),
@@ -70,22 +72,35 @@ fn preview_error(err: VaultFileError) -> String {
     }
 }
 
+async fn blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|err| format!("Blocking task failed: {err}"))?
+}
+
 #[tauri::command]
 pub(crate) async fn pick_vault_file(app: AppHandle) -> Result<Option<String>, String> {
     let root = config::get_notes_directory_required(&app)?;
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Add File from Notes")
-        .set_directory(&root)
-        .blocking_pick_file();
-    match picked {
-        None => Ok(None),
-        Some(file) => {
-            let absolute = file.into_path().map_err(|err| err.to_string())?;
-            relativize(&root, &absolute).map(Some)
+    blocking(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Add File from Notes")
+            .set_directory(&root)
+            .blocking_pick_file();
+        match picked {
+            None => Ok(None),
+            Some(file) => {
+                let absolute = file.into_path().map_err(|err| err.to_string())?;
+                relativize(&root, &absolute).map(Some)
+            }
         }
-    }
+    })
+    .await
 }
 
 #[tauri::command]
@@ -94,7 +109,7 @@ pub(crate) async fn resolve_dropped_file(
     absolute_path: String,
 ) -> Result<String, String> {
     let root = config::get_notes_directory_required(&app)?;
-    relativize(&root, Path::new(&absolute_path))
+    blocking(move || relativize(&root, Path::new(&absolute_path))).await
 }
 
 #[tauri::command]
@@ -103,7 +118,7 @@ pub(crate) async fn stat_vault_file(
     path: String,
 ) -> Result<VaultFileStatus, String> {
     let root = config::get_notes_directory_required(&app)?;
-    status_for(&root, &path)
+    blocking(move || status_for(&root, &path)).await
 }
 
 #[tauri::command]
@@ -113,10 +128,8 @@ pub(crate) async fn read_vault_file_preview(
     path: String,
 ) -> Result<FilePreviewResponse, String> {
     let root = config::get_notes_directory_required(&app)?;
-    state
-        .preview_cache
-        .preview(&root, &path)
-        .map_err(preview_error)
+    let cache: Arc<PreviewCache> = Arc::clone(&state.preview_cache);
+    blocking(move || cache.preview(&root, &path).map_err(preview_error)).await
 }
 
 #[tauri::command]
@@ -147,6 +160,19 @@ mod tests {
                 assert_eq!(stat.size, 5);
                 assert_eq!(mime_type, "text/markdown");
                 assert_eq!(name, "note.md");
+            }
+            other => panic!("expected ok status, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn status_sniffs_image_mime_from_the_opened_file() {
+        let vault = tempfile::tempdir().unwrap();
+        fs::write(vault.path().join("fake.png"), "not a png").unwrap();
+
+        match status_for(vault.path(), "fake.png").unwrap() {
+            VaultFileStatus::Ok { mime_type, .. } => {
+                assert_eq!(mime_type, "application/octet-stream");
             }
             other => panic!("expected ok status, got {other:?}"),
         }
