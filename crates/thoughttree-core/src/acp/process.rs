@@ -223,27 +223,8 @@ fn resolve_adapter_path(
     })
 }
 
-/// Args putting Gemini CLI in ACP mode. The model must be picked at spawn
-/// time; absent a preference, default to the descriptor's first fallback
-/// model — the same entry the selector offers first.
-fn gemini_cli_args(model_id: Option<&str>) -> Vec<String> {
-    let default_model = AgentProvider::GeminiCli
-        .descriptor()
-        .fallback_models
-        .first()
-        .map(|(id, _)| *id)
-        .unwrap_or_default();
-
-    vec![
-        "--experimental-acp".to_string(),
-        "--model".to_string(),
-        model_id.unwrap_or(default_model).to_string(),
-    ]
-}
-
-/// Args selecting Codex config via the adapter's standard config-override
-/// flag (`codex-acp -c key=value`). No preference → no flag, so the user's
-/// own codex config default applies.
+/// Config overrides for legacy adapters. Current adapters receive the same
+/// values through CODEX_CONFIG. Missing preferences preserve CLI defaults.
 fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) -> Vec<String> {
     let mut args = Vec::new();
 
@@ -259,6 +240,39 @@ fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) ->
     }
 
     args
+}
+
+/// Construct an adapter command shared by session startup and version probes.
+pub fn adapter_command(path: &Path) -> Command {
+    adapter_command_with_path(path, std::env::var_os("PATH").as_deref())
+}
+
+fn adapter_command_with_path(path: &Path, inherited_path: Option<&std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(path);
+    let mut paths = Vec::new();
+    if let Some(parent) = path.parent().filter(|parent| parent.is_absolute()) {
+        paths.push(parent.to_path_buf());
+    }
+    if let Some(inherited) = inherited_path {
+        paths.extend(std::env::split_paths(inherited).filter(|p| p.is_absolute()));
+    }
+    paths.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ]);
+    if let Some(home) = dirs::home_dir() {
+        if let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            let mut bins: Vec<_> = versions.flatten().map(|v| v.path().join("bin")).collect();
+            bins.sort();
+            paths.extend(bins);
+        }
+    }
+    // GUI launches may have no PATH at all; keep system tools available too.
+    paths.extend([PathBuf::from("/usr/bin"), PathBuf::from("/bin")]);
+    if let Ok(path) = std::env::join_paths(paths) {
+        command.env("PATH", path);
+    }
+    command
 }
 
 /// Spawn a provider's ACP adapter over stdio — no sidecar. Extra args carry
@@ -277,7 +291,29 @@ pub async fn spawn_plain_adapter(
         descriptor.display_name, adapter_path, notes_directory, args
     );
 
-    let child = Command::new(&adapter_path)
+    let mut command = adapter_command(&adapter_path);
+    if matches!(provider, AgentProvider::Codex) {
+        let mut config = match std::env::var("CODEX_CONFIG") {
+            Ok(value) => serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&value)
+                .map_err(|_| anyhow::anyhow!("CODEX_CONFIG must be a JSON object"))?,
+            Err(std::env::VarError::NotPresent) => serde_json::Map::new(),
+            Err(_) => return Err(anyhow::anyhow!("CODEX_CONFIG must contain valid Unicode")),
+        };
+        for pair in args.as_chunks::<2>().0 {
+            if pair[0] == "-c" {
+                if let Some((key, value)) = pair[1].split_once('=') {
+                    config.insert(
+                        key.to_string(),
+                        serde_json::Value::String(value.to_string()),
+                    );
+                }
+            }
+        }
+        if !config.is_empty() {
+            command.env("CODEX_CONFIG", serde_json::to_string(&config)?);
+        }
+    }
+    let child = command
         .args(args)
         .current_dir(notes_directory)
         .stdin(Stdio::piped())
@@ -303,18 +339,8 @@ pub async fn spawn_agent_subprocess(
         AgentProvider::ClaudeCode => {
             spawn_claude_code_acp(notes_directory, custom_path, effort).await
         }
-        AgentProvider::GeminiCli => {
-            // Gemini CLI requires model to be specified at spawn time via --model flag
-            spawn_plain_adapter(
-                provider,
-                notes_directory,
-                custom_path,
-                &gemini_cli_args(model_id),
-            )
-            .await
-        }
         AgentProvider::Codex => {
-            // Codex model is applied at spawn via `-c model=<id>`
+            // Apply both legacy CLI flags and current JSON configuration.
             spawn_plain_adapter(
                 provider,
                 notes_directory,
@@ -329,6 +355,67 @@ pub async fn spawn_agent_subprocess(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn executable(path: &Path, script: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(path, script).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adapter_starts_with_desktop_path_and_sibling_node_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter = dir.path().join("codex-acp");
+        executable(&adapter, "#!/usr/bin/env node\n");
+        executable(&dir.path().join("node"), "#!/bin/sh\necho ACP_READY\n");
+        let output = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(async {
+                adapter_command_with_path(&adapter, Some(std::ffi::OsStr::new("/usr/bin:/bin")))
+                    .output()
+                    .await
+            })
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "ACP_READY");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_spawn_applies_model_and_effort_to_current_adapter() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter = dir.path().join("codex-acp");
+        executable(&adapter, "#!/bin/sh\nprintf '%s' \"$CODEX_CONFIG\"\n");
+        let mut paths = ProviderPaths::default();
+        paths.set(
+            &AgentProvider::Codex,
+            Some(adapter.to_string_lossy().into_owned()),
+        );
+        let output = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            spawn_agent_subprocess(
+                &AgentProvider::Codex,
+                dir.path(),
+                &paths,
+                Some("gpt-5.6-sol"),
+                Some(ReasoningEffort::Medium),
+            )
+            .await
+            .unwrap()
+            .wait_with_output()
+            .await
+            .unwrap()
+        });
+        let config: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .expect("modern adapter must receive CODEX_CONFIG, not just ignored CLI flags");
+        assert_eq!(config["model"], "gpt-5.6-sol");
+        assert_eq!(config["model_reasoning_effort"], "medium");
+    }
 
     fn claude_descriptor() -> &'static crate::types::ProviderDescriptor {
         AgentProvider::ClaudeCode.descriptor()
@@ -377,31 +464,6 @@ mod tests {
         let paths = candidate_paths(claude_descriptor(), None, None, None, &[]);
         assert_eq!(paths[0], PathBuf::from("/opt/homebrew/bin/claude"));
         assert_eq!(paths.len(), claude_descriptor().known_paths.len());
-    }
-
-    #[test]
-    fn test_gemini_args_default_model_comes_from_descriptor() {
-        let (default_id, _) = AgentProvider::GeminiCli.descriptor().fallback_models[0];
-        assert_eq!(
-            gemini_cli_args(None),
-            vec![
-                "--experimental-acp".to_string(),
-                "--model".to_string(),
-                default_id.to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn test_gemini_args_pass_model_preference() {
-        assert_eq!(
-            gemini_cli_args(Some("gemini-2.5")),
-            vec![
-                "--experimental-acp".to_string(),
-                "--model".to_string(),
-                "gemini-2.5".to_string()
-            ]
-        );
     }
 
     #[test]

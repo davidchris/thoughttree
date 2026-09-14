@@ -17,6 +17,7 @@ export type {
   ExternalFileTurnReference,
   FileTurnReference,
   Graph,
+  GraphAgentProvider,
   GraphEdge,
   GraphJSON,
   GraphNode,

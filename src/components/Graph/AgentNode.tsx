@@ -4,7 +4,7 @@ import {
   Position,
   NodeProps,
 } from "@xyflow/react";
-import { AgentNodeData, PROVIDER_SHORT_NAMES } from "../../types";
+import { AgentNodeData, providerShortName } from "../../types";
 import { useGraphStore } from "../../store/useGraphStore";
 import { useUIStore } from "../../store/useUIStore";
 import "./styles.css";
@@ -65,7 +65,7 @@ export function AgentNode({ id, selected }: NodeProps) {
 
       <div className="node-header">
         <span className="node-role">
-          {provider ? PROVIDER_SHORT_NAMES[provider] : 'Assistant'}
+          {providerShortName(provider)}
         </span>
         {(hasMore || isStreaming) && (
           <button

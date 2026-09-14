@@ -109,11 +109,11 @@ describe("SidePanel", () => {
       defaultProvider: "claude-code",
       availableProviders: [
         { provider: "claude-code", available: true, error_message: null },
-        { provider: "gemini-cli", available: true, error_message: null },
+        { provider: "codex", available: true, error_message: null },
       ],
       availableModels: {
         "claude-code": [{ model_id: "claude-sonnet", display_name: "Sonnet" }],
-        "gemini-cli": [{ model_id: "gemini-3", display_name: "Gemini 3" }],
+        "codex": [{ model_id: "gpt-6-astra", display_name: "GPT-6 Astra" }],
       },
       getEffectiveModel: mockGetEffectiveModel,
       getEffectiveEffort: mockGetEffectiveEffort,
@@ -597,18 +597,18 @@ describe("SidePanel", () => {
         availableModels: {
           "claude-code": [{ model_id: "claude-sonnet", display_name: "Sonnet" }],
           codex: [
-            { model_id: "gpt-5.5", display_name: "GPT-5.5" },
-            { model_id: "gpt-5.4-mini", display_name: "GPT-5.4 Mini" },
+            { model_id: "gpt-6-astra", display_name: "GPT-6 Astra" },
+            { model_id: "gpt-5.6-luna", display_name: "GPT-5.6 Luna" },
           ],
         },
       });
       render(<SidePanel />);
 
       expect(
-        screen.getByRole("option", { name: "GPT-5.5" })
+        screen.getByRole("option", { name: "GPT-6 Astra" })
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("option", { name: "GPT-5.4 Mini" })
+        screen.getByRole("option", { name: "GPT-5.6 Luna" })
       ).toBeInTheDocument();
       // Claude's models must not leak into the Codex selector
       expect(
@@ -640,7 +640,7 @@ describe("SidePanel", () => {
       expect(screen.getByText("Claude")).toBeInTheDocument();
     });
 
-    it('shows "Gemini" badge for gemini-cli provider', () => {
+    it('preserves history from a retired provider', () => {
       const nodeData = new Map([
         [
           "agent-node-gemini",
@@ -659,7 +659,7 @@ describe("SidePanel", () => {
       });
       render(<SidePanel />);
 
-      expect(screen.getByText("Gemini")).toBeInTheDocument();
+      expect(screen.getByText("Retired provider")).toBeInTheDocument();
     });
   });
 });

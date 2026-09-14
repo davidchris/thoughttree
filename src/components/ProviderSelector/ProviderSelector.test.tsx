@@ -9,15 +9,15 @@ describe('ProviderSelector', () => {
 
   const allProvidersAvailable: ProviderStatus[] = [
     { provider: 'claude-code', available: true, error_message: null },
-    { provider: 'gemini-cli', available: true, error_message: null },
+    { provider: 'codex', available: true, error_message: null },
   ];
 
-  const geminiUnavailable: ProviderStatus[] = [
+  const codexUnavailable: ProviderStatus[] = [
     { provider: 'claude-code', available: true, error_message: null },
     {
-      provider: 'gemini-cli',
+      provider: 'codex',
       available: false,
-      error_message: 'Gemini CLI not found',
+      error_message: 'Codex not found',
     },
   ];
 
@@ -41,20 +41,20 @@ describe('ProviderSelector', () => {
     const options = screen.getAllByRole('option');
     expect(options).toHaveLength(2);
     expect(options[0]).toHaveTextContent('Claude');
-    expect(options[1]).toHaveTextContent('Gemini');
+    expect(options[1]).toHaveTextContent('Codex');
   });
 
   it('shows current selection', () => {
     render(
       <ProviderSelector
-        value="gemini-cli"
+        value="codex"
         onChange={mockOnChange}
         availableProviders={allProvidersAvailable}
       />
     );
 
     const select = screen.getByRole('combobox') as HTMLSelectElement;
-    expect(select.value).toBe('gemini-cli');
+    expect(select.value).toBe('codex');
   });
 
   it('calls onChange when selection changes', async () => {
@@ -69,9 +69,9 @@ describe('ProviderSelector', () => {
     );
 
     const select = screen.getByRole('combobox');
-    await user.selectOptions(select, 'gemini-cli');
+    await user.selectOptions(select, 'codex');
 
-    expect(mockOnChange).toHaveBeenCalledWith('gemini-cli');
+    expect(mockOnChange).toHaveBeenCalledWith('codex');
   });
 
   it('disables unavailable providers', () => {
@@ -79,7 +79,7 @@ describe('ProviderSelector', () => {
       <ProviderSelector
         value="claude-code"
         onChange={mockOnChange}
-        availableProviders={geminiUnavailable}
+        availableProviders={codexUnavailable}
       />
     );
 
@@ -87,12 +87,12 @@ describe('ProviderSelector', () => {
     const claudeOption = options.find((opt) =>
       opt.textContent?.includes('Claude')
     );
-    const geminiOption = options.find((opt) =>
-      opt.textContent?.includes('Gemini')
+    const codexOption = options.find((opt) =>
+      opt.textContent?.includes('Codex')
     );
 
     expect(claudeOption).not.toBeDisabled();
-    expect(geminiOption).toBeDisabled();
+    expect(codexOption).toBeDisabled();
   });
 
   it('shows unavailable indicator for disabled providers', () => {
@@ -100,7 +100,7 @@ describe('ProviderSelector', () => {
       <ProviderSelector
         value="claude-code"
         onChange={mockOnChange}
-        availableProviders={geminiUnavailable}
+        availableProviders={codexUnavailable}
       />
     );
 

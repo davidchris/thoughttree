@@ -1,4 +1,5 @@
 export type NodeId = string;
+// Historical provider IDs remain readable in saved graphs; they are not runnable providers.
 export type GraphAgentProvider = 'claude-code' | 'gemini-cli' | 'codex';
 
 export interface ImageAttachment {

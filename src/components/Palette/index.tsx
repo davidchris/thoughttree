@@ -4,7 +4,7 @@ import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { PaletteSearch, type HighlightedText } from '../../lib/palette';
 import type { GraphNode } from '@thoughttree/graph-model';
-import { PROVIDER_SHORT_NAMES } from '../../types';
+import { providerShortName } from '../../types';
 import './styles.css';
 
 const MAX_VISIBLE_HITS = 20;
@@ -16,7 +16,7 @@ const DEFAULT_NODE_HEIGHT = 120;
 
 function roleLabel(node: GraphNode): string {
   if (node.role === 'user') return 'User';
-  return node.provider ? PROVIDER_SHORT_NAMES[node.provider] : 'Assistant';
+  return providerShortName(node.provider);
 }
 
 function Highlighted({ value }: { value: HighlightedText }) {

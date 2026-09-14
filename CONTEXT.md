@@ -97,11 +97,11 @@ A `Client` trait impl that receives notifications from the ACP subprocess — `S
 _Avoid_: listener, callback.
 
 **Provider**:
-A backend LLM source (e.g., `claude-code`, `gemini-cli`, `codex`). Each Provider has one ACP adapter, discoverable executable paths, and a list of available models.
+A supported source of assistant responses: Codex or Claude Code. Each Provider has one ACP adapter, discoverable executable paths, and a list of available models.
 _Avoid_: backend, vendor.
 
 **ACP adapter**:
-The executable a Provider spawns to speak ACP over stdio. Three shapes exist: bundled sidecar wrapping a vendor CLI (`claude-code-acp`), vendor CLI with native ACP flag (`gemini --experimental-acp`), user-installed bridge binary (`codex-acp`). The Provider abstraction hides which shape is in use.
+The executable that connects a Provider to ThoughtTree through ACP. The Provider abstraction hides how the adapter is installed.
 _Avoid_: sidecar (that's one distribution shape, not the concept), agent binary.
 
 **Deployment shape**:
@@ -165,7 +165,7 @@ The `run_localset_blocking` helper in `src-tauri/src/backend/runtime.rs`. Spawns
 _Avoid_: worker thread, executor.
 
 **Reasoning effort**:
-How hard a Provider's model thinks before answering: a single discrete scale `low | medium | high | xhigh`, uniform across Providers. Each Provider maps the scale to its native mechanism, and may support only a subset (or none — Gemini today). Configured per Provider at global and project scope, like model preferences.
+How hard a Provider's model thinks before answering: a single discrete scale `low | medium | high | xhigh`, uniform across Providers. Each Provider maps the scale to its native mechanism, and can support only a subset. Configured per Provider at global and project scope, like model preferences.
 _Avoid_: thinking budget (numeric, provider-internal), thinking mode, effort level (redundant — "effort" suffices).
 
 **Config store**:

@@ -2,14 +2,15 @@ use std::path::{Path, PathBuf};
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
-use thoughttree_core::acp::process::{find_provider_executable, find_sidecar_path};
+use thoughttree_core::acp::process::{
+    adapter_command, find_provider_executable, find_sidecar_path,
+};
 use thoughttree_core::acp::sessions::run_model_discovery_session;
 use thoughttree_core::runtime::run_localset_blocking;
 use thoughttree_core::types::{
     AgentProvider, EffortPreferences, ModelInfo, ModelPreferences, ProviderPaths, ProviderStatus,
     ReasoningEffort,
 };
-use tokio::process::Command;
 
 use crate::backend::config;
 
@@ -53,7 +54,7 @@ async fn validate_executable(path: &Path, provider: &AgentProvider) -> Result<St
         return Err("Path is not a file".to_string());
     }
 
-    let output = Command::new(path)
+    let output = adapter_command(path)
         .arg("--version")
         .output()
         .await

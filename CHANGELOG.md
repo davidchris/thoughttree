@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fixed Codex startup from macOS desktop launches where Node was missing from PATH.
+- Fixed ignored model and reasoning effort choices with current Codex ACP adapters.
+- Codex model menus now use live discovery, with current Astra, Sol, Terra, Luna, GPT-5.5, and Spark fallbacks.
+- Codex is the default provider for new configurations. Automatic node headings now use the default provider.
+- Removed Gemini execution, installation settings, and provider choices. Saved messages remain readable.
+
 - Guarded saves now serialize local writers across revision validation and atomic replacement to prevent lost updates.
 - Building the core crate now requires Rust 1.89 or later.
 

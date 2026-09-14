@@ -4,8 +4,9 @@ use std::time::Duration;
 
 use agent_client_protocol::{
     Agent, Client, ClientSideConnection, ContentBlock, ImageContent, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, PromptRequest, ProtocolVersion,
-    SetSessionModelRequest, TextContent,
+    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
+    ProtocolVersion, SessionConfigKind, SessionConfigSelectOptions, SetSessionModelRequest,
+    TextContent,
 };
 use chrono::Local;
 use tokio::task::JoinHandle;
@@ -13,7 +14,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{error, info, warn};
 
 use crate::acp::clients::{ModelDiscoveryClient, StreamingClient, SummaryClient};
-use crate::acp::process::{spawn_agent_subprocess, spawn_claude_code_acp};
+use crate::acp::process::spawn_agent_subprocess;
 use crate::events::SessionEventSink;
 use crate::permissions::PermissionBroker;
 use crate::types::{AgentProvider, Message, ModelInfo, ProviderPaths, ReasoningEffort};
@@ -171,7 +172,6 @@ pub async fn run_prompt_session<S: SessionEventSink>(
         provider_paths,
     } = params;
     // Spawn the ACP subprocess in the notes directory so skills are loaded
-    // For Gemini, model_id is passed at spawn time via --model flag
     let child = spawn_agent_subprocess(
         &provider,
         &notes_directory,
@@ -190,7 +190,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
     ));
 
     info!("Creating ACP connection...");
-    let (connection, process) = connect_agent(child, client, "claude-code-acp")?;
+    let (connection, process) = connect_agent(child, client, provider.descriptor().id)?;
 
     // Initialize
     info!("Initializing connection...");
@@ -215,7 +215,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
     info!("Session created: {}", session_response.session_id);
 
     // Switch model if specified and this provider's model selection belongs
-    // to ACP session state. Gemini and Codex are configured at spawn time.
+    // to ACP session state. Codex is configured at spawn time.
     if let Some(ref model) = model_id {
         if should_set_session_model(
             model_id.as_deref(),
@@ -301,7 +301,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
     // Dropping the connection closes the subprocess's stdin; shutdown then
     // waits for exit and drains the I/O and stderr tasks.
     drop(connection);
-    process.shutdown("claude-code-acp").await;
+    process.shutdown(provider.descriptor().id).await;
 
     Ok(format!("{:?}", prompt_response.stop_reason))
 }
@@ -310,7 +310,6 @@ pub async fn run_prompt_session<S: SessionEventSink>(
 fn model_id_to_display_name(model_id: &str) -> String {
     // Common patterns: "claude-opus-4-5-20251101" -> "Opus 4.5"
     // "claude-sonnet-4-5-20250929" -> "Sonnet 4.5"
-    // "gemini-2.5-pro" -> "Gemini 2.5 Pro"
     let id_lower = model_id.to_lowercase();
 
     if id_lower.contains("opus") {
@@ -333,25 +332,6 @@ fn model_id_to_display_name(model_id: &str) -> String {
         } else {
             "Haiku".to_string()
         }
-    } else if id_lower.contains("gemini") {
-        // Handle Gemini models: gemini-2.5-pro, gemini-2.5-flash
-        let mut name = String::new();
-        if id_lower.contains("2.5") || id_lower.contains("2-5") {
-            name.push_str("Gemini 2.5 ");
-        } else if id_lower.contains("2.0") || id_lower.contains("2-0") {
-            name.push_str("Gemini 2.0 ");
-        } else {
-            name.push_str("Gemini ");
-        }
-        if id_lower.contains("pro") {
-            name.push_str("Pro");
-        } else if id_lower.contains("flash") {
-            name.push_str("Flash");
-        }
-        if name.ends_with(' ') {
-            name.pop();
-        }
-        name
     } else {
         // Fallback: just return the model_id
         model_id.to_string()
@@ -401,21 +381,7 @@ pub async fn run_model_discovery_session(
         .await
         .map_err(|e| format!("Failed to create session: {e:?}"))?;
 
-    // Extract models from response
-    let models: Vec<ModelInfo> = session_response
-        .models
-        .map(|m| {
-            m.available_models
-                .into_iter()
-                .map(|model| ModelInfo {
-                    display_name: model_id_to_display_name(&model.model_id.0),
-                    model_id: model.model_id.0.to_string(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let models = with_fallback_models(&provider, models);
+    let models = models_from_session(&provider, session_response);
 
     info!(
         "Discovered {} models for {:?}: {:?}",
@@ -430,8 +396,56 @@ pub async fn run_model_discovery_session(
     Ok(models)
 }
 
-/// Some providers (e.g. Gemini CLI) don't expose models via ACP; offer the
-/// descriptor's fallback list, which mirrors the CLI's `--model` flag values.
+/// Prefer the model config selector: Codex's legacy `models` list repeats
+/// each model for every reasoning effort, while ThoughtTree selects effort separately.
+fn models_from_session(provider: &AgentProvider, session: NewSessionResponse) -> Vec<ModelInfo> {
+    if let Some(options) = session.config_options {
+        for option in options {
+            if option.id.0.as_ref() != "model" {
+                continue;
+            }
+            let entries = match option.kind {
+                SessionConfigKind::Select(select) => match select.options {
+                    SessionConfigSelectOptions::Ungrouped(entries) => entries,
+                    SessionConfigSelectOptions::Grouped(groups) => {
+                        groups.into_iter().flat_map(|group| group.options).collect()
+                    }
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            if !entries.is_empty() {
+                return entries
+                    .into_iter()
+                    .map(|entry| ModelInfo {
+                        model_id: entry.value.0.to_string(),
+                        display_name: entry.name,
+                    })
+                    .collect();
+            }
+        }
+    }
+    let mut models = Vec::<ModelInfo>::new();
+    if let Some(state) = session.models {
+        for model in state.available_models {
+            let raw_id = model.model_id.0.as_ref();
+            let id = if matches!(provider, AgentProvider::Codex) {
+                raw_id.split('[').next().unwrap_or(raw_id)
+            } else {
+                raw_id
+            };
+            if !models.iter().any(|m| m.model_id == id) {
+                models.push(ModelInfo {
+                    model_id: id.to_string(),
+                    display_name: model_id_to_display_name(id),
+                });
+            }
+        }
+    }
+    with_fallback_models(provider, models)
+}
+
+/// Use the curated catalog when an older adapter exposes no models.
 fn with_fallback_models(provider: &AgentProvider, models: Vec<ModelInfo>) -> Vec<ModelInfo> {
     let fallback = provider.descriptor().fallback_models;
     if !models.is_empty() || fallback.is_empty() {
@@ -451,16 +465,22 @@ fn with_fallback_models(provider: &AgentProvider, models: Vec<ModelInfo>) -> Vec
         .collect()
 }
 
-/// Run a summarization session with Haiku model
+/// Generate a short heading with the selected provider.
 pub async fn run_summary_session(
     content: String,
     notes_directory: PathBuf,
-    custom_path: Option<String>,
+    provider: AgentProvider,
+    provider_paths: ProviderPaths,
 ) -> anyhow::Result<String> {
-    // Spawn ACP subprocess
-    let child = spawn_claude_code_acp(
+    let model = match provider {
+        AgentProvider::Codex => Some("gpt-5.6-luna"),
+        AgentProvider::ClaudeCode => None,
+    };
+    let child = spawn_agent_subprocess(
+        &provider,
         &notes_directory,
-        custom_path.as_deref(),
+        &provider_paths,
+        model,
         Some(HOUSEKEEPING_EFFORT),
     )
     .await?;
@@ -498,7 +518,7 @@ pub async fn run_summary_session(
             id.contains("haiku")
         });
 
-        if let Some(haiku_model) = haiku {
+        if let Some(haiku_model) = haiku.filter(|_| matches!(provider, AgentProvider::ClaudeCode)) {
             info!("Switching to Haiku model: {}", haiku_model.model_id.0);
             let _ = connection
                 .set_session_model(SetSessionModelRequest::new(
@@ -507,10 +527,7 @@ pub async fn run_summary_session(
                 ))
                 .await;
         } else {
-            info!(
-                "Haiku not found, using default model: {}",
-                models.current_model_id.0
-            );
+            info!("Summary session model: {}", models.current_model_id.0);
         }
     }
 
@@ -562,42 +579,88 @@ mod tests {
     use super::*;
 
     #[test]
+    fn codex_discovery_prefers_live_model_config_over_legacy_effort_variants() {
+        // Minimized codex-acp 1.11.0 session/new response.
+        let session: NewSessionResponse = serde_json::from_value(serde_json::json!({
+            "sessionId": "test",
+            "models": {
+                "currentModelId": "gpt-6-astra[high]",
+                "availableModels": [
+                    {"modelId": "gpt-6-astra[low]", "name": "Astra (low)"},
+                    {"modelId": "gpt-6-astra[high]", "name": "Astra (high)"}
+                ]
+            },
+            "configOptions": [{
+                "id": "model", "name": "Model", "category": "model", "type": "select",
+                "currentValue": "gpt-6-astra",
+                "options": [
+                    {"value": "gpt-6-astra", "name": "6 Astra"},
+                    {"value": "gpt-future", "name": "Future model"}
+                ]
+            }]
+        }))
+        .unwrap();
+        let models = models_from_session(&AgentProvider::Codex, session);
+        assert_eq!(
+            models
+                .iter()
+                .map(|m| m.model_id.as_str())
+                .collect::<Vec<_>>(),
+            ["gpt-6-astra", "gpt-future"]
+        );
+        assert_eq!(models[1].display_name, "Future model");
+    }
+
+    #[test]
+    fn codex_legacy_discovery_deduplicates_effort_variants() {
+        let session: NewSessionResponse = serde_json::from_value(serde_json::json!({
+            "sessionId": "test",
+            "models": {"currentModelId": "gpt-5.5[high]", "availableModels": [
+                {"modelId": "gpt-5.5[low]", "name": "5.5 (low)"},
+                {"modelId": "gpt-5.5[high]", "name": "5.5 (high)"}
+            ]}
+        }))
+        .unwrap();
+        let models = models_from_session(&AgentProvider::Codex, session);
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].model_id, "gpt-5.5");
+    }
+
+    #[test]
     fn test_fallback_models_come_from_descriptor_when_discovery_is_empty() {
-        // Gemini CLI and codex-acp report no models via ACP, so their
-        // descriptors' static lists must reach the selector
-        for provider in [AgentProvider::GeminiCli, AgentProvider::Codex] {
-            let models = with_fallback_models(&provider, vec![]);
+        // Older adapters without discovery still offer the fallback catalog.
+        let provider = AgentProvider::Codex;
+        let models = with_fallback_models(&provider, vec![]);
 
-            let expected: Vec<(String, String)> = provider
-                .descriptor()
-                .fallback_models
-                .iter()
-                .map(|(id, name)| (id.to_string(), name.to_string()))
-                .collect();
-            let actual: Vec<(String, String)> = models
-                .iter()
-                .map(|m| (m.model_id.clone(), m.display_name.clone()))
-                .collect();
+        let expected: Vec<(String, String)> = provider
+            .descriptor()
+            .fallback_models
+            .iter()
+            .map(|(id, name)| (id.to_string(), name.to_string()))
+            .collect();
+        let actual: Vec<(String, String)> = models
+            .iter()
+            .map(|m| (m.model_id.clone(), m.display_name.clone()))
+            .collect();
 
-            assert!(
-                !models.is_empty(),
-                "{provider:?} must offer fallback models"
-            );
-            assert_eq!(actual, expected);
-        }
+        assert!(
+            !models.is_empty(),
+            "{provider:?} must offer fallback models"
+        );
+        assert_eq!(actual, expected);
     }
 
     #[test]
     fn test_discovered_models_are_kept_when_present() {
         let discovered = vec![ModelInfo {
-            model_id: "gemini-9".to_string(),
-            display_name: "Gemini 9".to_string(),
+            model_id: "gpt-future".to_string(),
+            display_name: "Future model".to_string(),
         }];
 
-        let models = with_fallback_models(&AgentProvider::GeminiCli, discovered.clone());
+        let models = with_fallback_models(&AgentProvider::Codex, discovered.clone());
 
         assert_eq!(models.len(), 1);
-        assert_eq!(models[0].model_id, "gemini-9");
+        assert_eq!(models[0].model_id, "gpt-future");
     }
 
     #[test]
@@ -612,15 +675,6 @@ mod tests {
             Some("gpt-5.5"),
             true,
             &AgentProvider::Codex
-        ));
-    }
-
-    #[test]
-    fn test_gemini_model_is_not_set_via_session_even_when_adapter_advertises_models() {
-        assert!(!should_set_session_model(
-            Some("gemini-3"),
-            true,
-            &AgentProvider::GeminiCli
         ));
     }
 

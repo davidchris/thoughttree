@@ -3,7 +3,7 @@ import { useGraphStore } from '../../store/useGraphStore';
 import { useProviderStore } from '../../store/useProviderStore';
 import { useUIStore } from '../../store/useUIStore';
 import { MarkdownContent } from '../Graph/MarkdownContent';
-import { PROVIDER_SHORT_NAMES, type AgentProvider, type AgentNodeData, type UserNodeData } from '../../types';
+import { providerShortName, type AgentProvider, type AgentNodeData, type UserNodeData } from '../../types';
 import { useNodeGeneration } from '../../hooks/useNodeGeneration';
 import { logger } from '../../lib/logger';
 import { usePanelResize } from './usePanelResize';
@@ -138,9 +138,7 @@ export function SidePanel() {
         <div className="side-panel-title">
           <span className={`side-panel-badge ${isAgent ? 'agent' : 'user'}`}>
             {isAgent
-              ? ((data as AgentNodeData).provider
-                  ? PROVIDER_SHORT_NAMES[(data as AgentNodeData).provider!]
-                  : 'Assistant')
+              ? providerShortName((data as AgentNodeData).provider)
               : 'User'}
           </span>
           {isStreaming && <span className="side-panel-streaming">Generating...</span>}

@@ -1,7 +1,7 @@
 use tauri::AppHandle;
 use thoughttree_core::acp::sessions::run_summary_session;
 use thoughttree_core::runtime::run_localset_blocking;
-use thoughttree_core::types::{AgentProvider, SummaryResult};
+use thoughttree_core::types::SummaryResult;
 
 use crate::backend::config;
 
@@ -13,12 +13,12 @@ pub(crate) async fn generate_summary(
 ) -> Result<SummaryResult, String> {
     let notes_directory = config::get_notes_directory_required(&app)?;
     let provider_paths = config::get_provider_paths(&app)?;
-    let custom_path = provider_paths.get(&AgentProvider::ClaudeCode).cloned();
+    let provider = config::get_default_provider(&app)?;
 
     tracing::info!("Generating summary for node: {}", node_id);
 
     let result = run_localset_blocking(move || async move {
-        run_summary_session(content, notes_directory, custom_path)
+        run_summary_session(content, notes_directory, provider, provider_paths)
             .await
             .map_err(|e| e.to_string())
     })

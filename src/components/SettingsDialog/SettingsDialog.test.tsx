@@ -56,14 +56,12 @@ describe('SettingsDialog reasoning effort controls', () => {
     useProviderStore.setState({
       availableProviders: [
         { provider: 'claude-code', available: true, error_message: null },
-        { provider: 'gemini-cli', available: true, error_message: null },
         { provider: 'codex', available: true, error_message: null },
       ],
       globalModelPreferences: {},
       globalEffortPreferences: {},
       availableModels: {
         'claude-code': [{ model_id: 'claude-sonnet', display_name: 'Sonnet' }],
-        'gemini-cli': [{ model_id: 'gemini-3', display_name: 'Gemini 3' }],
         codex: [{ model_id: 'gpt-5.5', display_name: 'GPT-5.5' }],
       },
     });

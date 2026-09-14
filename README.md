@@ -14,19 +14,22 @@ ThoughtTree treats conversations as a directed acyclic graph (DAG) where each no
 
 ## Prerequisites
 
-This first-user release supports macOS only. You need:
+ThoughtTree supports macOS. Codex is the default provider. Claude Code is also available.
 
-1. **Claude Max subscription** — Required for accessing Claude models
-2. **Claude Code installed** — [Installation guide](https://code.claude.com/docs/en/overview)
+For Codex, install Node.js and the ACP adapter:
 
-   ```bash
-   # macOS / Linux
-   curl -fsSL https://claude.ai/install.sh | bash
-   ```
+```bash
+npm install -g @agentclientprotocol/codex-acp@latest
+codex-acp login
+```
 
-   Run `claude` once to authenticate with your Claude account. You only need to do this once.
+The adapter includes a compatible Codex CLI. It uses your Codex authentication.
+The model menus read the models available to your account from the adapter.
+See the [Codex model documentation](https://learn.chatgpt.com/docs/models) for model availability.
 
-**Alternative:** Set the `ANTHROPIC_API_KEY` environment variable if you prefer using an API key directly.
+For Claude Code, follow the [installation guide](https://code.claude.com/docs/en/overview), then run `claude` to authenticate.
+
+Gemini is no longer an available provider. Saved Gemini messages remain readable.
 
 ## Download and Install
 
@@ -55,11 +58,11 @@ bun run build:sidecar
 bun run tauri:build
 ```
 
-The built app will be in `src-tauri/target/release/bundle/`.
+The built app will be in `target/release/bundle/`.
 
 ## Getting Started
 
-On first launch, ThoughtTree will prompt you to select a **notes directory** — this is where your `.thoughttree` files are saved and where Claude can read files (via `@/path` mentions).
+On first launch, ThoughtTree will prompt you to select a **notes directory** — this is where your `.thoughttree` files are saved and where your selected agent can read files (via `@/path` mentions).
 
 ## Architecture
 
@@ -77,18 +80,38 @@ On first launch, ThoughtTree will prompt you to select a **notes directory** —
 │  ├── Session management                                         │
 │  └── Tauri commands (IPC bridge)                                │
 ├─────────────────────────────────────────────────────────────────┤
-│  claude-code-acp (bundled sidecar)                              │
-│  └── Connects to Claude via user's Max subscription             │
+│  ACP adapters: codex-acp or bundled claude-code-acp              │
+│  └── Connect to the selected provider                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-ThoughtTree uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to communicate with Claude Code. This allows users to leverage their existing Claude Max subscription — no separate API costs.
+ThoughtTree uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to communicate with Codex and Claude Code.
+Automatic node headings use the default provider: Codex Luna or Claude Haiku.
 
 ## Privacy
 
-ThoughtTree does not collect any telemetry, analytics, or user data. Your conversations and files stay on your machine.
+ThoughtTree does not collect telemetry or analytics. Project files remain in your notes directory.
+Your selected provider receives prompts and attached file content for processing.
+Provider CLI configuration also applies to ThoughtTree sessions.
 
-The only external communication is with Anthropic's Claude API through the bundled Claude Code integration. Your prompts and file contents (when using `@/path` mentions) are sent to Claude for processing. See [Anthropic's Privacy Policy](https://www.anthropic.com/privacy) and [Claude Code documentation](https://code.claude.com/docs/en/overview) for details on how Anthropic handles your data.
+## Codex connection check
+
+The integration was checked with `@agentclientprotocol/codex-acp` 1.11.0 on 2026-09-14.
+The Rust ACP SDK remains at 0.9.2 because it supports the protocol used by this adapter.
+The newer 2.x Rust SDK changes the client API and is not required for this connection.
+
+The app adds known runtime directories to the adapter PATH for macOS desktop launches.
+Current adapters receive model and reasoning effort through `CODEX_CONFIG`.
+Legacy adapters receive equivalent `-c` flags.
+The app uses live model discovery, with a static catalog for adapters that return no models.
+
+To check discovery, streaming, and node headings with your existing Codex login, run:
+
+```bash
+cargo run -p thoughttree-core --example codex_smoke
+```
+
+This check sends two small prompts from a temporary directory.
 
 ## Resources
 

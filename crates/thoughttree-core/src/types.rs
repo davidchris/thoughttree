@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentProvider {
-    #[default]
     ClaudeCode,
-    GeminiCli,
+    #[default]
     Codex,
 }
 
@@ -57,23 +56,6 @@ const CLAUDE_CODE_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     fallback_models: &[],
 };
 
-const GEMINI_CLI_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
-    id: "gemini-cli",
-    display_name: "Gemini CLI",
-    executable_name: "gemini",
-    known_paths: &["/opt/homebrew/bin/gemini", "/usr/local/bin/gemini"],
-    home_relative_paths: &[".bun/bin/gemini", ".npm-global/bin/gemini"],
-    env_override: None,
-    install_hint: "Install via: brew install gemini-cli\nOr: bun install -g @google/gemini-cli",
-    version_pattern: "gemini",
-    requires_sidecar: false,
-    models_via_acp: false,
-    fallback_models: &[
-        ("gemini-3", "Gemini 3 (Auto)"),
-        ("gemini-2.5", "Gemini 2.5 (Auto)"),
-    ],
-};
-
 const CODEX_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     id: "codex",
     display_name: "Codex",
@@ -84,29 +66,26 @@ const CODEX_DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     install_hint: "Install adapter: npm install -g @agentclientprotocol/codex-acp — then login: npm install -g @openai/codex && codex login",
     version_pattern: "codex",
     requires_sidecar: false,
-    models_via_acp: false,
-    // ACP model discovery returns nothing for codex-acp, so this curated list
-    // drives the selector. Ids verified against codex-cli 0.142.5 (2026-07).
+    models_via_acp: true,
+    // Fallback for older adapters without discovery. Verified 2026-09-14
+    // against the current Codex documentation and codex-acp 1.11.0.
     fallback_models: &[
+        ("gpt-6-astra", "GPT-6 Astra"),
+        ("gpt-5.6-sol", "GPT-5.6 Sol"),
+        ("gpt-5.6-terra", "GPT-5.6 Terra"),
+        ("gpt-5.6-luna", "GPT-5.6 Luna"),
         ("gpt-5.5", "GPT-5.5"),
-        ("gpt-5.4", "GPT-5.4"),
-        ("gpt-5.4-mini", "GPT-5.4 Mini"),
-        ("gpt-5.3-codex", "GPT-5.3 Codex"),
+        ("gpt-5.3-codex-spark", "GPT-5.3 Codex Spark"),
     ],
 };
 
 impl AgentProvider {
     /// Every supported provider — drives availability lists and config maps
-    pub const ALL: &'static [AgentProvider] = &[
-        AgentProvider::ClaudeCode,
-        AgentProvider::GeminiCli,
-        AgentProvider::Codex,
-    ];
+    pub const ALL: &'static [AgentProvider] = &[AgentProvider::ClaudeCode, AgentProvider::Codex];
 
     pub fn descriptor(&self) -> &'static ProviderDescriptor {
         match self {
             AgentProvider::ClaudeCode => &CLAUDE_CODE_DESCRIPTOR,
-            AgentProvider::GeminiCli => &GEMINI_CLI_DESCRIPTOR,
             AgentProvider::Codex => &CODEX_DESCRIPTOR,
         }
     }
@@ -214,30 +193,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_provider_default_is_claude_code() {
+    fn test_provider_default_is_codex() {
         let provider = AgentProvider::default();
-        assert_eq!(provider, AgentProvider::ClaudeCode);
+        assert_eq!(provider, AgentProvider::Codex);
     }
 
     #[test]
     fn test_provider_serializes_to_kebab_case() {
         let claude = AgentProvider::ClaudeCode;
-        let gemini = AgentProvider::GeminiCli;
 
         let claude_json = serde_json::to_string(&claude).unwrap();
-        let gemini_json = serde_json::to_string(&gemini).unwrap();
 
         assert_eq!(claude_json, "\"claude-code\"");
-        assert_eq!(gemini_json, "\"gemini-cli\"");
     }
 
     #[test]
     fn test_provider_deserializes_from_kebab_case() {
         let claude: AgentProvider = serde_json::from_str("\"claude-code\"").unwrap();
-        let gemini: AgentProvider = serde_json::from_str("\"gemini-cli\"").unwrap();
 
         assert_eq!(claude, AgentProvider::ClaudeCode);
-        assert_eq!(gemini, AgentProvider::GeminiCli);
     }
 
     #[test]
@@ -250,7 +224,6 @@ mod tests {
     #[test]
     fn test_provider_display_names() {
         assert_eq!(AgentProvider::ClaudeCode.display_name(), "Claude Code");
-        assert_eq!(AgentProvider::GeminiCli.display_name(), "Gemini CLI");
         assert_eq!(AgentProvider::Codex.display_name(), "Codex");
     }
 
@@ -265,9 +238,7 @@ mod tests {
 
     #[test]
     fn test_codex_fallback_models_offer_current_codex_lineup() {
-        // Codex ACP discovery returns nothing, so this static list drives the
-        // model selector. Ids verified against codex-cli 0.142.5 built-in
-        // model table (2026-07).
+        // Older adapters still receive a current fallback catalog.
         let ids: Vec<&str> = AgentProvider::Codex
             .descriptor()
             .fallback_models
@@ -277,7 +248,14 @@ mod tests {
 
         assert_eq!(
             ids,
-            vec!["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"]
+            vec![
+                "gpt-6-astra",
+                "gpt-5.6-sol",
+                "gpt-5.6-terra",
+                "gpt-5.6-luna",
+                "gpt-5.5",
+                "gpt-5.3-codex-spark"
+            ]
         );
     }
 
@@ -303,10 +281,7 @@ mod tests {
         let paths: PerProvider<String> = serde_json::from_str(json).unwrap();
 
         assert_eq!(paths.get(&AgentProvider::ClaudeCode), None);
-        assert_eq!(
-            paths.get(&AgentProvider::GeminiCli),
-            Some(&"/usr/local/bin/gemini".to_string())
-        );
+        assert_eq!(paths.get(&AgentProvider::Codex), None);
     }
 
     #[test]
@@ -322,16 +297,16 @@ mod tests {
     #[test]
     fn test_per_provider_set_and_get() {
         let mut prefs: PerProvider<String> = PerProvider::default();
-        assert_eq!(prefs.get(&AgentProvider::GeminiCli), None);
+        assert_eq!(prefs.get(&AgentProvider::Codex), None);
 
-        prefs.set(&AgentProvider::GeminiCli, Some("gemini-3".to_string()));
+        prefs.set(&AgentProvider::Codex, Some("gpt-6-astra".to_string()));
         assert_eq!(
-            prefs.get(&AgentProvider::GeminiCli),
-            Some(&"gemini-3".to_string())
+            prefs.get(&AgentProvider::Codex),
+            Some(&"gpt-6-astra".to_string())
         );
 
-        prefs.set(&AgentProvider::GeminiCli, None);
-        assert_eq!(prefs.get(&AgentProvider::GeminiCli), None);
+        prefs.set(&AgentProvider::Codex, None);
+        assert_eq!(prefs.get(&AgentProvider::Codex), None);
     }
 
     #[test]
@@ -387,7 +362,6 @@ mod tests {
             preferences.get(&AgentProvider::Codex),
             Some(&ReasoningEffort::XHigh)
         );
-        assert_eq!(preferences.get(&AgentProvider::GeminiCli), None);
         assert_eq!(
             serde_json::to_string(&preferences).unwrap(),
             r#"{"claude-code":"low","codex":"xhigh","future-provider":"high","gemini-cli":null}"#

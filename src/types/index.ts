@@ -4,7 +4,7 @@ import type { TurnProvenance } from '@thoughttree/graph-model';
 // Agent Provider Types
 // ============================================================================
 
-export type AgentProvider = 'claude-code' | 'gemini-cli' | 'codex';
+export type AgentProvider = 'claude-code' | 'codex';
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface ProviderStatus {
@@ -29,7 +29,6 @@ export const PROVIDER_DESCRIPTORS: readonly ProviderDescriptor[] = [
     shortName: 'Claude',
     supportedEfforts: ['low', 'medium', 'high', 'xhigh'],
   },
-  { id: 'gemini-cli', displayName: 'Gemini CLI', shortName: 'Gemini', supportedEfforts: [] },
   {
     id: 'codex',
     displayName: 'Codex',
@@ -52,12 +51,18 @@ export const PROVIDER_DISPLAY_NAMES: Record<AgentProvider, string> = byProvider(
 
 export const PROVIDER_SHORT_NAMES: Record<AgentProvider, string> = byProvider((d) => d.shortName);
 
+/** Historical messages keep attribution even after a provider is removed. */
+export function providerShortName(provider: string | undefined): string {
+  if (!provider) return 'Assistant';
+  return PROVIDER_DESCRIPTORS.find((d) => d.id === provider)?.shortName ?? 'Retired provider';
+}
+
 export const PROVIDER_SUPPORTED_EFFORTS: Record<
   AgentProvider,
   readonly ReasoningEffort[]
 > = byProvider((d) => d.supportedEfforts);
 
-export const DEFAULT_PROVIDER: AgentProvider = 'claude-code';
+export const DEFAULT_PROVIDER: AgentProvider = 'codex';
 
 // ============================================================================
 // Model Types
@@ -84,7 +89,9 @@ export function withoutNullEntries<V extends string>(
   record: StoredProviderRecord<V>
 ): Partial<Record<AgentProvider, V>> {
   return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value != null)
+    Object.entries(record).filter(([provider, value]) =>
+      ALL_PROVIDERS.includes(provider as AgentProvider) && value != null
+    )
   ) as Partial<Record<AgentProvider, V>>;
 }
 
@@ -117,7 +124,7 @@ export interface AgentNodeData {
   contentUpdatedAt?: number;  // When content was last edited/streamed
   summary?: string;           // Generated summary for collapsed view
   summaryTimestamp?: number;  // When summary was last generated
-  provider?: AgentProvider;   // Which provider generated this response
+  provider?: import('@thoughttree/graph-model').GraphAgentProvider; // Historical attribution
   model?: string;             // Which model was used for this response
   provenance?: TurnProvenance;
   // Note: isStreaming is derived from store.streamingNodeId, not stored here

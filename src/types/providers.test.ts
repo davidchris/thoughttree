@@ -7,13 +7,14 @@ import {
   PROVIDER_SHORT_NAMES,
   PROVIDER_SUPPORTED_EFFORTS,
   withoutNullEntries,
+  providerShortName,
   type ReasoningEffort,
   type StoredProviderRecord,
 } from './index';
 
 describe('provider descriptors', () => {
   it('lists every provider exactly once', () => {
-    expect(ALL_PROVIDERS).toEqual(['claude-code', 'gemini-cli', 'codex']);
+    expect(ALL_PROVIDERS).toEqual(['claude-code', 'codex']);
     expect(new Set(ALL_PROVIDERS).size).toBe(PROVIDER_DESCRIPTORS.length);
   });
 
@@ -46,11 +47,18 @@ describe('provider descriptors', () => {
       'high',
       'xhigh',
     ]);
-    expect(PROVIDER_DESCRIPTORS.find((d) => d.id === 'gemini-cli')?.supportedEfforts).toEqual([]);
 
     for (const descriptor of PROVIDER_DESCRIPTORS) {
       expect(PROVIDER_SUPPORTED_EFFORTS[descriptor.id]).toBe(descriptor.supportedEfforts);
     }
+  });
+
+  it('does not restore retired providers from saved settings', () => {
+    expect(withoutNullEntries({ 'gemini-cli': 'gemini-3', codex: 'gpt-6-astra' } as StoredProviderRecord))
+      .toEqual({ codex: 'gpt-6-astra' });
+    expect(providerShortName('gemini-cli')).toBe('Retired provider');
+    expect(providerShortName(undefined)).toBe('Assistant');
+    expect(DEFAULT_PROVIDER).toBe('codex');
   });
 
   it('strips null entries from stored effort records', () => {
