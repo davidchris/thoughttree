@@ -1,6 +1,6 @@
 import { useGraphStore } from '../../store/useGraphStore';
 import { useFilePreview } from '../../hooks/useFilePreview';
-import { FILE_STATE_LABEL, formatBytes, resolveFileCardState } from '../../lib/fileNodes';
+import { FILE_STATE_LABEL, formatBytes, isRasterImage, resolveFileCardState } from '../../lib/fileNodes';
 import type { FileNodeData } from '../../types';
 
 /** Side panel body for a file node: where it lives, what state it is in, and the same bounded preview as the card. */
@@ -26,6 +26,10 @@ export function FilePanel({ node }: { node: FileNodeData }) {
         <div>
           <dt>Type</dt>
           <dd>{node.mimeType}</dd>
+        </div>
+        <div>
+          <dt>Delivery</dt>
+          <dd>{isRasterImage(node.mimeType) ? 'sent to the agent as an image' : 'agent reads from disk'}</dd>
         </div>
         {stateLabel && (
           <div>

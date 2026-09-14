@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getBackendTransport } from '../lib/transport';
 import type { FilePreviewResponse } from '../lib/transport';
+import { useGraphStore } from '../store/useGraphStore';
 import type { FileNodeData } from '../types';
 
 /** Backend refusals the card renders as a state instead of an error. */
@@ -64,6 +65,9 @@ export function useFilePreview(node: FileNodeData | undefined): PreviewState {
       (error: unknown) => {
         if (cancelled) return;
         const reason = previewRefusal(error);
+        // A stat cannot see an over-limit image side; the preview refusal is
+        // the only signal, so record it where sendBlocker will find it.
+        if (reason === 'too-large') useGraphStore.getState().markFileNodeTooLarge(node.id);
         setState(reason ? { kind: 'refused', reason } : { kind: 'failed' });
       }
     );

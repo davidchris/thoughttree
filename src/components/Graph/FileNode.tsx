@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { useGraphStore, isRasterImage } from '../../store/useGraphStore';
+import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useFilePreview, type PreviewState } from '../../hooks/useFilePreview';
 import {
   FILE_STATE_LABEL,
   fileTypeBadge,
   formatBytes,
+  isRasterImage,
   resolveFileCardState,
   type FileCardState,
 } from '../../lib/fileNodes';
@@ -68,9 +69,11 @@ export function FileNode({ id, selected }: NodeProps) {
       <div className="file-node-footer">
         {cardState === 'changed' ? (
           <>
-            <span className="file-node-flag">{FILE_STATE_LABEL.changed}</span>
+            <span className="file-node-flag" title="Reload to update the preview and what the agent will see">
+              {FILE_STATE_LABEL.changed}
+            </span>
             <button className="file-node-refresh" onClick={handleRefresh} title="Adopt the current file version">
-              Refresh
+              Reload
             </button>
           </>
         ) : FILE_STATE_LABEL[cardState] ? (

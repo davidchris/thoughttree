@@ -5,6 +5,15 @@ import type { PreviewState } from '../hooks/useFilePreview';
 
 export type FileCardState = FileNodeStatus['state'];
 
+// Mirrors thoughttree_core::vault::files::is_raster_image exactly. Only these
+// are read as bytes and inlined as image blocks, so only these are size-limited;
+// every other file (svg included) is a pointer the agent reads itself.
+const RASTER_IMAGE_MIMES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+export function isRasterImage(mimeType: string): boolean {
+  return RASTER_IMAGE_MIMES.has(mimeType);
+}
+
 /** The stat result wins for broken files; otherwise a preview refusal (e.g. image side too big) shows. */
 export function resolveFileCardState(status: FileNodeStatus | undefined, preview: PreviewState): FileCardState {
   const stat = status?.state ?? 'ok';

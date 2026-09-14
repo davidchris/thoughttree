@@ -83,7 +83,7 @@ function PaneItems({ position, onClose }: { position: { x: number; y: number }; 
 function NodeItems({ nodeId, onClose }: { nodeId: string; onClose: () => void }) {
   const createUserNodeDownstream = useGraphStore((state) => state.createUserNodeDownstream);
   const deleteNode = useGraphStore((state) => state.deleteNode);
-  const refreshFileNodeStat = useGraphStore((state) => state.refreshFileNodeStat);
+  const acknowledgeFileChange = useGraphStore((state) => state.acknowledgeFileChange);
   const data = useGraphStore((state) => state.nodeData.get(nodeId));
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const setNotice = useUIStore((state) => state.setNotice);
@@ -121,11 +121,11 @@ function NodeItems({ nodeId, onClose }: { nodeId: string; onClose: () => void })
         <>
           <button
             onClick={() => {
-              void refreshFileNodeStat(nodeId);
+              void acknowledgeFileChange(nodeId);
               onClose();
             }}
           >
-            Refresh
+            Reload file
           </button>
           <button onClick={handleCopyPath}>Copy path</button>
         </>

@@ -417,6 +417,45 @@ describe('GraphSerialize file nodes', () => {
     expect(restored.nodes.get('f')?.content).toBe('');
   });
 
+  // Invariant: file nodes never have incoming edges and are never Synthesizer
+  // nodes, whatever an edited or older Project file claims.
+  it('drops an edge whose target is a file node when loading', () => {
+    const user: GraphNode = { id: 'u', role: 'user', content: 'hi', timestamp: 1 };
+    const json: GraphJSON = {
+      version: GRAPH_JSON_VERSION,
+      nodes: [user, fileNode],
+      edges: [
+        { id: 'e-into-file', source: 'u', target: 'f' },
+        { id: 'e-out-of-file', source: 'f', target: 'u' },
+      ],
+      layout: [],
+    };
+
+    const restored = GraphSerialize.fromJSON(json);
+
+    expect(restored.edges).toEqual([{ id: 'e-out-of-file', source: 'f', target: 'u' }]);
+  });
+
+  it('drops an edge whose target is a file node when reading the legacy v2 shape', () => {
+    const restored = GraphSerialize.fromLegacyV2({
+      version: 2,
+      nodes: [
+        { id: 'u', position: { x: 0, y: 0 } },
+        { id: 'f', position: { x: 0, y: 100 } },
+      ],
+      edges: [
+        { id: 'e-into-file', source: 'u', target: 'f' },
+        { id: 'e-out-of-file', source: 'f', target: 'u' },
+      ],
+      nodeData: {
+        u: { id: 'u', role: 'user', content: 'hi', timestamp: 1 },
+        f: fileNode,
+      },
+    });
+
+    expect(restored.edges).toEqual([{ id: 'e-out-of-file', source: 'f', target: 'u' }]);
+  });
+
   it.each([
     ['an absolute path', { path: '/Users/me/design.md' }],
     ['a parent-directory path', { path: '../design.md' }],

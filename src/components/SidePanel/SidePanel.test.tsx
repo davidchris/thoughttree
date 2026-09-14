@@ -84,6 +84,7 @@ describe("SidePanel", () => {
       stopStreaming: mockStopStreaming,
       isNodeBlocked: overrides.isNodeBlocked ?? mockIsNodeBlocked,
       sendBlocker: vi.fn(() => null),
+      canGenerate: vi.fn(() => true),
       fileNodeStatus: new Map(),
       defaultProvider: "claude-code",
       availableProviders: [
@@ -164,8 +165,8 @@ describe("SidePanel", () => {
     });
 
     it("disables Generate and explains why when a lineage file node is broken", () => {
-      const reason = '"plan.md" is missing from the vault. Restore it or delete its node before sending.';
-      setupMockStore({ sendBlocker: vi.fn(() => reason) });
+      const reason = '"plan.md" is missing from the notes directory. Restore it or delete its node before sending.';
+      setupMockStore({ sendBlocker: vi.fn(() => reason), canGenerate: vi.fn(() => false) });
       render(<SidePanel />);
 
       const generateButton = screen.getByRole("button", { name: /generate/i });

@@ -42,6 +42,10 @@ export function SidePanel() {
   const sendBlockedReason = useGraphStore((state) =>
     isUserNode && previewNodeId ? state.sendBlocker(previewNodeId) : null
   );
+  // Text, inline images, or a file node in the lineage, and no blocker.
+  const canGenerate = useGraphStore((state) =>
+    isUserNode && previewNodeId ? state.canGenerate(previewNodeId) : false
+  );
 
   // Initialize selectedModel from effective model when user node is selected
   useEffect(() => {
@@ -111,7 +115,7 @@ export function SidePanel() {
   };
 
   const handleGenerate = async () => {
-    if (!previewNodeId || !data?.content.trim() || isBlocked) return;
+    if (!previewNodeId || !canGenerate || isBlocked) return;
 
     // Exit edit mode
     setIsEditing(false);
@@ -176,7 +180,7 @@ export function SidePanel() {
               onProviderChange={setSelectedProvider}
               onModelChange={setSelectedModel}
               disabled={isBlocked}
-              generateDisabled={isBlocked || !data?.content.trim() || sendBlockedReason !== null}
+              generateDisabled={isBlocked || !canGenerate}
               generateBlockedReason={sendBlockedReason}
               onGenerate={handleGenerate}
             />

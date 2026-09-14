@@ -33,6 +33,14 @@ function normalizedNodes(nodes: Iterable<unknown>): GraphNode[] {
 }
 
 /**
+ * File nodes never have incoming edges (they are never Synthesizer nodes), so
+ * an edge into one is dropped on load whatever the Project file claims.
+ */
+function edgesRespectingFileNodes(nodes: Map<NodeId, GraphNode>, edges: GraphEdge[]): GraphEdge[] {
+  return edges.filter((edge) => nodes.get(edge.target)?.role !== 'file');
+}
+
+/**
  * Nodes are rebuilt from an explicit allowlist on both save and load so raw
  * tool data, unknown payloads, absolute paths, or user-node provenance never
  * reach a Project file, whatever a provider or an untrusted file supplied.
@@ -48,9 +56,10 @@ export const GraphSerialize = {
   },
 
   fromJSON(json: GraphJSON): Graph {
+    const nodes = new Map(normalizedNodes(json.nodes).map((n) => [n.id, n]));
     return {
-      nodes: new Map(normalizedNodes(json.nodes).map((n) => [n.id, n])),
-      edges: json.edges.slice(),
+      nodes,
+      edges: edgesRespectingFileNodes(nodes, json.edges),
       layout: new Map(json.layout.map((entry) => [entry.id, entry.position])),
     };
   },
@@ -72,6 +81,6 @@ export const GraphSerialize = {
       target: e.target,
     }));
 
-    return { nodes, edges, layout };
+    return { nodes, edges: edgesRespectingFileNodes(nodes, edges), layout };
   },
 };

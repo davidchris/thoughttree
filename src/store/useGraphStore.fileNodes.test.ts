@@ -109,6 +109,72 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('ok');
     });
 
+    it('treats a non-raster image (svg) as a pointer: 6 MB is ok, never too-large', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(5_000, 6 * MB, { mimeType: 'image/svg+xml', name: 'logo.svg' })
+      );
+      const id = useGraphStore.getState().addFileNode(
+        { path: 'img/logo.svg', name: 'logo.svg', mimeType: 'image/svg+xml', size: 6 * MB, seenMtime: 5_000, seenSize: 6 * MB },
+        { x: 0, y: 0 }
+      );
+
+      await useGraphStore.getState().refreshFileNodeStat(id);
+
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('ok');
+      expect(transport.getAttachmentLimits).not.toHaveBeenCalled();
+    });
+
+    it('keeps a preview-refused too-large image too-large while the file is unchanged', async () => {
+      // A 2 MB png is under the byte limit; only the preview (header parse) can
+      // reveal that its longest side is over the limit.
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(5_000, 2 * MB, { mimeType: 'image/png', name: 'diagram.png' })
+      );
+      const id = useGraphStore.getState().addFileNode(IMAGE, { x: 0, y: 0 });
+      await useGraphStore.getState().refreshFileNodeStat(id);
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('ok');
+
+      useGraphStore.getState().markFileNodeTooLarge(id);
+      await useGraphStore.getState().refreshFileNodeStat(id);
+
+      expect(useGraphStore.getState().fileNodeStatus.get(id)).toEqual({
+        state: 'too-large',
+        stat: { size: 2 * MB, modifiedEpochMs: 5_000 },
+      });
+    });
+
+    it('re-classifies a preview-refused image once the file changes on disk', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(5_000, 2 * MB, { mimeType: 'image/png', name: 'diagram.png' })
+      );
+      const id = useGraphStore.getState().addFileNode(IMAGE, { x: 0, y: 0 });
+      await useGraphStore.getState().refreshFileNodeStat(id);
+      useGraphStore.getState().markFileNodeTooLarge(id);
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(6_000, 1 * MB, { mimeType: 'image/png', name: 'diagram.png' })
+      );
+
+      await useGraphStore.getState().refreshFileNodeStat(id);
+
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('changed');
+    });
+
+    it('adopts the first stat after a preview refusal as the refused version', async () => {
+      // The card stats and previews in parallel; the refusal may land first.
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(5_000, 2 * MB, { mimeType: 'image/png', name: 'diagram.png' })
+      );
+      const id = useGraphStore.getState().addFileNode(IMAGE, { x: 0, y: 0 });
+      useGraphStore.getState().markFileNodeTooLarge(id);
+
+      await useGraphStore.getState().refreshFileNodeStat(id);
+
+      expect(useGraphStore.getState().fileNodeStatus.get(id)).toEqual({
+        state: 'too-large',
+        stat: { size: 2 * MB, modifiedEpochMs: 5_000 },
+      });
+    });
+
     it('ignores nodes that are not file nodes', async () => {
       const id = useGraphStore.getState().createUserNode();
 
@@ -230,6 +296,75 @@ describe('useGraphStore file node status', () => {
       await useGraphStore.getState().refreshFileNodeStat(fileId);
 
       expect(useGraphStore.getState().sendBlocker(unrelatedUser)).toBeNull();
+    });
+
+    it('blocks sending once the preview refused an image as too large, before any ACP call', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(5_000, 2 * MB, { mimeType: 'image/png', name: 'diagram.png' })
+      );
+      const state = useGraphStore.getState();
+      const imageId = state.addFileNode(IMAGE, { x: 0, y: 0 });
+      const userId = state.createUserNodeDownstream(imageId);
+      await useGraphStore.getState().refreshFileNodeStat(imageId);
+      expect(useGraphStore.getState().sendBlocker(userId)).toBeNull();
+
+      useGraphStore.getState().markFileNodeTooLarge(imageId);
+
+      expect(useGraphStore.getState().sendBlocker(userId)).toMatch(/diagram\.png.*too large/i);
+    });
+  });
+
+  describe('canGenerate', () => {
+    it('is false for an empty user node with nothing in its lineage', () => {
+      const userId = useGraphStore.getState().createUserNode();
+
+      expect(useGraphStore.getState().canGenerate(userId)).toBe(false);
+    });
+
+    it('is true for text, and for an inline image without text', () => {
+      const state = useGraphStore.getState();
+      const textUser = state.createUserNode();
+      state.updateNodeContent(textUser, 'hello');
+      const imageUser = useGraphStore.getState().createUserNode();
+      useGraphStore.getState().addNodeImage(imageUser, { data: 'AAAA', mimeType: 'image/png' });
+
+      expect(useGraphStore.getState().canGenerate(textUser)).toBe(true);
+      expect(useGraphStore.getState().canGenerate(imageUser)).toBe(true);
+    });
+
+    it('lets a file node stand alone: an empty user node below it sends one file-only user message', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue(okStatus(1_000, 120));
+      const state = useGraphStore.getState();
+      const fileId = state.addFileNode(NOTE, { x: 0, y: 0 });
+      const userId = state.createUserNodeDownstream(fileId);
+      await useGraphStore.getState().refreshFileNodeStat(fileId);
+
+      expect(useGraphStore.getState().canGenerate(userId)).toBe(true);
+      expect(useGraphStore.getState().buildConversationContext(userId)).toEqual([
+        {
+          role: 'user',
+          content: '',
+          files: [{ path: 'notes/plan.md', name: 'plan.md', mimeType: 'text/markdown', size: 120 }],
+        },
+      ]);
+    });
+
+    it('is false while a lineage file node blocks sending, even with text', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue({ status: 'missing' });
+      const state = useGraphStore.getState();
+      const fileId = state.addFileNode(NOTE, { x: 0, y: 0 });
+      const userId = state.createUserNodeDownstream(fileId);
+      state.updateNodeContent(userId, 'Summarise the plan');
+      await useGraphStore.getState().refreshFileNodeStat(fileId);
+
+      expect(useGraphStore.getState().canGenerate(userId)).toBe(false);
+    });
+
+    it('is false for anything that is not a user node', () => {
+      const fileId = useGraphStore.getState().addFileNode(NOTE, { x: 0, y: 0 });
+
+      expect(useGraphStore.getState().canGenerate(fileId)).toBe(false);
+      expect(useGraphStore.getState().canGenerate('nope')).toBe(false);
     });
   });
 

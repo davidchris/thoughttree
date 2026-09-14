@@ -101,7 +101,27 @@ describe('FileNode', () => {
     expect(screen.queryByText('agent reads from disk')).not.toBeInTheDocument();
   });
 
-  it('flags a file changed on disk and Refresh adopts the new version and reloads the preview', async () => {
+  it('shows the on-disk hint for a non-raster image such as svg, which goes as a pointer', async () => {
+    vi.mocked(transport.statVaultFile).mockResolvedValue({
+      status: 'ok',
+      stat: { size: 6 * 1024 * 1024, modifiedEpochMs: 5_000 },
+      mimeType: 'image/svg+xml',
+      name: 'logo.svg',
+    });
+    vi.mocked(transport.readVaultFilePreview).mockResolvedValue(textPreview('<svg/>'));
+    const id = useGraphStore.getState().addFileNode(
+      { path: 'img/logo.svg', name: 'logo.svg', mimeType: 'image/svg+xml', size: 6 * 1024 * 1024, seenMtime: 5_000, seenSize: 6 * 1024 * 1024 },
+      { x: 0, y: 0 }
+    );
+
+    renderFileNode(id);
+
+    expect(await screen.findByText('agent reads from disk')).toBeInTheDocument();
+    await waitFor(() => expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('ok'));
+    expect(screen.queryByText('too large for the agent')).not.toBeInTheDocument();
+  });
+
+  it('flags a file changed on disk and Reload adopts the new version and reloads the preview', async () => {
     vi.mocked(transport.statVaultFile).mockResolvedValue({
       status: 'ok',
       stat: { size: 4096, modifiedEpochMs: 2_000 },
@@ -115,9 +135,10 @@ describe('FileNode', () => {
 
     renderFileNode(id);
 
-    expect(await screen.findByText('changed on disk')).toBeInTheDocument();
+    const flag = await screen.findByText('changed on disk');
+    expect(flag).toHaveAttribute('title', 'Reload to update the preview and what the agent will see');
     await screen.findByText('old text');
-    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reload' }));
 
     expect(await screen.findByText('new text')).toBeInTheDocument();
     expect(screen.queryByText('changed on disk')).not.toBeInTheDocument();
@@ -136,13 +157,21 @@ describe('FileNode', () => {
     await waitFor(() => expect(container.querySelector('.file-node')).toHaveClass('state-missing'));
   });
 
-  it('renders the too-large state from a too_large: preview error even when the stat looks fine', async () => {
+  it('renders the too-large state from a too_large: preview error even when the stat looks fine, and blocks sending', async () => {
+    vi.mocked(transport.statVaultFile).mockResolvedValue({
+      status: 'ok',
+      stat: { size: 300_000, modifiedEpochMs: 5_000 },
+      mimeType: 'image/png',
+      name: 'diagram.png',
+    });
     vi.mocked(transport.readVaultFilePreview).mockRejectedValue('too_large: 5242880');
     const id = useGraphStore.getState().addFileNode(IMAGE, { x: 0, y: 0 });
+    const userId = useGraphStore.getState().createUserNodeDownstream(id);
 
     renderFileNode(id);
 
     expect(await screen.findByText('too large for the agent')).toBeInTheDocument();
+    await waitFor(() => expect(useGraphStore.getState().sendBlocker(userId)).toMatch(/diagram\.png.*too large/i));
   });
 
   it('serves a second mount of the same file version from the preview cache', async () => {

@@ -26,6 +26,7 @@ import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 import { logger } from '../lib/logger';
 import { getBackendTransport, StaleRevisionError } from '../lib/transport';
 import type { AttachmentLimits, BackendTransport, FileStat } from '../lib/transport';
+import { isRasterImage } from '../lib/fileNodes';
 import {
   GRAPH_JSON_VERSION,
   GraphModel,
@@ -162,8 +163,12 @@ interface GraphState {
   refreshAllFileNodeStats: () => Promise<void>;
   /** Adopts the current on-disk mtime/size as seen, so a 'changed' node reads as 'ok' again. */
   acknowledgeFileChange: (nodeId: string) => Promise<void>;
+  /** The preview refused this image as too large (e.g. longest side over the limit); blocks sending until the file changes. */
+  markFileNodeTooLarge: (nodeId: string) => void;
   /** Human reason why a prompt from this user node must not be sent, or null. Walks the Lineage subgraph. */
   sendBlocker: (userNodeId: string) => string | null;
+  /** Whether a user node has something to send (text, inline images, or a file node in its lineage) and no sendBlocker. */
+  canGenerate: (userNodeId: string) => boolean;
 
   // Context building
   buildConversationContext: (nodeId: string) => Array<{
@@ -366,14 +371,24 @@ function attachmentLimits(): Promise<AttachmentLimits> {
   return limitsCache.limits;
 }
 
-// Only raster images are sent as bytes and therefore size-limited; every
-// other file is a pointer the agent reads itself (epic decisions 4 and 5).
-export function isRasterImage(mimeType: string): boolean {
-  return mimeType.startsWith('image/');
+function sameStat(a: FileStat, b: FileStat): boolean {
+  return a.modifiedEpochMs === b.modifiedEpochMs && a.size === b.size;
 }
 
-function classifyFileStat(node: FileNodeData, stat: FileStat, limits: AttachmentLimits | null): FileNodeStatus {
+// Only raster images are sent as bytes and therefore size-limited; every
+// other file is a pointer the agent reads itself (epic decisions 4 and 5).
+function classifyFileStat(
+  node: FileNodeData,
+  stat: FileStat,
+  limits: AttachmentLimits | null,
+  previous: FileNodeStatus | undefined,
+): FileNodeStatus {
   if (limits && isRasterImage(node.mimeType) && stat.size > limits.imageMaxBytes) {
+    return { state: 'too-large', stat };
+  }
+  // The preview refused this file version (e.g. longest side over the limit,
+  // which a stat cannot see). Only a new version on disk clears that.
+  if (previous?.state === 'too-large' && (!previous.stat || sameStat(previous.stat, stat))) {
     return { state: 'too-large', stat };
   }
   const unchanged = stat.modifiedEpochMs === node.seenMtime && stat.size === node.seenSize;
@@ -394,9 +409,9 @@ function withFileNodeStatus(
 function blockerReason(node: FileNodeData, status: FileNodeStatus | undefined): string | null {
   switch (status?.state) {
     case 'missing':
-      return `"${node.name}" is missing from the vault. Restore it or delete its node before sending.`;
+      return `"${node.name}" is missing from the notes directory. Restore it or delete its node before sending.`;
     case 'invalid':
-      return `"${node.name}" cannot be read from the vault. Delete its node before sending.`;
+      return `"${node.name}" cannot be read from the notes directory. Delete its node before sending.`;
     case 'too-large':
       return `"${node.name}" is too large for the agent. Use a smaller image before sending.`;
     default:
@@ -788,7 +803,8 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   linkVaultFile: async (path, position) => {
     const status = await getBackendTransport().statVaultFile(path);
     if (status.status !== 'ok') {
-      const why = status.status === 'missing' ? 'was not found in the vault' : 'is not a readable vault file';
+      const why =
+        status.status === 'missing' ? 'was not found in the notes directory' : 'is not a readable file in the notes directory';
       useUIStore.getState().setNotice(`"${path}" ${why}.`);
       return null;
     }
@@ -823,9 +839,13 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       // The node may have been deleted or the project swapped while we waited.
       const current = get().graph.nodes.get(nodeId);
       if (current?.role !== 'file' || current.path !== node.path) return;
-      const next: FileNodeStatus =
-        status.status === 'ok' ? classifyFileStat(current, status.stat, limits) : { state: status.status };
-      set((state) => ({ fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, next) }));
+      set((state) => {
+        const next: FileNodeStatus =
+          status.status === 'ok'
+            ? classifyFileStat(current, status.stat, limits, state.fileNodeStatus.get(nodeId))
+            : { state: status.status };
+        return { fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, next) };
+      });
     } catch (error) {
       logger.error('Failed to stat file node:', error);
     }
@@ -840,12 +860,13 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   },
 
   acknowledgeFileChange: async (nodeId) => {
-    if (!get().fileNodeStatus.get(nodeId)?.stat) {
-      await get().refreshFileNodeStat(nodeId);
-    }
+    // Always re-stat: "reload" means the version on disk right now, not the
+    // one a focus event happened to observe earlier.
+    await get().refreshFileNodeStat(nodeId);
     const state = get();
     const node = state.graph.nodes.get(nodeId);
-    const stat = state.fileNodeStatus.get(nodeId)?.stat;
+    const status = state.fileNodeStatus.get(nodeId);
+    const stat = status?.stat;
     if (node?.role !== 'file' || !stat) return;
     const updated: FileNodeData = {
       ...node,
@@ -858,9 +879,18 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     set({
       graph,
       ...projectGraph(graph, state.nodes, state.selectedNodeId),
-      fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, classifyFileStat(updated, stat, limits)),
+      fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, classifyFileStat(updated, stat, limits, status)),
       isDirty: true,
     });
+  },
+
+  markFileNodeTooLarge: (nodeId) => {
+    const state = get();
+    if (state.graph.nodes.get(nodeId)?.role !== 'file') return;
+    const previous = state.fileNodeStatus.get(nodeId);
+    if (previous?.state === 'too-large') return;
+    const next: FileNodeStatus = previous?.stat ? { state: 'too-large', stat: previous.stat } : { state: 'too-large' };
+    set({ fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, next) });
   },
 
   sendBlocker: (userNodeId) => {
@@ -872,6 +902,22 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       if (reason) return reason;
     }
     return null;
+  },
+
+  canGenerate: (userNodeId) => {
+    const { graph } = get();
+    const node = graph.nodes.get(userNodeId);
+    if (node?.role !== 'user') return false;
+    // A file node in the lineage stands in for text: the backend sends the
+    // file-only placeholder when the merged user message has no text (decision 3).
+    const hasFileAncestor = () => {
+      for (const id of GraphModel.ancestors(graph, userNodeId)) {
+        if (graph.nodes.get(id)?.role === 'file') return true;
+      }
+      return false;
+    };
+    const hasInput = !!node.content.trim() || (node.images?.length ?? 0) > 0 || hasFileAncestor();
+    return hasInput && get().sendBlocker(userNodeId) === null;
   },
 
   buildConversationContext: (nodeId) => {

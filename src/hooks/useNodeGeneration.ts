@@ -3,7 +3,7 @@ import { getBackendTransport } from '../lib/transport';
 import { useGraphStore } from '../store/useGraphStore';
 import { useProviderStore } from '../store/useProviderStore';
 import { useUIStore } from '../store/useUIStore';
-import type { AgentProvider, UserNodeData } from '../types';
+import type { AgentProvider } from '../types';
 import { logger } from '../lib/logger';
 
 interface GenerateNodeOptions {
@@ -21,6 +21,7 @@ export function useNodeGeneration() {
   const stopStreaming = useGraphStore((state) => state.stopStreaming);
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const sendBlocker = useGraphStore((state) => state.sendBlocker);
+  const canGenerate = useGraphStore((state) => state.canGenerate);
   const getEffectiveEffort = useGraphStore((state) => state.getEffectiveEffort);
   const defaultProvider = useProviderStore((state) => state.defaultProvider);
 
@@ -28,11 +29,6 @@ export function useNodeGeneration() {
     async ({ userNodeId, provider, modelId, onAgentNodeCreated }: GenerateNodeOptions): Promise<string | null> => {
       const data = nodeData.get(userNodeId);
       if (!data || data.role !== 'user') return null;
-
-      const userData = data as UserNodeData;
-      const hasContent = !!userData.content.trim();
-      const hasImages = !!(userData.images && userData.images.length > 0);
-      if (!hasContent && !hasImages) return null;
 
       if (isNodeBlocked(userNodeId)) return null;
 
@@ -42,6 +38,10 @@ export function useNodeGeneration() {
         useUIStore.getState().setNotice(blocker);
         return null;
       }
+
+      // Text, inline images, or a file node in the lineage (file-only prompts get
+      // the backend placeholder text).
+      if (!canGenerate(userNodeId)) return null;
 
       const agentNodeId = createAgentNodeDownstream(userNodeId, provider, modelId);
       onAgentNodeCreated?.(agentNodeId);
@@ -70,6 +70,7 @@ export function useNodeGeneration() {
     [
       appendToNode,
       buildConversationContext,
+      canGenerate,
       createAgentNodeDownstream,
       defaultProvider,
       getEffectiveEffort,

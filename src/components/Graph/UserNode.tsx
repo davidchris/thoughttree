@@ -47,8 +47,13 @@ export function UserNode({ id, selected }: NodeProps) {
   const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
   const generateNode = useNodeGeneration();
 
+  // Something to send (text, images, or a file node in the lineage) and no broken file node.
+  const canGenerate = useGraphStore((state) => state.canGenerate(id));
+  const sendBlockedReason = useGraphStore((state) => state.sendBlocker(id));
+
   const isEditing = editingNodeId === id;
   const isBlocked = isNodeBlocked(id);
+  const showGenerate = canGenerate || sendBlockedReason !== null;
 
   // Compute collapsed text: short content shown directly, long content uses AI summary
   const summary = nodeData?.summary;
@@ -152,7 +157,7 @@ export function UserNode({ id, selected }: NodeProps) {
   };
 
   const handleGenerate = async () => {
-    if (!content.trim() || isBlocked) return;
+    if (!canGenerate || isBlocked) return;
 
     // Exit edit mode first
     setEditing(null);
@@ -341,18 +346,18 @@ export function UserNode({ id, selected }: NodeProps) {
         </div>
       )}
 
-      {!isEditing && (content.trim() || images.length > 0) && (
+      {!isEditing && showGenerate && (
         <button
           className="generate-button"
           onClick={handleGenerate}
-          disabled={isBlocked}
-          title="Generate response (Cmd+Enter)"
+          disabled={isBlocked || !canGenerate}
+          title={sendBlockedReason ?? "Generate response (Cmd+Enter)"}
         >
           {isBlocked ? "..." : "Generate"}
         </button>
       )}
 
-      {!content.trim() && images.length === 0 && !isEditing && (
+      {!showGenerate && !isEditing && (
         <div className="node-placeholder">Double-click to edit in panel</div>
       )}
 
