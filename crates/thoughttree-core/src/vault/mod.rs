@@ -338,9 +338,6 @@ mod tests {
     use std::fs;
     use std::sync::mpsc;
     use std::time::Duration;
-    use std::sync::{mpsc, Barrier};
-    use std::thread;
-    use std::time::Duration;
 
     use tempfile::tempdir;
     use tokio::runtime::Builder;
@@ -406,7 +403,9 @@ mod tests {
                 if current == read_project_file(&path).unwrap().revision
         ));
         assert_eq!(read_project_file(&path).unwrap().content, "concurrent");
-        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        // The persistent sibling lock remains after the temporary file is
+        // cleaned up, so only the project and lock file are left.
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
     }
 
     #[test]
