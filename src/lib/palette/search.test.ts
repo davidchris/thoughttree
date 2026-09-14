@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { GraphNode } from '@thoughttree/graph-model';
+import type { FileGraphNode, GraphNode } from '@thoughttree/graph-model';
 import { PaletteSearch } from './search';
 import type { UserNodeData, AgentNodeData } from '../../types';
 
@@ -9,6 +9,23 @@ function userNode(id: string, overrides: Partial<UserNodeData> = {}): GraphNode 
 
 function agentNode(id: string, overrides: Partial<AgentNodeData> = {}): GraphNode {
   return { id, role: 'assistant', content: '', timestamp: 0, ...overrides };
+}
+
+function fileNode(id: string, path: string, overrides: Partial<FileGraphNode> = {}): GraphNode {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  return {
+    id,
+    role: 'file',
+    content: '',
+    timestamp: 0,
+    path,
+    name,
+    mimeType: 'text/markdown',
+    size: 1,
+    seenMtime: 1,
+    seenSize: 1,
+    ...overrides,
+  };
 }
 
 describe('PaletteSearch.search', () => {
@@ -101,28 +118,39 @@ describe('PaletteSearch.search', () => {
     expect(hits.map((h) => h.node.id)).toEqual(['newest', 'middle', 'oldest']);
   });
 
-  it('lists a file node by its file name, for an empty query and by name match', () => {
-    const file: GraphNode = {
-      id: 'f',
-      role: 'file',
-      content: '',
-      timestamp: 300,
-      path: 'notes/design.md',
-      name: 'design.md',
-      mimeType: 'text/markdown',
-      size: 1,
-      seenMtime: 1,
-      seenSize: 1,
-    };
+  it('lists a file node by its file name, with the path as snippet, for an empty query and by name match', () => {
+    const file = fileNode('f', 'notes/design.md', { timestamp: 300 });
     const corpus = [userNode('u', { content: 'a thought', timestamp: 100 }), file];
 
     const recent = PaletteSearch.search(corpus, '');
     expect(recent.hits.map((h) => h.node.id)).toEqual(['f', 'u']);
     expect(recent.hits[0].title.text).toBe('design.md');
+    expect(recent.hits[0].snippet).toEqual({ text: 'notes/design.md', spans: [] });
 
     const byName = PaletteSearch.search(corpus, 'design');
     expect(byName.hits.map((h) => h.node.id)).toEqual(['f']);
     expect(byName.hits[0].title).toEqual({ text: 'design.md', spans: [{ start: 0, end: 6 }] });
+    expect(byName.hits[0].snippet).toEqual({
+      text: 'notes/design.md',
+      spans: [{ start: 6, end: 12 }],
+    });
+  });
+
+  it('finds a file node by a folder in its path and highlights the folder in the path snippet', () => {
+    const corpus = [
+      fileNode('in-folder', 'research/parsers/notes.md'),
+      fileNode('elsewhere', 'inbox/todo.md'),
+      userNode('u', { content: 'unrelated' }),
+    ];
+
+    const { hits } = PaletteSearch.search(corpus, 'parsers');
+
+    expect(hits.map((h) => h.node.id)).toEqual(['in-folder']);
+    expect(hits[0].title).toEqual({ text: 'notes.md', spans: [] });
+    expect(hits[0].snippet).toEqual({
+      text: 'research/parsers/notes.md',
+      spans: [{ start: 9, end: 16 }],
+    });
   });
 
   it('caps materialized hits at the limit while reporting the total match count', () => {

@@ -9,7 +9,7 @@ The conversation DAG. Owns nodes, edges, and per-node layout positions.
 _Avoid_: tree (the structure is a DAG, not a tree), canvas, board.
 
 **GraphNode**:
-A single message in the Graph — either a user prompt or an assistant response. Pure domain shape; carries content, role, timestamp, and role-specific fields (provider/model for assistant, images for user).
+A single message in the Graph — a user prompt, an assistant response, or a File node. Pure domain shape; carries content, role, timestamp, and role-specific fields (provider/model for assistant, images for user, a Vault file reference for file).
 _Avoid_: message, item, card, ThoughtTreeFlowNodeData (that's the ReactFlow projection).
 
 **GraphEdge**:
@@ -23,6 +23,10 @@ _Avoid_: GraphService, GraphManager, GraphStore (the Zustand store *uses* GraphM
 **Synthesizer node**:
 A GraphNode with multiple parents. Receives content from converging branches as prior conversation turns.
 _Avoid_: merge node, join node.
+
+**File node**:
+A GraphNode of role `file` that references exactly one Vault file by Vault-relative path. Reference-only: it holds a Vault file reference, never file bytes, and never enters the Project file, the store, or an IPC event as content. Has no incoming GraphEdges and is never a Synthesizer node. In the Conversation path it contributes a user-role turn, delivered by mime family: raster images (png, jpg, gif, webp) are read from disk and inlined as an image block at prompt time; every other file goes as a pointer (path, type, size) the agent reads from disk with its own tools. Always fresh: the agent sees the file as it is on disk when the Turn starts, never a stored copy.
+_Avoid_: attachment (a live client subscription; also the inline image on a user GraphNode), embedded file, upload, file copy.
 
 **Conversation path**:
 The ordered sequence of GraphNodes used as LLM context for a target node. For multi-parent targets, all ancestors are included, topologically sorted by `timestamp`, with consecutive same-role messages merged (concat content).
@@ -59,6 +63,10 @@ _Avoid_: document, save file, project (alone — that's the open app state, not 
 **Vault**:
 The user's synced directory where Project files live, shared across devices and writers (desktop, server, torhaus). Sync authority is the file-sync service, never ThoughtTree.
 _Avoid_: notes directory (config-key name, not the concept), workspace.
+
+**Vault file reference**:
+What a File node stores about its file: the Vault-relative path (forward slashes, no `..`, never absolute) plus the last-seen mtime and size. Only the backend Vault file resolver turns it into a filesystem path — canonicalising and rejecting traversal, symlink escapes, and anything outside the Vault; the frontend never opens a path itself. The last-seen values exist for staleness only (a stat mismatch shows "changed on disk"); delivery ignores them and always reads the live file.
+_Avoid_: absolute path, file handle, blob, attachment data.
 
 **Guarded write**:
 The way ThoughtTree persists a Project file: serialize ThoughtTree writers, reject a detected revision mismatch, and atomically replace the whole file. External writers can bypass this protection, so independent Recovery snapshots preserve observed ThoughtTree edits rather than promising strict compare-and-swap.
@@ -180,6 +188,9 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 
 - A **Graph** contains many **GraphNodes** and many **GraphEdges**
 - A **GraphNode** has zero, one, or many parent **GraphEdges** — multiple parents = **Synthesizer node**
+- A **File node** holds one **Vault file reference** to a file in the **Vault**; it has no incoming **GraphEdges** and is never a **Synthesizer node**
+- A **File node** contributes a user-role turn to the **Conversation path** — images inlined, everything else as a pointer — read fresh from disk for every **Turn**
+- Only the backend resolver turns a **Vault file reference** into a filesystem path; file bytes never enter a **Project file**
 - A **Conversation path** is derived from a **Graph** and a target **GraphNode**
 - A **Lineage subgraph** is derived from a **Graph** and a target **GraphNode**; the **Conversation path** is its linearization
 - **Node marker**s bind **Conversation path** content to **GraphNode**s; **Structure annotation**s and the **Lineage map** describe the **Lineage subgraph**'s topology; all three are controlled by the **Structure gate**

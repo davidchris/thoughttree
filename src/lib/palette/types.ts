@@ -18,7 +18,10 @@ export interface NodeHit {
   node: GraphNode;
   /** Node summary, else content head. */
   title: HighlightedText;
-  /** Content line around the first match; absent when the match is summary-only. */
+  /**
+   * Content line around the first match; absent when the match is summary-only.
+   * For a file node: always its Vault-relative path.
+   */
   snippet?: HighlightedText;
 }
 

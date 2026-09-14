@@ -45,9 +45,12 @@ interface Match {
   firstContentPos: number;
 }
 
-/** The text a node is searched by: its content, or the file name for a file node (which has none). */
+/**
+ * The text a node is searched by: its content, or the Vault-relative path for
+ * a file node (which has no content) — so a folder name in the query finds it too.
+ */
 function searchableText(node: GraphNode): string {
-  return node.role === 'file' ? node.name : node.content;
+  return node.role === 'file' ? node.path : node.content;
 }
 
 function summaryOf(node: GraphNode): string {
@@ -96,9 +99,10 @@ function sliceAtCodePoint(text: string, start: number, end: number): string {
 }
 
 function titleText(node: GraphNode): string {
+  if (node.role === 'file') return sliceAtCodePoint(node.name, 0, TITLE_MAX_CHARS);
   const summary = summaryOf(node);
   if (summary) return summary;
-  const firstLine = searchableText(node).trimStart().split('\n', 1)[0];
+  const firstLine = node.content.trimStart().split('\n', 1)[0];
   return sliceAtCodePoint(firstLine, 0, TITLE_MAX_CHARS);
 }
 
@@ -134,6 +138,19 @@ function extractSnippet(
   return { text, spans: highlightSpans(text, matchers) };
 }
 
+/**
+ * A file node's snippet is always its Vault-relative path (where the file lives);
+ * other nodes get a content line around the first match, none when the match was summary-only.
+ */
+function snippetOf(match: Match, matchers: TokenMatcher[]): HighlightedText | undefined {
+  const { node } = match;
+  if (node.role === 'file') return { text: node.path, spans: highlightSpans(node.path, matchers) };
+  if (matchers.length > 0 && Number.isFinite(match.firstContentPos)) {
+    return extractSnippet(node.content, match.firstContentPos, matchers);
+  }
+  return undefined;
+}
+
 function toHit(match: Match, matchers: TokenMatcher[]): SearchHit {
   const title = titleText(match.node);
   const hit: SearchHit = {
@@ -141,9 +158,8 @@ function toHit(match: Match, matchers: TokenMatcher[]): SearchHit {
     node: match.node,
     title: { text: title, spans: highlightSpans(title, matchers) },
   };
-  if (matchers.length > 0 && Number.isFinite(match.firstContentPos)) {
-    hit.snippet = extractSnippet(searchableText(match.node), match.firstContentPos, matchers);
-  }
+  const snippet = snippetOf(match, matchers);
+  if (snippet) hit.snippet = snippet;
   return hit;
 }
 
