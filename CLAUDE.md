@@ -35,11 +35,13 @@ See README.md for detailed architecture diagrams and component breakdown.
 
 ## ACP Integration Notes
 
-The ACP client (`src-tauri/src/backend/acp/`) has critical implementation details:
+The ACP client (`crates/thoughttree-core/src/acp/`) has critical implementation details:
 
-- **tokio-util compat layer required:** SDK uses `futures-io` traits, not tokio's
-- **Non-Send futures:** Use `#[async_trait(?Send)]` and `tokio::task::LocalSet`
-- **Connection constructor order:** `ClientSideConnection::new(client, outgoing, incoming, spawn)` — outgoing (stdin) comes before incoming (stdout)
+- **SDK 2.x builder model:** `Client.builder().on_receive_notification(..).on_receive_request(..).connect_with(transport, main_fn)`; schema types live under `agent_client_protocol::schema::v1`
+- **tokio-util compat layer required:** transport is `ByteStreams::new(stdin.compat_write(), stdout.compat())` — SDK uses `futures-io` traits, not tokio's
+- **Handlers must be `Send`:** `SessionClient` (our trait) uses `#[async_trait]`; sessions still run on a `tokio::task::LocalSet` for the stderr logger
+- **Dispatch loop:** handlers block further message processing; permission prompts are answered from `cx.spawn` so streaming continues while the user decides
+- **Model switching:** `session/set_model` is gone; use `SetSessionConfigOptionRequest` with config id `model` when `session/new` advertises a model config option
 - **Permission handling:** Return `Selected { option_id }` with first option's ID to auto-approve
 
 ## Current Development State
@@ -59,7 +61,7 @@ Structural search: `sg -lang rust -p 'pattern'` for syntax-aware matching across
 ## Key Files
 
 - `src-tauri/src/lib.rs` - Tauri app entry point and commands
-- `src-tauri/src/backend/acp/` - ACP client (sessions, clients, process spawning)
+- `crates/thoughttree-core/src/acp/` - ACP client (sessions, clients, session setup, process spawning)
 - `src/App.tsx` - React app root
 - `src/components/SidePanel/SidePanel.test.tsx` - Example test file
 - `src-tauri/tauri.conf.json` - Tauri configuration

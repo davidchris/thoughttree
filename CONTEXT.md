@@ -89,12 +89,16 @@ The Palette's selection action: select the GraphNode, center the viewport on it,
 _Avoid_: navigate, go-to, focus (collides with DOM focus).
 
 **ACP session**:
-A single subprocess instance of a Provider's ACP adapter that the Rust backend drives via the Agent Client Protocol. Owns one streaming conversation. Orchestrated by `run_prompt_session` / `run_summary_session` / `run_model_discovery_session` in `src-tauri/src/backend/acp/sessions.rs`, driven by an ACP client.
+A single subprocess instance of a Provider's ACP adapter that the Rust backend drives via the Agent Client Protocol. Owns one streaming conversation. Orchestrated by `run_prompt_session` / `run_summary_session` / `run_model_discovery_session` in `crates/thoughttree-core/src/acp/sessions.rs`, driven by an ACP client.
 _Avoid_: agent, worker.
 
 **ACP client**:
-A `Client` trait impl that receives notifications from the ACP subprocess — `StreamingClient` (chat), `SummaryClient` (summary), `ModelDiscoveryClient` (model list). Lives in `src-tauri/src/backend/acp/clients.rs`. Distinct from ACP session, which is the orchestration around it.
+A `SessionClient` trait impl that receives notifications and permission requests from the ACP subprocess — `StreamingClient` (chat), `SummaryClient` (summary), `ModelDiscoveryClient` (model list). Lives in `crates/thoughttree-core/src/acp/clients.rs`. Distinct from ACP session, which is the orchestration around it.
 _Avoid_: listener, callback.
+
+**Session setup**:
+What `session/new` reported about model selection, read from either ACP API: the `model` config option (Codex) or the deprecated `models` list (Claude Code sidecar). `SessionSetup` in `crates/thoughttree-core/src/acp/session_setup.rs` lists the available models and issues the matching switch request (`session/set_config_option` or legacy `session/set_model`).
+_Avoid_: model state, capabilities.
 
 **Provider**:
 A supported source of assistant responses: Codex or Claude Code. Each Provider has one ACP adapter, discoverable executable paths, and a list of available models.

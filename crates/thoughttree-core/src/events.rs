@@ -87,7 +87,7 @@ impl Default for PermissionRequestEvent {
     }
 }
 
-pub trait SessionEventSink: Clone + 'static {
+pub trait SessionEventSink: Clone + Send + Sync + 'static {
     fn stream_chunk(&self, event: StreamChunkEvent);
     fn permission_request(&self, event: PermissionRequestEvent);
 }

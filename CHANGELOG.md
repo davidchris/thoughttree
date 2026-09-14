@@ -8,6 +8,7 @@
 - Codex is the default provider for new configurations. Automatic node headings now use the default provider.
 - Removed Gemini execution, installation settings, and provider choices. Saved messages remain readable.
 - Assistant replies now separate progress commentary from the final answer with a horizontal rule when tool calls or thinking split the message. Applies to Codex and Claude Code.
+- Updated the ACP client library to 2.x. Codex turns no longer log `failed to decode ... usage_update` errors, and context usage is logged per turn. Model discovery and switching work on both the config-option API (Codex) and the legacy `models` API (Claude Code sidecar).
 
 - Guarded saves now serialize local writers across revision validation and atomic replacement to prevent lost updates.
 - Building the core crate now requires Rust 1.89 or later.

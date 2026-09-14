@@ -2,9 +2,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use agent_client_protocol::{
-    Client, ContentBlock, RequestPermissionOutcome, RequestPermissionRequest,
-    RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
+use agent_client_protocol::schema::v1::{
+    ContentBlock, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
+    SelectedPermissionOutcome, SessionNotification, SessionUpdate,
 };
 use async_trait::async_trait;
 use futures::lock::Mutex;
@@ -19,6 +19,22 @@ use crate::permissions::PermissionBroker;
 /// tool calls or thinking, so intermediary commentary and the final answer
 /// don't run together as one paragraph.
 pub const SEGMENT_SEPARATOR: &str = "\n\n---\n\n";
+
+/// Agent-to-client traffic for one ACP session. `sessions::connect_agent`
+/// registers an implementation as the connection's notification and
+/// permission-request handlers, so the futures must be `Send`.
+#[async_trait]
+pub trait SessionClient: Send + Sync + 'static {
+    async fn request_permission(
+        &self,
+        args: RequestPermissionRequest,
+    ) -> agent_client_protocol::Result<RequestPermissionResponse>;
+
+    async fn session_notification(
+        &self,
+        args: SessionNotification,
+    ) -> agent_client_protocol::Result<()>;
+}
 
 /// ACP Client that streams to frontend and handles permissions via UI
 pub struct StreamingClient<S> {
@@ -143,8 +159,8 @@ impl<S: SessionEventSink> StreamingClient<S> {
     }
 }
 
-#[async_trait(?Send)]
-impl<S: SessionEventSink> Client for StreamingClient<S> {
+#[async_trait]
+impl<S: SessionEventSink> SessionClient for StreamingClient<S> {
     async fn request_permission(
         &self,
         args: RequestPermissionRequest,
@@ -281,6 +297,10 @@ impl<S: SessionEventSink> Client for StreamingClient<S> {
                 self.note_segment_boundary();
                 debug!("[Plan] {:?}", plan);
             }
+            // Bookkeeping, not agent activity: must not split message segments.
+            SessionUpdate::UsageUpdate(usage) => {
+                info!("[Usage] {}/{} tokens in context", usage.used, usage.size);
+            }
             _ => {
                 debug!("[Other update] {:?}", args.update);
             }
@@ -292,8 +312,8 @@ impl<S: SessionEventSink> Client for StreamingClient<S> {
 /// Minimal ACP client just for model discovery - no streaming or permissions needed
 pub struct ModelDiscoveryClient;
 
-#[async_trait(?Send)]
-impl Client for ModelDiscoveryClient {
+#[async_trait]
+impl SessionClient for ModelDiscoveryClient {
     async fn request_permission(
         &self,
         _args: RequestPermissionRequest,
@@ -341,8 +361,8 @@ pub fn is_allowed_summary_tool(tool_name: &str) -> bool {
         .any(|pattern| tool_name.contains(pattern))
 }
 
-#[async_trait(?Send)]
-impl Client for SummaryClient {
+#[async_trait]
+impl SessionClient for SummaryClient {
     async fn request_permission(
         &self,
         args: RequestPermissionRequest,
@@ -388,13 +408,13 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex as StdMutex};
 
-    use agent_client_protocol::{
-        Client, ContentBlock, ContentChunk, PermissionOption, PermissionOptionKind,
+    use agent_client_protocol::schema::v1::{
+        ContentBlock, ContentChunk, PermissionOption, PermissionOptionKind,
         RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
-        TextContent, ToolCall, ToolCallId, ToolCallUpdate, ToolCallUpdateFields,
+        TextContent, ToolCall, ToolCallId, ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
     };
 
-    use super::{is_allowed_summary_tool, StreamingClient, SEGMENT_SEPARATOR};
+    use super::{is_allowed_summary_tool, SessionClient, StreamingClient, SEGMENT_SEPARATOR};
     use crate::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
     use crate::permissions::PermissionBroker;
 
@@ -449,6 +469,13 @@ mod tests {
         SessionNotification::new(
             "session-1",
             SessionUpdate::ToolCall(ToolCall::new(ToolCallId::new("tc-1"), "Read file")),
+        )
+    }
+
+    fn usage_update() -> SessionNotification {
+        SessionNotification::new(
+            "session-1",
+            SessionUpdate::UsageUpdate(UsageUpdate::new(10, 100)),
         )
     }
 
@@ -620,6 +647,45 @@ mod tests {
             .await;
 
             assert_eq!(sink.content(), "Hello world");
+        });
+    }
+
+    #[test]
+    fn usage_update_notification_decodes_from_codex_wire_shape() {
+        // codex-acp 1.11 sends this every turn; the 0.9 crate rejected it as
+        // an unknown variant and logged a decode error.
+        let notification: SessionNotification = serde_json::from_value(serde_json::json!({
+            "sessionId": "session-1",
+            "update": {"sessionUpdate": "usage_update", "used": 1234, "size": 200000}
+        }))
+        .unwrap();
+
+        match notification.update {
+            SessionUpdate::UsageUpdate(usage) => {
+                assert_eq!((usage.used, usage.size), (1234, 200000));
+            }
+            other => panic!("expected usage update, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn streaming_client_ignores_usage_updates_for_segmenting() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let sink = RecordingSink::default();
+            let client = streaming_client(sink.clone());
+
+            notify_all(
+                &client,
+                vec![message_chunk("Hel"), usage_update(), message_chunk("lo")],
+            )
+            .await;
+
+            assert_eq!(sink.content(), "Hello");
         });
     }
 
