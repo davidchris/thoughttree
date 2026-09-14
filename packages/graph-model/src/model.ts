@@ -1,4 +1,4 @@
-import type { Graph, GraphEdge, ImageAttachment, NodeId } from './types';
+import type { FileGraphNode, FileRef, Graph, GraphEdge, GraphNode, ImageAttachment, NodeId } from './types';
 
 interface Adjacency {
   parents: Map<NodeId, NodeId[]>;
@@ -42,6 +42,56 @@ interface ConversationMessage {
   role: string;
   content: string;
   images?: ImageAttachment[];
+  files?: FileRef[];
+}
+
+/**
+ * What one GraphNode contributes to the Conversation path before merging.
+ * A file node acts as a user turn carrying a file ref and no text; the
+ * backend turns the ref into the actual content block at prompt time.
+ */
+interface Segment {
+  role: 'user' | 'assistant';
+  text: string;
+  images?: ImageAttachment[];
+  files?: FileRef[];
+}
+
+function segmentOf(node: GraphNode): Segment | undefined {
+  if (node.role === 'file') {
+    const { path, name, mimeType, size } = node;
+    return { role: 'user', text: '', files: [{ path, name, mimeType, size }] };
+  }
+  if (!node.content.trim()) return undefined;
+  const segment: Segment = { role: node.role, text: node.content };
+  if (node.role === 'user' && node.images?.length) segment.images = [...node.images];
+  return segment;
+}
+
+/** Text shown in place of a file node's content inside a Node marker. */
+function fileMarkerText(node: FileGraphNode): string {
+  return `[file: ${node.name}]`;
+}
+
+function joinContent(left: string, right: string): string {
+  if (!left) return right;
+  if (!right) return left;
+  return `${left}\n\n${right}`;
+}
+
+/** Appends a segment to the running message list, merging into the last message when roles match. */
+function mergeSegment(merged: ConversationMessage[], segment: Segment): void {
+  const last = merged[merged.length - 1];
+  if (last && last.role === segment.role) {
+    last.content = joinContent(last.content, segment.text);
+    if (segment.images) last.images = [...(last.images ?? []), ...segment.images];
+    if (segment.files) last.files = [...(last.files ?? []), ...segment.files];
+    return;
+  }
+  const message: ConversationMessage = { role: segment.role, content: segment.text };
+  if (segment.images) message.images = segment.images;
+  if (segment.files) message.files = segment.files;
+  merged.push(message);
 }
 
 const LINEAGE_MAP_INTRO =
@@ -239,23 +289,14 @@ export const GraphModel = {
       for (const id of ids) {
         const node = g.nodes.get(id);
         if (!node) continue;
-        if (!node.content.trim()) continue;
+        const segment = segmentOf(node);
+        if (!segment) continue;
 
-        const content = nodeMarker(id, node.role, node.content, adj, include, pathIndex, shortIds);
-        const last = merged[merged.length - 1];
-        if (last && last.role === node.role) {
-          last.content = `${last.content}\n\n${content}`;
-          if (node.role === 'user' && node.images?.length) {
-            last.images = [...(last.images ?? []), ...node.images];
-          }
-          continue;
-        }
-
-        const message: ConversationMessage = { role: node.role, content };
-        if (node.role === 'user' && node.images?.length) {
-          message.images = [...node.images];
-        }
-        merged.push(message);
+        // A file node has no text of its own; the marker still names it so the
+        // agent can attribute the attached file to a graph node.
+        const markerText = node.role === 'file' ? fileMarkerText(node) : segment.text;
+        segment.text = nodeMarker(id, node.role, markerText, adj, include, pathIndex, shortIds);
+        mergeSegment(merged, segment);
       }
 
       if (merged.length > 0) {
@@ -269,22 +310,8 @@ export const GraphModel = {
     for (const id of ids) {
       const node = g.nodes.get(id);
       if (!node) continue;
-      if (!node.content.trim()) continue;
-
-      const last = merged[merged.length - 1];
-      if (last && last.role === node.role) {
-        last.content = `${last.content}\n\n${node.content}`;
-        if (node.role === 'user' && node.images?.length) {
-          last.images = [...(last.images ?? []), ...node.images];
-        }
-        continue;
-      }
-
-      const message: ConversationMessage = { role: node.role, content: node.content };
-      if (node.role === 'user' && node.images?.length) {
-        message.images = [...node.images];
-      }
-      merged.push(message);
+      const segment = segmentOf(node);
+      if (segment) mergeSegment(merged, segment);
     }
 
     return merged;

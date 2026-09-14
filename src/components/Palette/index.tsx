@@ -16,6 +16,7 @@ const DEFAULT_NODE_HEIGHT = 120;
 
 function roleLabel(node: GraphNode): string {
   if (node.role === 'user') return 'User';
+  if (node.role === 'file') return 'File';
   return providerShortName(node.provider);
 }
 

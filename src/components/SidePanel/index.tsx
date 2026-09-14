@@ -139,7 +139,7 @@ export function SidePanel() {
           <span className={`side-panel-badge ${isAgent ? 'agent' : 'user'}`}>
             {isAgent
               ? providerShortName((data as AgentNodeData).provider)
-              : 'User'}
+              : isUserNode ? 'User' : 'File'}
           </span>
           {isStreaming && <span className="side-panel-streaming">Generating...</span>}
           <span className="side-panel-timestamp">{formattedTime}</span>

@@ -101,6 +101,30 @@ describe('PaletteSearch.search', () => {
     expect(hits.map((h) => h.node.id)).toEqual(['newest', 'middle', 'oldest']);
   });
 
+  it('lists a file node by its file name, for an empty query and by name match', () => {
+    const file: GraphNode = {
+      id: 'f',
+      role: 'file',
+      content: '',
+      timestamp: 300,
+      path: 'notes/design.md',
+      name: 'design.md',
+      mimeType: 'text/markdown',
+      size: 1,
+      seenMtime: 1,
+      seenSize: 1,
+    };
+    const corpus = [userNode('u', { content: 'a thought', timestamp: 100 }), file];
+
+    const recent = PaletteSearch.search(corpus, '');
+    expect(recent.hits.map((h) => h.node.id)).toEqual(['f', 'u']);
+    expect(recent.hits[0].title.text).toBe('design.md');
+
+    const byName = PaletteSearch.search(corpus, 'design');
+    expect(byName.hits.map((h) => h.node.id)).toEqual(['f']);
+    expect(byName.hits[0].title).toEqual({ text: 'design.md', spans: [{ start: 0, end: 6 }] });
+  });
+
   it('caps materialized hits at the limit while reporting the total match count', () => {
     const corpus = [
       userNode('a', { content: 'parser one', timestamp: 3 }),

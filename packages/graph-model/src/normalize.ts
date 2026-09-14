@@ -1,5 +1,6 @@
 import type {
   AssistantGraphNode,
+  FileGraphNode,
   GraphAgentProvider,
   GraphNode,
   ImageAttachment,
@@ -348,6 +349,26 @@ export function normalizeGraphNode(value: unknown): GraphNode | undefined {
       incomplete: value.incomplete === true ? true : undefined,
       provenance: normalizeProvenance(value.provenance),
     });
+  }
+
+  if (value.role === 'file') {
+    const path = str(value.path);
+    const rawName = str(value.name);
+    const mimeType = str(value.mimeType);
+    const size = num(value.size);
+    const seenMtime = num(value.seenMtime);
+    const seenSize = num(value.seenSize);
+    if (path === undefined || !isVaultRelativePath(path)) return undefined;
+    // A name with directory components is a host path in disguise; drop rather than repair.
+    if (rawName === undefined || safeDisplayName(rawName, new Loss()) !== rawName) return undefined;
+    if (mimeType === undefined || size === undefined || seenMtime === undefined || seenSize === undefined) {
+      return undefined;
+    }
+    // File nodes never carry text; the file itself is read by the backend on demand.
+    const node: FileGraphNode = {
+      id, role: 'file', content: '', timestamp, path, name: rawName, mimeType, size, seenMtime, seenSize,
+    };
+    return node;
   }
 
   return undefined;

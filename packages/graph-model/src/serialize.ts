@@ -1,7 +1,7 @@
 import { normalizeGraphNode } from './normalize';
 import type { Graph, GraphEdge, GraphJSON, GraphNode, NodeId, Position } from './types';
 
-export const GRAPH_JSON_VERSION = 4;
+export const GRAPH_JSON_VERSION = 5;
 
 interface LegacyV2Node {
   id: NodeId;

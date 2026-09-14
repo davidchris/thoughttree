@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GraphMutations } from './mutations';
 import { normalizeProvenance, safeToolTitle } from './normalize';
-import { GraphSerialize } from './serialize';
+import { GRAPH_JSON_VERSION, GraphSerialize } from './serialize';
 import type { GraphJSON, GraphNode, ToolActivityKind } from './types';
 import projectV4 from '../../../test/fixtures/project-v4.json';
 
@@ -41,7 +41,8 @@ describe('GraphSerialize.toJSON / fromJSON', () => {
     const restored = GraphSerialize.fromJSON(graphJSON);
     const serialized = GraphSerialize.toJSON(restored);
 
-    expect(serialized).toEqual(graphJSON);
+    // v4 → v5 is a no-op migration: same shape, only the version advances.
+    expect(serialized).toEqual({ ...graphJSON, version: 5 });
     expect(serialized.nodes[1]).toMatchObject({
       content: 'The exact assistant answer stays unchanged.',
       provenance: {
@@ -378,5 +379,55 @@ describe('safeToolTitle', () => {
     ['Fetch https://example.com/docs', 'Fetch https://example.com/docs'],
   ])('keeps %j as a summary', (title, expected) => {
     expect(safeToolTitle(title, 'other')).toEqual({ title: expected, redacted: false });
+  });
+});
+
+describe('GraphSerialize file nodes', () => {
+  const fileNode: GraphNode = {
+    id: 'f',
+    role: 'file',
+    content: '',
+    timestamp: 5,
+    path: 'notes/design.md',
+    name: 'design.md',
+    mimeType: 'text/markdown',
+    size: 1234,
+    seenMtime: 1750000000000,
+    seenSize: 1234,
+  };
+
+  function jsonWith(node: Record<string, unknown>): GraphJSON {
+    return JSON.parse(
+      JSON.stringify({ version: GRAPH_JSON_VERSION, nodes: [node], edges: [], layout: [] }),
+    );
+  }
+
+  it('round-trips a file node with its Vault-relative reference fields', () => {
+    let g = GraphMutations.empty();
+    g = GraphMutations.addNode(g, fileNode, { x: 1, y: 2 });
+
+    const restored = GraphSerialize.fromJSON(GraphSerialize.toJSON(g));
+
+    expect(restored.nodes.get('f')).toEqual(fileNode);
+    expect(restored.layout.get('f')).toEqual({ x: 1, y: 2 });
+  });
+
+  it('forces file node content to empty so no text is smuggled through the Project file', () => {
+    const restored = GraphSerialize.fromJSON(jsonWith({ ...fileNode, content: 'smuggled text' }));
+    expect(restored.nodes.get('f')?.content).toBe('');
+  });
+
+  it.each([
+    ['an absolute path', { path: '/Users/me/design.md' }],
+    ['a parent-directory path', { path: '../design.md' }],
+    ['a file: URL path', { path: 'file:///design.md' }],
+    ['a name carrying directory components', { name: 'notes/design.md' }],
+    ['no mimeType', { mimeType: undefined }],
+    ['no size', { size: undefined }],
+    ['no seenMtime', { seenMtime: undefined }],
+    ['no seenSize', { seenSize: undefined }],
+  ])('drops a file node with %s', (_label, patch) => {
+    const restored = GraphSerialize.fromJSON(jsonWith({ ...fileNode, ...patch }));
+    expect(restored.nodes.has('f')).toBe(false);
   });
 });

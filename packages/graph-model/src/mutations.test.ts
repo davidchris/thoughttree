@@ -39,6 +39,32 @@ describe('GraphMutations.addEdge', () => {
     expect(g.edges).toEqual([{ id: 'a->b', source: 'a', target: 'b' }]);
   });
 
+  it('refuses an edge into a file node, which never has parents', () => {
+    const a = userNode('a', '', 1);
+    const file: GraphNode = {
+      id: 'f',
+      role: 'file',
+      content: '',
+      timestamp: 2,
+      path: 'notes/a.md',
+      name: 'a.md',
+      mimeType: 'text/markdown',
+      size: 1,
+      seenMtime: 1,
+      seenSize: 1,
+    };
+    let g = GraphMutations.empty();
+    g = GraphMutations.addNode(g, a, { x: 0, y: 0 });
+    g = GraphMutations.addNode(g, file, { x: 0, y: 100 });
+
+    const rejected = GraphMutations.addEdge(g, 'a', 'f');
+    expect(rejected).toBe(g);
+    expect(rejected.edges).toEqual([]);
+
+    // The reverse direction (file node as a parent) is the supported shape.
+    expect(GraphMutations.addEdge(g, 'f', 'a').edges).toEqual([{ id: 'f->a', source: 'f', target: 'a' }]);
+  });
+
   it('is a no-op when an edge with the same id already exists', () => {
     const a = userNode('a', '', 1);
     const b = userNode('b', '', 2);

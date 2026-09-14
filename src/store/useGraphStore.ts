@@ -11,6 +11,7 @@ import {
   AgentNodeData,
   AgentProvider,
   EffortPreferences,
+  FileNodeData,
   ImageAttachment,
   MessageNodeData,
   ModelPreferences,
@@ -31,6 +32,7 @@ import {
   GraphSerialize,
   isFileUrlOrBarePath,
   isWebUrl,
+  type FileRef,
   type Graph,
   type GraphJSON,
   type NodeId,
@@ -65,19 +67,25 @@ interface CurrentProjectFile {
   projectEffortPreferences?: StoredProviderRecord<ReasoningEffort> | null;
 }
 
-interface ProjectFileV3 extends Omit<CurrentProjectFile, 'version'> {
-  version: 3;
+// v3 → v4 added Turn provenance (ADR 0006); v4 → v5 added file nodes (ADR 0008).
+// Both are no-op migrations on load: the shape is unchanged, older files just
+// lack the newer optional node kinds/fields.
+interface ProjectFileV3OrV4 extends Omit<CurrentProjectFile, 'version'> {
+  version: 3 | 4;
 }
 
 interface ProjectFileLegacyV2 {
   version: 1 | 2;
   nodes: Array<{ id: string; position: { x: number; y: number }; [key: string]: unknown }>;
   edges: Array<{ id: string; source: string; target: string; [key: string]: unknown }>;
-  nodeData: Record<string, MessageNodeData>;
+  // Legacy files predate file nodes, so only text-bearing roles occur here.
+  nodeData: Record<string, LegacyV2NodeData>;
   projectModelPreferences?: StoredProviderRecord | null;
 }
 
-type ProjectFile = CurrentProjectFile | ProjectFileV3 | ProjectFileLegacyV2;
+type LegacyV2NodeData = UserNodeData | AgentNodeData;
+
+type ProjectFile = CurrentProjectFile | ProjectFileV3OrV4 | ProjectFileLegacyV2;
 
 interface GraphState {
   // Source of truth
@@ -116,6 +124,11 @@ interface GraphState {
   createUserNode: (position?: { x: number; y: number }) => string;
   createAgentNodeDownstream: (parentId: string, provider?: AgentProvider, model?: string) => string;
   createUserNodeDownstream: (parentId: string) => string;
+  /** Links a Vault file as a file node (see ADR 0008); the file itself is never copied into the Graph. */
+  addFileNode: (
+    file: Omit<FileNodeData, 'id' | 'role' | 'content' | 'timestamp'>,
+    position: { x: number; y: number },
+  ) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, chunk: string) => void;
   flushStreamingChunks: () => void;
@@ -133,6 +146,7 @@ interface GraphState {
     role: string;
     content: string;
     images?: ImageAttachment[];
+    files?: FileRef[];
   }>;
   getConversationPathNodeIds: (nodeId: string) => string[];
 
@@ -170,7 +184,10 @@ function deserializeProjectFile(data: string) {
   let projectModelPreferences: ModelPreferences | null = null;
   let projectEffortPreferences: EffortPreferences | null = null;
 
-  if ((parsed.version === GRAPH_JSON_VERSION || parsed.version === 3) && 'graph' in parsed) {
+  if (
+    (parsed.version === GRAPH_JSON_VERSION || parsed.version === 4 || parsed.version === 3) &&
+    'graph' in parsed
+  ) {
     graph = GraphSerialize.fromJSON(parsed.graph);
     projectModelPreferences = parsed.projectModelPreferences
       ? withoutNullEntries(parsed.projectModelPreferences)
@@ -332,9 +349,9 @@ function projectGraph(
 }
 
 function migrateLegacyV2NodeData(
-  raw: Record<string, MessageNodeData>,
-): Record<string, MessageNodeData> {
-  const migrated: Record<string, MessageNodeData> = {};
+  raw: Record<string, LegacyV2NodeData>,
+): Record<string, LegacyV2NodeData> {
+  const migrated: Record<string, LegacyV2NodeData> = {};
   for (const [id, node] of Object.entries(raw)) {
     const contentUpdatedAt = node.contentUpdatedAt ?? node.timestamp;
     if (node.role === 'assistant' && !('provider' in node)) {
@@ -543,6 +560,20 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       isDirty: true,
     });
     useUIStore.getState().setEditing(id);
+    return id;
+  },
+
+  addFileNode: (file, position) => {
+    const id = generateId();
+    const data: FileNodeData = { ...file, id, role: 'file', content: '', timestamp: Date.now() };
+    const state = get();
+    const graph = GraphMutations.addNode(state.graph, data, position);
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, id),
+      selectedNodeId: id,
+      isDirty: true,
+    });
     return id;
   },
 
@@ -898,6 +929,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       .map((id) => {
         const node = graph.nodes.get(id);
         if (!node) return '';
+        if (node.role === 'file') return `## File\n\n${node.path}`;
         const header = node.role === 'user' ? '## User' : '## Assistant';
         const provenance =
           node.role === 'assistant' && node.provenance

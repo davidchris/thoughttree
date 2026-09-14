@@ -45,14 +45,24 @@ interface Match {
   firstContentPos: number;
 }
 
+/** The text a node is searched by: its content, or the file name for a file node (which has none). */
+function searchableText(node: GraphNode): string {
+  return node.role === 'file' ? node.name : node.content;
+}
+
+function summaryOf(node: GraphNode): string {
+  return node.role === 'file' ? '' : (node.summary ?? '');
+}
+
 function matchNode(node: GraphNode, matchers: TokenMatcher[]): Match | null {
-  const summary = node.summary ?? '';
+  const content = searchableText(node);
+  const summary = summaryOf(node);
   // Empty nodes have nothing to show in a result row (empty query matches everything else).
-  if (node.content === '' && summary === '') return null;
+  if (content === '' && summary === '') return null;
   let firstContentPos = Infinity;
   let summaryMatched = false;
   for (const matcher of matchers) {
-    const contentMatch = matcher.first.exec(node.content);
+    const contentMatch = matcher.first.exec(content);
     const inSummary = matcher.first.test(summary);
     if (!contentMatch && !inSummary) return null;
     if (contentMatch) firstContentPos = Math.min(firstContentPos, contentMatch.index);
@@ -62,6 +72,7 @@ function matchNode(node: GraphNode, matchers: TokenMatcher[]): Match | null {
 }
 
 function recency(node: GraphNode): number {
+  if (node.role === 'file') return node.timestamp;
   return node.contentUpdatedAt ?? node.timestamp;
 }
 
@@ -85,8 +96,9 @@ function sliceAtCodePoint(text: string, start: number, end: number): string {
 }
 
 function titleText(node: GraphNode): string {
-  if (node.summary) return node.summary;
-  const firstLine = node.content.trimStart().split('\n', 1)[0];
+  const summary = summaryOf(node);
+  if (summary) return summary;
+  const firstLine = searchableText(node).trimStart().split('\n', 1)[0];
   return sliceAtCodePoint(firstLine, 0, TITLE_MAX_CHARS);
 }
 
@@ -130,7 +142,7 @@ function toHit(match: Match, matchers: TokenMatcher[]): SearchHit {
     title: { text: title, spans: highlightSpans(title, matchers) },
   };
   if (matchers.length > 0 && Number.isFinite(match.firstContentPos)) {
-    hit.snippet = extractSnippet(match.node.content, match.firstContentPos, matchers);
+    hit.snippet = extractSnippet(searchableText(match.node), match.firstContentPos, matchers);
   }
   return hit;
 }

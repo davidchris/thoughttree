@@ -2,14 +2,15 @@ mod backend;
 
 use backend::commands::{
     add_recent_project, check_acp_available, export_markdown, generate_summary,
-    get_available_models, get_available_providers, get_default_provider, get_effort_preferences,
-    get_model_preferences, get_notes_directory, get_provider_paths, get_recent_projects,
-    import_kagi_export, list_project_recovery, list_projects, load_project, new_project_dialog,
-    open_project_dialog, pick_kagi_export, pick_notes_directory, pick_provider_executable,
-    read_project_recovery, remove_recent_project, respond_to_permission, save_project,
+    get_attachment_limits, get_available_models, get_available_providers, get_default_provider,
+    get_effort_preferences, get_model_preferences, get_notes_directory, get_provider_paths,
+    get_recent_projects, import_kagi_export, list_project_recovery, list_projects, load_project,
+    new_project_dialog, open_project_dialog, pick_kagi_export, pick_notes_directory,
+    pick_provider_executable, pick_vault_file, read_project_recovery, read_vault_file_preview,
+    remove_recent_project, resolve_dropped_file, respond_to_permission, save_project,
     save_project_copy, search_files, send_prompt, set_default_provider, set_effort_preference,
     set_model_preference, set_notes_directory, set_provider_path, snapshot_project,
-    validate_provider_path,
+    stat_vault_file, validate_provider_path,
 };
 use backend::state::AppState;
 
@@ -63,6 +64,11 @@ pub fn run() {
             generate_summary,
             import_kagi_export,
             pick_kagi_export,
+            pick_vault_file,
+            resolve_dropped_file,
+            stat_vault_file,
+            read_vault_file_preview,
+            get_attachment_limits,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

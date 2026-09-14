@@ -37,6 +37,27 @@ describe('graphToFlowNodes', () => {
     expect(b.data).toEqual({ id: 'b', isSelected: false });
   });
 
+  it('projects a file node to the file ReactFlow type', () => {
+    const file: GraphNode = {
+      id: 'f',
+      role: 'file',
+      content: '',
+      timestamp: 1,
+      path: 'notes/a.md',
+      name: 'a.md',
+      mimeType: 'text/markdown',
+      size: 1,
+      seenMtime: 1,
+      seenSize: 1,
+    };
+    let g = GraphMutations.empty();
+    g = GraphMutations.addNode(g, file, { x: 5, y: 6 });
+
+    const [node] = graphToFlowNodes(g, { selectedNodeId: null });
+    expect(node.type).toBe('file');
+    expect(node.data).toEqual({ id: 'f', isSelected: false });
+  });
+
   it('marks the selected node', () => {
     let g = GraphMutations.empty();
     g = GraphMutations.addNode(g, userNode('a'), { x: 0, y: 0 });

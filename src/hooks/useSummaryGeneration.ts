@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useGraphStore } from '../store/useGraphStore';
-import type { MessageNodeData } from '../types';
+import type { AgentNodeData, UserNodeData } from '../types';
 import { logger } from '../lib/logger';
 import { getBackendTransport } from '../lib/transport';
 
@@ -12,11 +12,14 @@ interface SummaryResult {
   summary: string;
 }
 
-export function getContentVersionTimestamp(data: Pick<MessageNodeData, 'timestamp' | 'contentUpdatedAt'>): number {
+/** Nodes with editable text that can carry a summary; file nodes have neither. */
+type SummarizableNodeData = UserNodeData | AgentNodeData;
+
+export function getContentVersionTimestamp(data: Pick<SummarizableNodeData, 'timestamp' | 'contentUpdatedAt'>): number {
   return data.contentUpdatedAt ?? data.timestamp;
 }
 
-export function hasFreshSummary(data: Pick<MessageNodeData, 'timestamp' | 'contentUpdatedAt' | 'summary' | 'summaryTimestamp'>): boolean {
+export function hasFreshSummary(data: Pick<SummarizableNodeData, 'timestamp' | 'contentUpdatedAt' | 'summary' | 'summaryTimestamp'>): boolean {
   if (!data.summary || !data.summaryTimestamp) return false;
   return data.summaryTimestamp >= getContentVersionTimestamp(data);
 }
@@ -74,6 +77,9 @@ export function useSummaryGeneration() {
     for (const [nodeId, data] of nodeData) {
       // Skip if currently streaming
       if (streamingNodeIds.has(nodeId)) continue;
+
+      // File nodes carry no text to summarize
+      if (data.role === 'file') continue;
 
       // Skip if no content
       if (!data.content || !data.content.trim()) continue;

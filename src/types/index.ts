@@ -1,4 +1,4 @@
-import type { TurnProvenance } from '@thoughttree/graph-model';
+import type { FileGraphNode, TurnProvenance } from '@thoughttree/graph-model';
 
 // ============================================================================
 // Agent Provider Types
@@ -130,7 +130,10 @@ export interface AgentNodeData {
   // Note: isStreaming is derived from store.streamingNodeId, not stored here
 }
 
-export type MessageNodeData = UserNodeData | AgentNodeData;
+/** A Vault file linked by reference; same shape as FileGraphNode in @thoughttree/graph-model. */
+export type FileNodeData = FileGraphNode;
+
+export type MessageNodeData = UserNodeData | AgentNodeData | FileNodeData;
 
 // Permission system
 export interface PermissionOption {
