@@ -105,7 +105,28 @@ pub trait SessionEventSink: Clone + Send + Sync + 'static {
 
 #[cfg(test)]
 mod tests {
-    use super::{PermissionRequestEvent, PermissionRequestOption, StreamChunkEvent};
+    use super::{
+        PermissionRequestEvent, PermissionRequestOption, StreamChunkEvent, TurnProvenanceEvent,
+    };
+    use crate::acp::provenance::{ProvenanceCompleteness, TurnProvenance};
+
+    #[test]
+    fn turn_provenance_event_serializes_with_snake_case_node_id() {
+        let event = TurnProvenanceEvent {
+            node_id: "node-1".to_string(),
+            provenance: TurnProvenance {
+                completeness: ProvenanceCompleteness::Complete,
+                references: vec![],
+                activity: vec![],
+            },
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            json,
+            r#"{"node_id":"node-1","provenance":{"completeness":"complete","references":[],"activity":[]}}"#
+        );
+    }
 
     #[test]
     fn stream_chunk_event_serializes_with_existing_wire_shape() {

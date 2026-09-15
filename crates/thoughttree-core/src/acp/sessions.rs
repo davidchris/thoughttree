@@ -19,6 +19,7 @@ use tracing::{info, warn};
 use crate::acp::attachments::build_prompt_blocks;
 use crate::acp::clients::{ModelDiscoveryClient, SessionClient, StreamingClient, SummaryClient};
 use crate::acp::process::spawn_agent_subprocess;
+use crate::acp::provenance::TurnOutcome;
 use crate::acp::session_setup::{new_session, set_model, SessionSetup};
 use crate::events::SessionEventSink;
 use crate::permissions::PermissionBroker;
@@ -288,7 +289,11 @@ pub async fn run_prompt_session<S: SessionEventSink>(
     .await;
     // Provenance is emitted on every outcome, so a cancelled or failed Turn
     // still records what the agent did before it stopped.
-    client.close_turn();
+    client.close_turn(if result.is_ok() {
+        TurnOutcome::Finished
+    } else {
+        TurnOutcome::Aborted
+    });
     result
 }
 

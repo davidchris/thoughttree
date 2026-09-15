@@ -30,7 +30,15 @@ use crate::vault::files::relativize_vault_path;
 pub enum ProvenanceCompleteness {
     Complete,
     Partial,
-    Unknown,
+}
+
+/// How the Turn ended, as known by the caller of [`TurnRecorder::close`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnOutcome {
+    /// The prompt request returned normally; the whole Turn was observed.
+    Finished,
+    /// The prompt request failed or was cancelled; later activity may be missing.
+    Aborted,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
@@ -77,14 +85,12 @@ pub enum ToolActivityKind {
     Search,
     Execute,
     Fetch,
-    Delegate,
     Other,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolActivityStatus {
-    Pending,
     Completed,
     Failed,
     Incomplete,
@@ -214,17 +220,15 @@ impl TurnRecorder {
         let locations = paths_of(Some(call.locations.as_slice()));
         match self.tools.get_mut(&call.tool_call_id) {
             Some(record) => {
-                record.title = call.title.clone();
+                record.title = safe_title(&call.title);
                 record.kind = call.kind;
-                if !locations.is_empty() {
-                    record.locations = locations;
-                }
+                merge_locations(&mut record.locations, locations);
                 apply_status(record, Some(call.status), now);
             }
             None => {
                 let mut record = ToolRecord {
                     kind: call.kind,
-                    title: call.title.clone(),
+                    title: safe_title(&call.title),
                     status: ToolCallStatus::Pending,
                     locations,
                     started_at: now,
@@ -249,7 +253,7 @@ impl TurnRecorder {
                     update.tool_call_id.clone(),
                     ToolRecord {
                         kind: ToolKind::Other,
-                        title: String::new(),
+                        title: safe_title(""),
                         status: ToolCallStatus::Pending,
                         locations: Vec::new(),
                         started_at: now,
@@ -263,15 +267,12 @@ impl TurnRecorder {
             }
         };
         if let Some(title) = &fields.title {
-            record.title = title.clone();
+            record.title = safe_title(title);
         }
         if let Some(kind) = fields.kind {
             record.kind = kind;
         }
-        let locations = paths_of(fields.locations.as_deref());
-        if !locations.is_empty() {
-            record.locations = locations;
-        }
+        merge_locations(&mut record.locations, paths_of(fields.locations.as_deref()));
         apply_status(record, fields.status, now);
     }
 
@@ -285,10 +286,13 @@ impl TurnRecorder {
 
     /// Close the Turn and build its provenance. `vault_root` decides which
     /// referenced paths are Vault files; everything else keeps a basename.
-    pub fn close(self, vault_root: &Path) -> TurnProvenance {
+    ///
+    /// The result claims `complete` only when the Turn finished normally,
+    /// every tool reached a terminal state, and nothing was unrecognized.
+    pub fn close(self, vault_root: &Path, outcome: TurnOutcome) -> TurnProvenance {
         let mut references: Vec<(String, FileTurnReference)> = Vec::new();
         let mut activity = Vec::with_capacity(self.order.len());
-        let mut has_unknown = false;
+        let mut known_loss = outcome == TurnOutcome::Aborted;
 
         for entry in &self.order {
             match entry {
@@ -298,12 +302,15 @@ impl TurnRecorder {
                     if record.status == ToolCallStatus::Completed {
                         collect_references(&mut references, record, vault_root);
                     }
+                    if !record.is_terminal() {
+                        known_loss = true;
+                    }
                 }
                 Entry::Unknown {
                     provider_type,
                     timestamp,
                 } => {
-                    has_unknown = true;
+                    known_loss = true;
                     activity.push(TurnActivity::Unknown {
                         provider_type: provider_type.clone(),
                         label: "Unrecognized session update".to_string(),
@@ -314,7 +321,7 @@ impl TurnRecorder {
         }
 
         TurnProvenance {
-            completeness: if has_unknown {
+            completeness: if known_loss {
                 ProvenanceCompleteness::Partial
             } else {
                 ProvenanceCompleteness::Complete
@@ -349,9 +356,33 @@ fn apply_status(record: &mut ToolRecord, status: Option<ToolCallStatus>, now: u6
     }
 }
 
+/// Tool titles are display summaries; the persisted model caps them at this
+/// length, so anything longer is cut before it crosses the wire.
+pub const TOOL_TITLE_MAX_CHARS: usize = 200;
+
+/// Title as recorded: trimmed, capped, never empty (an update that arrives
+/// before its ToolCall has no title yet).
+fn safe_title(title: &str) -> String {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return "Tool call".to_string();
+    }
+    trimmed.chars().take(TOOL_TITLE_MAX_CHARS).collect()
+}
+
+/// Append paths not already recorded, preserving first-seen order, so a tool
+/// that reports its locations across several updates keeps all of them.
+fn merge_locations(existing: &mut Vec<PathBuf>, incoming: Vec<PathBuf>) {
+    for path in incoming {
+        if !existing.contains(&path) {
+            existing.push(path);
+        }
+    }
+}
+
 fn tool_activity(record: &ToolRecord) -> TurnActivity {
     TurnActivity::Tool {
-        kind: activity_kind(record.kind),
+        kind: kind_mapping(record.kind).0,
         title: record.title.clone(),
         status: match record.status {
             ToolCallStatus::Completed => ToolActivityStatus::Completed,
@@ -363,35 +394,21 @@ fn tool_activity(record: &ToolRecord) -> TurnActivity {
     }
 }
 
-fn activity_kind(kind: ToolKind) -> ToolActivityKind {
+/// ACP tool kind → normalized activity kind, plus the relation a completed
+/// tool of that kind establishes with the files it touched (none for tools
+/// whose kind says nothing about files). One table so the two never drift.
+fn kind_mapping(kind: ToolKind) -> (ToolActivityKind, Option<TurnReferenceRelation>) {
+    use TurnReferenceRelation as Rel;
     match kind {
-        ToolKind::Read => ToolActivityKind::Read,
-        ToolKind::Edit => ToolActivityKind::Edit,
-        ToolKind::Delete => ToolActivityKind::Delete,
-        ToolKind::Move => ToolActivityKind::Move,
-        ToolKind::Search => ToolActivityKind::Search,
-        ToolKind::Execute => ToolActivityKind::Execute,
-        ToolKind::Fetch => ToolActivityKind::Fetch,
-        ToolKind::Think | ToolKind::SwitchMode | ToolKind::Other => ToolActivityKind::Other,
-        _ => ToolActivityKind::Other,
-    }
-}
-
-/// Which relation a completed tool of this kind establishes with the files it
-/// touched. Tools whose kind says nothing about files establish none.
-fn relation_for(kind: ToolKind) -> Option<TurnReferenceRelation> {
-    match kind {
-        ToolKind::Read => Some(TurnReferenceRelation::Read),
-        ToolKind::Edit => Some(TurnReferenceRelation::Updated),
-        ToolKind::Delete => Some(TurnReferenceRelation::Deleted),
-        ToolKind::Move => Some(TurnReferenceRelation::Moved),
-        ToolKind::Search => Some(TurnReferenceRelation::Searched),
-        ToolKind::Execute
-        | ToolKind::Fetch
-        | ToolKind::Think
-        | ToolKind::SwitchMode
-        | ToolKind::Other => None,
-        _ => None,
+        ToolKind::Read => (ToolActivityKind::Read, Some(Rel::Read)),
+        ToolKind::Edit => (ToolActivityKind::Edit, Some(Rel::Updated)),
+        ToolKind::Delete => (ToolActivityKind::Delete, Some(Rel::Deleted)),
+        ToolKind::Move => (ToolActivityKind::Move, Some(Rel::Moved)),
+        ToolKind::Search => (ToolActivityKind::Search, Some(Rel::Searched)),
+        ToolKind::Execute => (ToolActivityKind::Execute, None),
+        ToolKind::Fetch => (ToolActivityKind::Fetch, None),
+        ToolKind::Think | ToolKind::SwitchMode | ToolKind::Other => (ToolActivityKind::Other, None),
+        _ => (ToolActivityKind::Other, None),
     }
 }
 
@@ -400,7 +417,7 @@ fn collect_references(
     record: &ToolRecord,
     vault_root: &Path,
 ) {
-    let Some(relation) = relation_for(record.kind) else {
+    let Some(relation) = kind_mapping(record.kind).1 else {
         return;
     };
     for path in &record.locations {
@@ -424,9 +441,10 @@ impl FileTurnReference {
     }
 }
 
-/// Dedup key plus reference. Vault files key on their Vault-relative path;
-/// external files key on the display name they will be shown as, since
-/// the absolute path is never retained.
+/// Dedup key plus reference. Vault files key on their Vault-relative path.
+/// External files key on the absolute path they were reported with; the key
+/// is only used for merging and never leaves this function, the reference
+/// itself keeps just the basename.
 fn classify(
     path: &Path,
     vault_root: &Path,
@@ -437,8 +455,8 @@ fn classify(
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".to_string());
-    match relativize_vault_path(vault_root, path) {
-        Ok(relative) => (
+    match vault_relative(vault_root, path) {
+        Some(relative) => (
             format!("vault:{relative}"),
             FileTurnReference::Vault {
                 path: relative,
@@ -447,8 +465,8 @@ fn classify(
                 timestamp,
             },
         ),
-        Err(_) => (
-            format!("external:{display_name}"),
+        None => (
+            format!("external:{}", path.to_string_lossy()),
             FileTurnReference::External {
                 display_name,
                 relations: vec![relation],
@@ -456,6 +474,35 @@ fn classify(
             },
         ),
     }
+}
+
+/// Vault-relative path for an absolute path inside the Vault, or `None`.
+///
+/// A file the agent deleted or moved away no longer exists at `close`, so
+/// canonicalizing it fails; such paths are resolved through their parent
+/// directory instead, which keeps symlink escapes rejected while still
+/// naming the Vault file that was removed.
+fn vault_relative(vault_root: &Path, path: &Path) -> Option<String> {
+    if let Ok(relative) = relativize_vault_path(vault_root, path) {
+        return Some(relative);
+    }
+    if path.exists() {
+        return None;
+    }
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_str()?;
+    if name == ".." || name == "." {
+        return None;
+    }
+    let canonical_root = std::fs::canonicalize(vault_root).ok()?;
+    let canonical_parent = std::fs::canonicalize(parent).ok()?;
+    let relative_parent = canonical_parent.strip_prefix(&canonical_root).ok()?;
+    let mut relative = relative_parent.to_str()?.replace('\\', "/");
+    if !relative.is_empty() {
+        relative.push('/');
+    }
+    relative.push_str(name);
+    Some(relative)
 }
 
 /// Variant name of an unrecognized update, taken from its Debug form so no
@@ -535,7 +582,7 @@ mod tests {
     #[test]
     fn empty_turn_is_complete_with_nothing_recorded() {
         let dir = vault();
-        let provenance = recorder().close(dir.path());
+        let provenance = recorder().close(dir.path(), TurnOutcome::Finished);
         assert_eq!(provenance.completeness, ProvenanceCompleteness::Complete);
         assert!(provenance.references.is_empty());
         assert!(provenance.activity.is_empty());
@@ -553,7 +600,7 @@ mod tests {
         ));
         rec.observe(&status("tc-1", ToolCallStatus::Completed));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert_eq!(
             provenance.references,
@@ -590,7 +637,7 @@ mod tests {
         ));
         rec.observe(&status("tc-1", ToolCallStatus::Completed));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert_eq!(
             provenance.references,
@@ -626,7 +673,7 @@ mod tests {
         rec.observe(&call("tc-3", "Read again", ToolKind::Read, &[path]));
         rec.observe(&status("tc-3", ToolCallStatus::Completed));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert_eq!(provenance.references.len(), 1);
         let TurnReference::File(FileTurnReference::Vault {
@@ -655,7 +702,7 @@ mod tests {
         ));
         rec.observe(&status("tc-1", ToolCallStatus::InProgress));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert!(provenance.references.is_empty());
         assert_eq!(
@@ -666,6 +713,131 @@ mod tests {
                 "Read".to_string()
             )]
         );
+        assert_eq!(provenance.completeness, ProvenanceCompleteness::Partial);
+    }
+
+    #[test]
+    fn aborted_turn_is_partial_even_when_every_tool_finished() {
+        let dir = vault();
+        let mut rec = recorder();
+        rec.observe(&call("tc-1", "Read", ToolKind::Read, &[]));
+        rec.observe(&status("tc-1", ToolCallStatus::Completed));
+
+        let provenance = rec.close(dir.path(), TurnOutcome::Aborted);
+
+        assert_eq!(provenance.completeness, ProvenanceCompleteness::Partial);
+        assert_eq!(provenance.activity.len(), 1);
+    }
+
+    #[test]
+    fn deleted_vault_file_is_still_a_vault_reference() {
+        let dir = vault();
+        let path = dir.path().join("sub").join("deep.md");
+        let mut rec = recorder();
+        rec.observe(&call(
+            "tc-1",
+            "Delete",
+            ToolKind::Delete,
+            std::slice::from_ref(&path),
+        ));
+        std::fs::remove_file(&path).unwrap();
+        rec.observe(&status("tc-1", ToolCallStatus::Completed));
+
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
+
+        assert_eq!(
+            provenance.references,
+            vec![TurnReference::File(FileTurnReference::Vault {
+                path: "sub/deep.md".into(),
+                display_name: "deep.md".into(),
+                relations: vec![TurnReferenceRelation::Deleted],
+                timestamp: 1,
+            })]
+        );
+    }
+
+    #[test]
+    fn missing_file_outside_vault_stays_external() {
+        let dir = vault();
+        let outside = tempfile::tempdir().unwrap();
+        let gone = outside.path().join("gone.txt");
+        let mut rec = recorder();
+        rec.observe(&call(
+            "tc-1",
+            "Delete",
+            ToolKind::Delete,
+            std::slice::from_ref(&gone),
+        ));
+        rec.observe(&status("tc-1", ToolCallStatus::Completed));
+
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
+
+        assert!(matches!(
+            &provenance.references[0],
+            TurnReference::File(FileTurnReference::External { display_name, .. })
+                if display_name == "gone.txt"
+        ));
+    }
+
+    #[test]
+    fn locations_reported_across_updates_are_all_kept() {
+        let dir = vault();
+        let mut rec = recorder();
+        rec.observe(&call(
+            "tc-1",
+            "Read",
+            ToolKind::Read,
+            &[dir.path().join("notes.md")],
+        ));
+        rec.observe(&SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+            ToolCallId::new("tc-1"),
+            ToolCallUpdateFields::new()
+                .locations(vec![ToolCallLocation::new(
+                    dir.path().join("sub").join("deep.md"),
+                )])
+                .status(ToolCallStatus::Completed),
+        )));
+
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
+
+        assert_eq!(provenance.references.len(), 2);
+    }
+
+    #[test]
+    fn external_files_sharing_a_basename_stay_distinct() {
+        let dir = vault();
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let a_readme = a.path().join("README.md");
+        let b_readme = b.path().join("README.md");
+        std::fs::write(&a_readme, "a").unwrap();
+        std::fs::write(&b_readme, "b").unwrap();
+        let mut rec = recorder();
+        rec.observe(&call("tc-1", "Read", ToolKind::Read, &[a_readme, b_readme]));
+        rec.observe(&status("tc-1", ToolCallStatus::Completed));
+
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
+
+        assert_eq!(provenance.references.len(), 2);
+    }
+
+    #[test]
+    fn titles_are_trimmed_capped_and_never_empty() {
+        let dir = vault();
+        let mut rec = recorder();
+        let long = "x".repeat(TOOL_TITLE_MAX_CHARS + 50);
+        rec.observe(&call("tc-1", &format!("  {long}  "), ToolKind::Other, &[]));
+        rec.observe(&status("tc-1", ToolCallStatus::Completed));
+        rec.observe(&status("tc-2", ToolCallStatus::Completed));
+
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
+
+        let titles: Vec<String> = tool_activities(&provenance)
+            .into_iter()
+            .map(|(_, _, title)| title)
+            .collect();
+        assert_eq!(titles[0].chars().count(), TOOL_TITLE_MAX_CHARS);
+        assert_eq!(titles[1], "Tool call");
     }
 
     #[test]
@@ -680,7 +852,7 @@ mod tests {
         ));
         rec.observe(&status("tc-1", ToolCallStatus::Failed));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert!(provenance.references.is_empty());
         assert_eq!(
@@ -697,7 +869,7 @@ mod tests {
         rec.observe(&status("tc-1", ToolCallStatus::Completed));
         rec.observe(&status("tc-1", ToolCallStatus::InProgress));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert_eq!(
             tool_activities(&provenance)[0].1,
@@ -719,7 +891,7 @@ mod tests {
                 .status(ToolCallStatus::Completed),
         )));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert_eq!(provenance.activity.len(), 1);
         assert_eq!(
@@ -747,7 +919,7 @@ mod tests {
         rec.observe(&call("tc-2", "Fetch", ToolKind::Fetch, &[]));
         rec.observe(&status("tc-2", ToolCallStatus::Completed));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert!(provenance.references.is_empty());
         assert_eq!(
@@ -767,7 +939,7 @@ mod tests {
         rec.observe(&SessionUpdate::AgentMessageChunk(chunk.clone()));
         rec.observe(&SessionUpdate::AgentThoughtChunk(chunk));
 
-        let provenance = rec.close(dir.path());
+        let provenance = rec.close(dir.path(), TurnOutcome::Finished);
 
         assert!(provenance.activity.is_empty());
         assert_eq!(provenance.completeness, ProvenanceCompleteness::Complete);
@@ -785,7 +957,7 @@ mod tests {
         ));
         rec.observe(&status("tc-1", ToolCallStatus::Completed));
 
-        let json = serde_json::to_value(rec.close(dir.path())).unwrap();
+        let json = serde_json::to_value(rec.close(dir.path(), TurnOutcome::Finished)).unwrap();
 
         assert_eq!(
             json,
