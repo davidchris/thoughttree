@@ -62,9 +62,12 @@ function segmentOf(node: GraphNode): Segment | undefined {
     const { path, name, mimeType, size } = node;
     return { role: 'user', text: '', files: [{ path, name, mimeType, size }] };
   }
-  if (!node.content.trim()) return undefined;
-  const segment: Segment = { role: node.role, text: node.content };
-  if (node.role === 'user' && node.images?.length) segment.images = [...node.images];
+  const hasText = node.content.trim().length > 0;
+  const images = node.role === 'user' && node.images?.length ? [...node.images] : undefined;
+  // An image-only user node is still a turn; the backend adds placeholder text.
+  if (!hasText && !images) return undefined;
+  const segment: Segment = { role: node.role, text: hasText ? node.content : '' };
+  if (images) segment.images = images;
   return segment;
 }
 

@@ -50,6 +50,7 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().fileNodeStatus.get(id)).toEqual({
         state: 'ok',
         stat: { size: 120, modifiedEpochMs: 1_000 },
+        live: { mimeType: 'text/markdown', name: 'plan.md' },
       });
       expect(transport.statVaultFile).toHaveBeenCalledWith('notes/plan.md');
     });
@@ -140,6 +141,7 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().fileNodeStatus.get(id)).toEqual({
         state: 'too-large',
         stat: { size: 2 * MB, modifiedEpochMs: 5_000 },
+        live: { mimeType: 'image/png', name: 'diagram.png' },
       });
     });
 
@@ -172,6 +174,7 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().fileNodeStatus.get(id)).toEqual({
         state: 'too-large',
         stat: { size: 2 * MB, modifiedEpochMs: 5_000 },
+        live: { mimeType: 'image/png', name: 'diagram.png' },
       });
     });
 
@@ -223,6 +226,46 @@ describe('useGraphStore file node status', () => {
       await useGraphStore.getState().acknowledgeFileChange(id);
 
       expect(useGraphStore.getState().nodeData.get(id)).toMatchObject({ seenMtime: 3_000, seenSize: 140 });
+    });
+
+    it('adopts the live name and mime type so a replaced file is classified by what is on disk', async () => {
+      // notes/plan.md was overwritten by a 6 MB PNG (same path). The stored mime says
+      // markdown, but the backend now reports a raster image over the byte limit.
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(9_000, 6 * MB, { mimeType: 'image/png', name: 'plan.md' }),
+      );
+      vi.mocked(transport.getAttachmentLimits).mockResolvedValue({
+        imageMaxBytes: 5 * MB,
+        imageMaxSide: 8000,
+        maxImagesPerPrompt: 20,
+        previewTextBytes: 16 * 1024,
+      });
+      const id = useGraphStore.getState().addFileNode(NOTE, { x: 0, y: 0 });
+
+      await useGraphStore.getState().refreshFileNodeStat(id);
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('too-large');
+
+      await useGraphStore.getState().acknowledgeFileChange(id);
+      expect(useGraphStore.getState().nodeData.get(id)).toMatchObject({
+        mimeType: 'image/png',
+        seenMtime: 9_000,
+        seenSize: 6 * MB,
+      });
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('too-large');
+    });
+
+    it('lets a file that turned into a pointer type send again after reload', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue(
+        okStatus(9_000, 6 * MB, { mimeType: 'text/plain', name: 'diagram.png' }),
+      );
+      const id = useGraphStore.getState().addFileNode(IMAGE, { x: 0, y: 0 });
+
+      await useGraphStore.getState().refreshFileNodeStat(id);
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('changed');
+
+      await useGraphStore.getState().acknowledgeFileChange(id);
+      expect(useGraphStore.getState().nodeData.get(id)).toMatchObject({ mimeType: 'text/plain' });
+      expect(useGraphStore.getState().fileNodeStatus.get(id)?.state).toBe('ok');
     });
 
     it('cannot acknowledge a missing file', async () => {

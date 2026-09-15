@@ -96,6 +96,8 @@ type ProjectFile = CurrentProjectFile | ProjectFileV3OrV4 | ProjectFileLegacyV2;
 export interface FileNodeStatus {
   state: 'ok' | 'changed' | 'missing' | 'invalid' | 'too-large';
   stat?: FileStat;
+  /** What the backend saw on disk at the last stat; adopted into the node on reload. */
+  live?: { mimeType: string; name: string };
 }
 
 interface GraphState {
@@ -377,22 +379,26 @@ function sameStat(a: FileStat, b: FileStat): boolean {
 
 // Only raster images are sent as bytes and therefore size-limited; every
 // other file is a pointer the agent reads itself (epic decisions 4 and 5).
+// The mime comes from the backend's live view of the file, not the node: a
+// file replaced under the same path may have changed type.
 function classifyFileStat(
   node: FileNodeData,
-  stat: FileStat,
+  live: { stat: FileStat; mimeType: string; name: string },
   limits: AttachmentLimits | null,
   previous: FileNodeStatus | undefined,
 ): FileNodeStatus {
-  if (limits && isRasterImage(node.mimeType) && stat.size > limits.imageMaxBytes) {
-    return { state: 'too-large', stat };
+  const { stat, mimeType, name } = live;
+  const status = { stat, live: { mimeType, name } };
+  if (limits && isRasterImage(mimeType) && stat.size > limits.imageMaxBytes) {
+    return { state: 'too-large', ...status };
   }
   // The preview refused this file version (e.g. longest side over the limit,
   // which a stat cannot see). Only a new version on disk clears that.
   if (previous?.state === 'too-large' && (!previous.stat || sameStat(previous.stat, stat))) {
-    return { state: 'too-large', stat };
+    return { state: 'too-large', ...status };
   }
   const unchanged = stat.modifiedEpochMs === node.seenMtime && stat.size === node.seenSize;
-  return { state: unchanged ? 'ok' : 'changed', stat };
+  return { state: unchanged ? 'ok' : 'changed', ...status };
 }
 
 function withFileNodeStatus(
@@ -827,22 +833,22 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     const node = get().graph.nodes.get(nodeId);
     if (node?.role !== 'file') return;
     try {
-      const [status, limits] = await Promise.all([
-        getBackendTransport().statVaultFile(node.path),
-        isRasterImage(node.mimeType)
-          ? attachmentLimits().catch((error) => {
+      const status = await getBackendTransport().statVaultFile(node.path);
+      // Limits matter only for raster images, judged by the live mime.
+      const limits =
+        status.status === 'ok' && isRasterImage(status.mimeType)
+          ? await attachmentLimits().catch((error) => {
               logger.warn('Attachment limits unavailable; skipping image size check:', error);
               return null;
             })
-          : Promise.resolve(null),
-      ]);
+          : null;
       // The node may have been deleted or the project swapped while we waited.
       const current = get().graph.nodes.get(nodeId);
       if (current?.role !== 'file' || current.path !== node.path) return;
       set((state) => {
         const next: FileNodeStatus =
           status.status === 'ok'
-            ? classifyFileStat(current, status.stat, limits, state.fileNodeStatus.get(nodeId))
+            ? classifyFileStat(current, status, limits, state.fileNodeStatus.get(nodeId))
             : { state: status.status };
         return { fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, next) };
       });
@@ -867,19 +873,28 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     const node = state.graph.nodes.get(nodeId);
     const status = state.fileNodeStatus.get(nodeId);
     const stat = status?.stat;
-    if (node?.role !== 'file' || !stat) return;
+    const live = status?.live;
+    if (node?.role !== 'file' || !stat || !live) return;
+    // Adopt everything the backend saw: a file replaced under the same path
+    // may have changed type, and the node must describe what will be sent.
     const updated: FileNodeData = {
       ...node,
+      name: live.name,
+      mimeType: live.mimeType,
       size: stat.size,
       seenMtime: stat.modifiedEpochMs,
       seenSize: stat.size,
     };
     const graph = GraphMutations.updateNode(state.graph, nodeId, updated);
-    const limits = isRasterImage(node.mimeType) ? await attachmentLimits().catch(() => null) : null;
+    const limits = isRasterImage(live.mimeType) ? await attachmentLimits().catch(() => null) : null;
     set({
       graph,
       ...projectGraph(graph, state.nodes, state.selectedNodeId),
-      fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, classifyFileStat(updated, stat, limits, status)),
+      fileNodeStatus: withFileNodeStatus(
+        state.fileNodeStatus,
+        nodeId,
+        classifyFileStat(updated, { stat, ...live }, limits, status),
+      ),
       isDirty: true,
     });
   },

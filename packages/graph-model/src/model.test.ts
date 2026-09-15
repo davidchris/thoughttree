@@ -384,6 +384,21 @@ describe('GraphModel.conversationPath', () => {
     ]);
   });
 
+  it('keeps an image-only user node as a user message with empty text', () => {
+    const img = { data: 'AAAA', mimeType: 'image/png' };
+    const a: GraphNode = { id: 'a', role: 'user', content: '', timestamp: 1, images: [img] };
+    const g = graphOf([a], []);
+    expect(GraphModel.conversationPath(g, 'a')).toEqual([{ role: 'user', content: '', images: [img] }]);
+  });
+
+  it('merges an image-only user node into the following user text without a stray separator', () => {
+    const img = { data: 'AAAA', mimeType: 'image/png' };
+    const a: GraphNode = { id: 'a', role: 'user', content: '', timestamp: 1, images: [img] };
+    const b: GraphNode = { id: 'b', role: 'user', content: 'describe', timestamp: 2 };
+    const g = graphOf([a, b], [edge('a', 'b')]);
+    expect(GraphModel.conversationPath(g, 'b')).toEqual([{ role: 'user', content: 'describe', images: [img] }]);
+  });
+
   it('merges images when consecutive user messages are concatenated', () => {
     const imgA = { data: 'A', mimeType: 'image/png' };
     const imgB = { data: 'B', mimeType: 'image/png' };

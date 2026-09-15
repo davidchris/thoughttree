@@ -140,8 +140,9 @@ pub fn stat_vault_file(root: &Path, relative: &str) -> Result<FileStat, VaultFil
 /// by path, so a swap between resolution and read cannot redirect a read.
 ///
 /// The canonical path from [`resolve_vault_file`] has no symlink components,
-/// so on unix the open uses `O_NOFOLLOW`: a symlink at the final component can
-/// only mean the entry was replaced after resolution, and is refused.
+/// so the open never follows a link at the final component (`O_NOFOLLOW` on
+/// unix, `FILE_FLAG_OPEN_REPARSE_POINT` on Windows): one there can only mean
+/// the entry was replaced after resolution, and is refused.
 #[derive(Debug)]
 pub struct OpenedVaultFile {
     path: PathBuf,
@@ -162,8 +163,20 @@ impl OpenedVaultFile {
             use std::os::unix::fs::OpenOptionsExt;
             options.custom_flags(libc::O_NOFOLLOW);
         }
+        #[cfg(windows)]
+        {
+            // Open the reparse point itself rather than its target, so a
+            // symlink or junction swapped in after resolution is detected
+            // below instead of followed (same flag as the guarded writes).
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+            options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        }
         let file = options.open(&path).map_err(map_open_error)?;
         let metadata = file.metadata()?;
+        if metadata.file_type().is_symlink() {
+            return Err(VaultFileError::InvalidPath);
+        }
         if !metadata.is_file() {
             return Err(VaultFileError::NotAFile);
         }
