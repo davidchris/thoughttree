@@ -50,6 +50,66 @@ function minimapColor(node: Node): string {
   return SURFACE;
 }
 
+type GraphSnapshot = ReturnType<typeof useGraphStore.getState>;
+type UISnapshot = ReturnType<typeof useUIStore.getState>;
+
+/** True when the keystroke belongs to a text field and must not be hijacked. */
+function isTextEntryTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return (
+    el?.tagName === 'TEXTAREA' || el?.tagName === 'INPUT' || el?.isContentEditable === true
+  );
+}
+
+// Keyboard shortcuts. Each one returns true once it has taken responsibility for
+// the event, either by acting on it or by deliberately leaving it to a text field.
+
+/** Spacebar toggles the preview panel for the selected node. */
+function togglePreviewShortcut(e: KeyboardEvent, graph: GraphSnapshot, ui: UISnapshot): boolean {
+  const { selectedNodeId } = graph;
+  if (e.key !== ' ' || !selectedNodeId || ui.editingNodeId) return false;
+  if (isTextEntryTarget(e.target)) return true;
+
+  e.preventDefault();
+  ui.togglePreviewNode(selectedNodeId);
+  return true;
+}
+
+/** "E" enters edit mode on an open user node, or opens the panel for the selection. */
+function editShortcut(e: KeyboardEvent, graph: GraphSnapshot, ui: UISnapshot): boolean {
+  const { previewNodeId, editingNodeId } = ui;
+  if (e.key.toLowerCase() !== 'e' || editingNodeId) return false;
+  if (isTextEntryTarget(e.target)) return true;
+
+  if (previewNodeId && !graph.isNodeBlocked(previewNodeId)) {
+    if (graph.nodeData.get(previewNodeId)?.role === 'user') {
+      e.preventDefault();
+      ui.triggerSidePanelEditMode();
+      return true;
+    }
+  }
+
+  if (!previewNodeId && graph.selectedNodeId) {
+    e.preventDefault();
+    ui.setPreviewNode(graph.selectedNodeId);
+    return true;
+  }
+
+  return false;
+}
+
+/** Enter replies to the selected agent node, unless it is in a streaming lineage. */
+function replyShortcut(e: KeyboardEvent, graph: GraphSnapshot, ui: UISnapshot): boolean {
+  const { selectedNodeId, nodeData, isNodeBlocked, createUserNodeDownstream } = graph;
+  if (ui.editingNodeId || e.key !== 'Enter' || !selectedNodeId) return false;
+  if (nodeData.get(selectedNodeId)?.role !== 'assistant') return false;
+  if (isNodeBlocked(selectedNodeId)) return false;
+
+  e.preventDefault();
+  createUserNodeDownstream(selectedNodeId);
+  return true;
+}
+
 export function Graph() {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
@@ -344,66 +404,12 @@ export function Graph() {
   // re-attaching on every node mutation (e.g. each streaming flush).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const { selectedNodeId, nodeData, isNodeBlocked, createUserNodeDownstream } =
-        useGraphStore.getState();
-      const {
-        editingNodeId,
-        previewNodeId,
-        togglePreviewNode,
-        triggerSidePanelEditMode,
-        setPreviewNode,
-      } = useUIStore.getState();
+      const graph = useGraphStore.getState();
+      const ui = useUIStore.getState();
 
-      // Spacebar to toggle preview panel (but not when typing in an input)
-      if (e.key === ' ' && selectedNodeId && !editingNodeId) {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
-          return; // Let the input handle the space
-        }
-        e.preventDefault();
-        togglePreviewNode(selectedNodeId);
-        return;
-      }
-
-      // "E" to open side panel or enter edit mode (user nodes)
-      if (e.key.toLowerCase() === 'e' && !editingNodeId) {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT' || target.isContentEditable) {
-          return; // Let the input handle the keystroke
-        }
-        // If panel is already open on a user node, enter edit mode
-        if (previewNodeId && !isNodeBlocked(previewNodeId)) {
-          const previewData = nodeData.get(previewNodeId);
-          if (previewData?.role === 'user') {
-            e.preventDefault();
-            triggerSidePanelEditMode();
-            return;
-          }
-        }
-        // If panel is not open but a node is selected, open the panel
-        if (!previewNodeId && selectedNodeId) {
-          e.preventDefault();
-          setPreviewNode(selectedNodeId);
-          return;
-        }
-      }
-
-      // Don't trigger other shortcuts if editing
-      if (editingNodeId) return;
-
-      // Check if selected node is an agent node for Enter shortcut
-      if (!selectedNodeId) return;
-      const data = nodeData.get(selectedNodeId);
-      if (!data || data.role !== 'assistant') return;
-
-      // Block if this node is in a streaming lineage
-      if (isNodeBlocked(selectedNodeId)) return;
-
-      // Enter to reply
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        createUserNodeDownstream(selectedNodeId);
-      }
+      if (togglePreviewShortcut(e, graph, ui)) return;
+      if (editShortcut(e, graph, ui)) return;
+      replyShortcut(e, graph, ui);
     };
 
     window.addEventListener('keydown', handleKeyDown);

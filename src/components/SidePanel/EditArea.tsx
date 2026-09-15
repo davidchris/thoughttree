@@ -149,7 +149,7 @@ export function EditArea({ nodeId, initialContent, images, onGenerate }: EditAre
       className={`side-panel-edit-area ${isDragOver ? 'drag-over' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDrop={(e) => void handleDrop(e)}
     >
       <textarea
         ref={textareaRef}
@@ -158,9 +158,9 @@ export function EditArea({ nodeId, initialContent, images, onGenerate }: EditAre
         onChange={handleContentChange}
         onBlur={handleTextareaBlur}
         onKeyDown={handleTextareaKeyDown}
-        onPaste={handlePaste}
+        onPaste={(e) => void handlePaste(e)}
         onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onDrop={(e) => void handleDrop(e)}
         placeholder="Enter your message... (@ to mention files, paste or drop images)"
       />
       {images.length > 0 && (

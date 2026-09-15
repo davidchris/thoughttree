@@ -201,6 +201,44 @@ function lineageMap(
   return `<graph-map>\n${LINEAGE_MAP_INTRO}\n${lines.join('\n')}\n</graph-map>`;
 }
 
+/** Plain linearization: node text only, no graph markers. */
+function linearConversation(g: Graph, ids: NodeId[]): ConversationMessage[] {
+  const merged: ConversationMessage[] = [];
+  for (const id of ids) {
+    const node = g.nodes.get(id);
+    const segment = node && segmentOf(node);
+    if (segment) mergeSegment(merged, segment);
+  }
+  return merged;
+}
+
+/** Non-linear lineage: every segment carries a <node id> marker and the path ends with the graph map. */
+function annotatedConversation(g: Graph, targetId: NodeId, ids: NodeId[]): ConversationMessage[] {
+  const adj = adjacency(g.edges);
+  const include = new Set(ids);
+  const pathIndex = new Map(ids.map((id, index) => [id, index]));
+  const shortIds = assignShortIds(ids);
+  const merged: ConversationMessage[] = [];
+
+  for (const id of ids) {
+    const node = g.nodes.get(id);
+    const segment = node && segmentOf(node);
+    if (!node || !segment) continue;
+    // A file node has no text of its own; the marker still names it so the
+    // agent can attribute the attached file to a graph node.
+    const markerText = node.role === 'file' ? fileMarkerText(node) : segment.text;
+    segment.text = nodeMarker(id, node.role, markerText, adj, include, pathIndex, shortIds);
+    mergeSegment(merged, segment);
+  }
+
+  const final = merged[merged.length - 1];
+  if (final) {
+    final.content = `${final.content}\n\n${lineageMap(ids, targetId, g, adj, include, pathIndex, shortIds)}`;
+  }
+
+  return merged;
+}
+
 export const GraphModel = {
   parents(g: Graph, id: NodeId): NodeId[] {
     return adjacency(g.edges).parents.get(id) ?? [];
@@ -281,42 +319,8 @@ export const GraphModel = {
 
   conversationPath(g: Graph, targetId: NodeId): ConversationMessage[] {
     const ids = GraphModel.conversationPathIds(g, targetId);
-    const merged: ConversationMessage[] = [];
-
-    if (GraphModel.hasNonLinearLineage(g, targetId)) {
-      const adj = adjacency(g.edges);
-      const include = new Set(ids);
-      const pathIndex = new Map(ids.map((id, index) => [id, index]));
-      const shortIds = assignShortIds(ids);
-
-      for (const id of ids) {
-        const node = g.nodes.get(id);
-        if (!node) continue;
-        const segment = segmentOf(node);
-        if (!segment) continue;
-
-        // A file node has no text of its own; the marker still names it so the
-        // agent can attribute the attached file to a graph node.
-        const markerText = node.role === 'file' ? fileMarkerText(node) : segment.text;
-        segment.text = nodeMarker(id, node.role, markerText, adj, include, pathIndex, shortIds);
-        mergeSegment(merged, segment);
-      }
-
-      if (merged.length > 0) {
-        const final = merged[merged.length - 1];
-        final.content = `${final.content}\n\n${lineageMap(ids, targetId, g, adj, include, pathIndex, shortIds)}`;
-      }
-
-      return merged;
-    }
-
-    for (const id of ids) {
-      const node = g.nodes.get(id);
-      if (!node) continue;
-      const segment = segmentOf(node);
-      if (segment) mergeSegment(merged, segment);
-    }
-
-    return merged;
+    return GraphModel.hasNonLinearLineage(g, targetId)
+      ? annotatedConversation(g, targetId, ids)
+      : linearConversation(g, ids);
   },
 };

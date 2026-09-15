@@ -80,9 +80,10 @@ const TOOL_TITLE_SUMMARIES: Record<ToolActivityKind, string> = {
 
 // An absolute host path token: `/Users/...`, `~/...`, `C:\...`, or a UNC path at
 // the start of the text or after a delimiter. Relative paths (`src/App.tsx`) pass.
-const HOST_PATH = /(?:^|[\s"'`(=:,<\[])(?:\/[^\s/]|~[\\/]|[A-Za-z]:[\\/]|\\\\)/;
+const HOST_PATH = /(?:^|[\s"'`(=:,<[])(?:\/[^\s/]|~[\\/]|[A-Za-z]:[\\/]|\\\\)/;
 
 // Shell operators and substitutions that mark a title as a raw command rather than a summary.
+// eslint-disable-next-line no-control-regex -- control characters are part of what marks a title as a raw command
 const SHELL_OPERATOR = /[`$|;<>]|&&|[\u0000-\u001f\u007f]/;
 
 /** True when text carries an absolute host path or a `file:` URL. */
@@ -93,6 +94,7 @@ export function containsHostPath(text: string): boolean {
 /** True for `file:` URLs and bare absolute paths, which are never acceptable URL reference text. */
 export function isFileUrlOrBarePath(text: string): boolean {
   // Match URL parsing's treatment of ASCII tabs/newlines and leading controls.
+  // eslint-disable-next-line no-control-regex -- strips the leading control characters URL parsing ignores
   const normalized = text.replace(/[\t\n\r]/g, '').replace(/^[\s\u0000-\u0020]+/, '');
   return /^(?:file:|\/|~[\\/]|[A-Za-z]:[\\/]|\\\\)/i.test(normalized);
 }
@@ -220,58 +222,70 @@ function reference(value: unknown, loss: Loss): TurnReference | undefined {
   return undefined;
 }
 
+type Timestamp = number | undefined;
+
+function commentaryActivity(value: Record<string, unknown>, timestamp: Timestamp): TurnActivity | undefined {
+  const content = str(value.content);
+  if (content === undefined) return undefined;
+  return withOptional({ type: 'commentary' as const, content }, { timestamp });
+}
+
+function toolKind(value: unknown): ToolActivityKind {
+  const raw = str(value);
+  return raw !== undefined && TOOL_KINDS.has(raw as ToolActivityKind) ? (raw as ToolActivityKind) : 'other';
+}
+
+function toolStatus(value: unknown): ToolActivityStatus {
+  const raw = str(value);
+  return raw !== undefined && TOOL_STATUSES.has(raw as ToolActivityStatus)
+    ? (raw as ToolActivityStatus)
+    : 'incomplete';
+}
+
+function toolActivity(value: Record<string, unknown>, timestamp: Timestamp, loss: Loss): TurnActivity | undefined {
+  const rawTitle = str(value.title);
+  if (rawTitle === undefined) return undefined;
+  const kind = toolKind(value.kind);
+  const { title, redacted } = safeToolTitle(rawTitle, kind);
+  const titleTruncated = !redacted && (value.titleTruncated === true || rawTitle.trim().length > TOOL_TITLE_MAX_LENGTH);
+  const titleRedacted = redacted || value.titleRedacted === true;
+  if (titleRedacted || titleTruncated) loss.note();
+  return withOptional(
+    { type: 'tool' as const, kind, title, status: toolStatus(value.status) },
+    {
+      titleTruncated: titleTruncated ? true : undefined,
+      titleRedacted: titleRedacted ? true : undefined,
+      completedAt: num(value.completedAt),
+      timestamp,
+    }
+  );
+}
+
+function unknownActivity(value: Record<string, unknown>, timestamp: Timestamp, loss: Loss): TurnActivity | undefined {
+  const providerType = str(value.providerType);
+  const label = str(value.label);
+  if (providerType === undefined || label === undefined) return undefined;
+  return withOptional({
+    type: 'unknown' as const,
+    providerType: safeText(providerType, loss) ?? 'unknown',
+    label: safeText(label, loss) ?? 'Unknown activity',
+  }, { timestamp });
+}
+
 function activityEntry(value: unknown, loss: Loss): TurnActivity | undefined {
   if (!isRecord(value)) return undefined;
   const timestamp = num(value.timestamp);
 
-  if (value.type === 'commentary') {
-    const content = str(value.content);
-    if (content === undefined) return undefined;
-    return withOptional({ type: 'commentary' as const, content }, { timestamp });
+  switch (value.type) {
+    case 'commentary':
+      return commentaryActivity(value, timestamp);
+    case 'tool':
+      return toolActivity(value, timestamp, loss);
+    case 'unknown':
+      return unknownActivity(value, timestamp, loss);
+    default:
+      return undefined;
   }
-
-  if (value.type === 'tool') {
-    const rawTitle = str(value.title);
-    if (rawTitle === undefined) return undefined;
-    const rawKind = str(value.kind);
-    const status = str(value.status);
-    const kind: ToolActivityKind =
-      rawKind !== undefined && TOOL_KINDS.has(rawKind as ToolActivityKind) ? (rawKind as ToolActivityKind) : 'other';
-    const { title, redacted } = safeToolTitle(rawTitle, kind);
-    const titleTruncated = !redacted && (value.titleTruncated === true || rawTitle.trim().length > TOOL_TITLE_MAX_LENGTH);
-    const titleRedacted = redacted || value.titleRedacted === true;
-    if (titleRedacted || titleTruncated) loss.note();
-    return withOptional(
-      {
-        type: 'tool' as const,
-        kind,
-        title,
-        status:
-          status !== undefined && TOOL_STATUSES.has(status as ToolActivityStatus)
-            ? (status as ToolActivityStatus)
-            : 'incomplete',
-      },
-      {
-        titleTruncated: titleTruncated ? true : undefined,
-        titleRedacted: titleRedacted ? true : undefined,
-        completedAt: num(value.completedAt),
-        timestamp,
-      }
-    );
-  }
-
-  if (value.type === 'unknown') {
-    const providerType = str(value.providerType);
-    const label = str(value.label);
-    if (providerType === undefined || label === undefined) return undefined;
-    return withOptional({
-      type: 'unknown' as const,
-      providerType: safeText(providerType, loss) ?? 'unknown',
-      label: safeText(label, loss) ?? 'Unknown activity',
-    }, { timestamp });
-  }
-
-  return undefined;
 }
 
 function normalizeList<T>(value: unknown, parse: (entry: unknown, loss: Loss) => T | undefined, loss: Loss): T[] {

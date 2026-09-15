@@ -75,7 +75,7 @@ function PaneItems({ position, onClose }: { position: { x: number; y: number }; 
       >
         New note
       </button>
-      <button onClick={handleAddFile}>Add file…</button>
+      <button onClick={() => void handleAddFile()}>Add file…</button>
     </>
   );
 }
@@ -127,7 +127,7 @@ function NodeItems({ nodeId, onClose }: { nodeId: string; onClose: () => void })
           >
             Reload file
           </button>
-          <button onClick={handleCopyPath}>Copy path</button>
+          <button onClick={() => void handleCopyPath()}>Copy path</button>
         </>
       )}
       <button

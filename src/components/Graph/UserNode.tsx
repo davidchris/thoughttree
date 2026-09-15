@@ -23,6 +23,136 @@ interface AutocompleteState {
   triggerIndex: number;
 }
 
+interface NodeStateFlags {
+  selected?: boolean;
+  isBlocked: boolean;
+  isDragOver: boolean;
+  isFlashing: boolean;
+}
+
+function userNodeClassName({ selected, isBlocked, isDragOver, isFlashing }: NodeStateFlags) {
+  return [
+    "thought-node",
+    "user-node",
+    selected && "selected",
+    isBlocked && "blocked",
+    isDragOver && "drag-over",
+    isFlashing && "flash",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+interface UserNodeHeaderProps {
+  imageCount: number;
+  /** Header badges/toggles are hidden while the node is being edited. */
+  showBadges: boolean;
+  canExpand: boolean;
+  onToggleExpand: (e: React.MouseEvent) => void;
+}
+
+function UserNodeHeader({ imageCount, showBadges, canExpand, onToggleExpand }: UserNodeHeaderProps) {
+  return (
+    <div className="node-header">
+      <span className="node-role">User</span>
+      {showBadges && imageCount > 0 && (
+        <span className="image-count" title={`${imageCount} image${imageCount > 1 ? "s" : ""} attached`}>
+          {imageCount}
+        </span>
+      )}
+      {showBadges && canExpand && (
+        <button
+          className="expand-toggle"
+          onClick={onToggleExpand}
+          title="Preview in side panel (P)"
+        >
+          ▼
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface ImageThumbnailsProps {
+  images: ImageAttachment[];
+  onRemove: (index: number, e: React.MouseEvent) => void;
+}
+
+function ImageThumbnails({ images, onRemove }: ImageThumbnailsProps) {
+  if (images.length === 0) return null;
+
+  return (
+    <div className="image-thumbnails">
+      {images.map((img, index) => (
+        <div key={index} className="image-thumbnail">
+          <img
+            src={`data:${img.mimeType};base64,${img.data}`}
+            alt={img.name || `Image ${index + 1}`}
+          />
+          <button
+            className="image-remove"
+            onClick={(e) => onRemove(index, e)}
+            title="Remove image"
+          >
+            ×
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface CollapsedContentProps {
+  text: string;
+  isGeneratingSummary: boolean;
+}
+
+function CollapsedContent({ text, isGeneratingSummary }: CollapsedContentProps) {
+  return (
+    <div className="node-content">
+      {text}
+      {text && isGeneratingSummary && <span className="summary-loading"> ⋯</span>}
+    </div>
+  );
+}
+
+interface UserNodeFooterProps {
+  isEditing: boolean;
+  /** Text, images, or a file node in the lineage — or a blocker worth showing. */
+  showGenerate: boolean;
+  canGenerate: boolean;
+  isBlocked: boolean;
+  /** Why sending is refused right now; shown as the button tooltip. */
+  blockedReason: string | null;
+  onGenerate: () => void;
+}
+
+/** Generate button, or the placeholder hint when the node is still empty. */
+function UserNodeFooter({
+  isEditing,
+  showGenerate,
+  canGenerate,
+  isBlocked,
+  blockedReason,
+  onGenerate,
+}: UserNodeFooterProps) {
+  if (isEditing) return null;
+  if (!showGenerate) {
+    return <div className="node-placeholder">Double-click to edit in panel</div>;
+  }
+
+  return (
+    <button
+      className="generate-button"
+      onClick={onGenerate}
+      disabled={isBlocked || !canGenerate}
+      title={blockedReason ?? "Generate response (Cmd+Enter)"}
+    >
+      {isBlocked ? "..." : "Generate"}
+    </button>
+  );
+}
+
 export function UserNode({ id, selected }: NodeProps) {
   const nodeData = useGraphStore((state) => state.nodeData.get(id) as UserNodeData | undefined);
   const content = nodeData?.content ?? '';
@@ -148,7 +278,7 @@ export function UserNode({ id, selected }: NodeProps) {
     // Cmd/Ctrl + Enter to submit
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      handleGenerate();
+      void handleGenerate();
     }
     // Escape to exit editing (only if autocomplete not open)
     if (e.key === "Escape" && !autocomplete?.isOpen) {
@@ -265,52 +395,22 @@ export function UserNode({ id, selected }: NodeProps) {
   return (
     <div
       ref={nodeRef}
-      className={`thought-node user-node ${selected ? "selected" : ""} ${isBlocked ? "blocked" : ""} ${isDragOver ? "drag-over" : ""} ${isFlashing ? "flash" : ""}`}
+      className={userNodeClassName({ selected, isBlocked, isDragOver, isFlashing })}
       onDoubleClick={handleDoubleClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDrop={(e) => void handleDrop(e)}
     >
       <Handle type="target" position={Position.Top} />
 
-      <div className="node-header">
-        <span className="node-role">User</span>
-        {images.length > 0 && !isEditing && (
-          <span className="image-count" title={`${images.length} image${images.length > 1 ? 's' : ''} attached`}>
-            {images.length}
-          </span>
-        )}
-        {hasMore && !isEditing && (
-          <button
-            className="expand-toggle"
-            onClick={handleToggleExpand}
-            title="Preview in side panel (P)"
-          >
-            ▼
-          </button>
-        )}
-      </div>
+      <UserNodeHeader
+        imageCount={images.length}
+        showBadges={!isEditing}
+        canExpand={hasMore}
+        onToggleExpand={handleToggleExpand}
+      />
 
-      {/* Image thumbnails */}
-      {images.length > 0 && (
-        <div className="image-thumbnails">
-          {images.map((img, index) => (
-            <div key={index} className="image-thumbnail">
-              <img
-                src={`data:${img.mimeType};base64,${img.data}`}
-                alt={img.name || `Image ${index + 1}`}
-              />
-              <button
-                className="image-remove"
-                onClick={(e) => handleRemoveImage(index, e)}
-                title="Remove image"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <ImageThumbnails images={images} onRemove={handleRemoveImage} />
 
       {isEditing ? (
         <>
@@ -321,7 +421,7 @@ export function UserNode({ id, selected }: NodeProps) {
             onChange={handleContentChange}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
+            onPaste={(e) => void handlePaste(e)}
             placeholder="Enter your message... (@ to mention files, paste or drop images)"
           />
           {autocomplete?.isOpen && (
@@ -336,30 +436,17 @@ export function UserNode({ id, selected }: NodeProps) {
           )}
         </>
       ) : (
-        <div className="node-content">
-          {content ? (
-            <>
-              {collapsedText}
-              {isGeneratingSummary && <span className="summary-loading"> ⋯</span>}
-            </>
-          ) : null}
-        </div>
+        <CollapsedContent text={collapsedText} isGeneratingSummary={isGeneratingSummary} />
       )}
 
-      {!isEditing && showGenerate && (
-        <button
-          className="generate-button"
-          onClick={handleGenerate}
-          disabled={isBlocked || !canGenerate}
-          title={sendBlockedReason ?? "Generate response (Cmd+Enter)"}
-        >
-          {isBlocked ? "..." : "Generate"}
-        </button>
-      )}
-
-      {!showGenerate && !isEditing && (
-        <div className="node-placeholder">Double-click to edit in panel</div>
-      )}
+      <UserNodeFooter
+        isEditing={isEditing}
+        showGenerate={showGenerate}
+        canGenerate={canGenerate}
+        isBlocked={isBlocked}
+        blockedReason={sendBlockedReason}
+        onGenerate={() => void handleGenerate()}
+      />
 
       <Handle type="source" position={Position.Bottom} />
     </div>

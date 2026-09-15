@@ -152,6 +152,44 @@ function decodeInput(input: string | Uint8Array, maxBytes: number): string {
   }
 }
 
+/** Messages live at the top level in newer exports and under `conversation` in older ones. */
+function messageList(exportData: Record<string, unknown>, conversation: Record<string, unknown>): unknown[] {
+  if (Array.isArray(exportData.messages)) return exportData.messages;
+  if (Array.isArray(conversation.messages)) return conversation.messages;
+  return [];
+}
+
+/**
+ * Folds the flat message list into user/assistant turns. A user message with no
+ * assistant reply after it becomes an incomplete turn; an assistant message with
+ * no preceding user message has nothing to attach to and is dropped.
+ */
+function turnsFromMessages(messages: unknown[]): ImportedConversationTurn[] {
+  const turns: ImportedConversationTurn[] = [];
+  let pendingUser: KagiMessage | undefined;
+  const flushPendingUser = (): void => {
+    if (pendingUser) turns.push(turnFromUser(pendingUser));
+    pendingUser = undefined;
+  };
+
+  for (const value of messages) {
+    const message = asMessage(value);
+    if (message?.role === 'user') {
+      flushPendingUser();
+      pendingUser = message;
+    } else if (message?.role === 'assistant') {
+      if (pendingUser) {
+        turns.push(turnFromUser(pendingUser, message));
+        pendingUser = undefined;
+      }
+    } else {
+      flushPendingUser();
+    }
+  }
+  flushPendingUser();
+  return turns;
+}
+
 export function parseKagiExport(
   input: string | Uint8Array,
   maxBytes = KAGI_EXPORT_MAX_BYTES
@@ -170,38 +208,7 @@ export function parseKagiExport(
   }
 
   const conversation = isRecord(exportData.conversation) ? exportData.conversation : {};
-  const messages = Array.isArray(exportData.messages)
-    ? exportData.messages
-    : Array.isArray(conversation.messages)
-      ? conversation.messages
-      : [];
-  const turns: ImportedConversationTurn[] = [];
-  let pendingUser: KagiMessage | undefined;
-
-  for (const value of messages) {
-    const message = asMessage(value);
-    if (!message) {
-      if (pendingUser) {
-        turns.push(turnFromUser(pendingUser));
-        pendingUser = undefined;
-      }
-      continue;
-    }
-
-    if (message.role === 'user') {
-      if (pendingUser) turns.push(turnFromUser(pendingUser));
-      pendingUser = message;
-    } else if (message.role === 'assistant' && pendingUser) {
-      turns.push(turnFromUser(pendingUser, message));
-      pendingUser = undefined;
-    } else if (message.role !== 'assistant') {
-      if (pendingUser) {
-        turns.push(turnFromUser(pendingUser));
-        pendingUser = undefined;
-      }
-    }
-  }
-  if (pendingUser) turns.push(turnFromUser(pendingUser));
+  const turns = turnsFromMessages(messageList(exportData, conversation));
   if (turns.length === 0) throw new KagiExportError('no_messages');
 
   return {

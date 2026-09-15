@@ -85,7 +85,7 @@ export function Palette() {
       if (flowNode) {
         const width = flowNode.measured?.width ?? DEFAULT_NODE_WIDTH;
         const height = flowNode.measured?.height ?? DEFAULT_NODE_HEIGHT;
-        setCenter(flowNode.position.x + width / 2, flowNode.position.y + height / 2, {
+        void setCenter(flowNode.position.x + width / 2, flowNode.position.y + height / 2, {
           zoom: JUMP_ZOOM,
           duration: JUMP_DURATION_MS,
         });

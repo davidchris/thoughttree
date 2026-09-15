@@ -212,8 +212,8 @@ function deserializeProjectFile(data: string) {
   const parsed = JSON.parse(data) as ProjectFile;
 
   let graph: Graph;
-  let projectModelPreferences: ModelPreferences | null = null;
-  let projectEffortPreferences: EffortPreferences | null = null;
+  let projectModelPreferences: ModelPreferences | null;
+  let projectEffortPreferences: EffortPreferences | null;
 
   if (
     (parsed.version === GRAPH_JSON_VERSION || parsed.version === 4 || parsed.version === 3) &&
@@ -504,6 +504,16 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     let streamingMutated = false;
     let fileNodeStatus = state.fileNodeStatus;
 
+    // Copy-on-write removal so the streaming set is only cloned when it changes
+    const stopStreaming = (nodeId: string) => {
+      if (!streamingNodeIds.has(nodeId)) return;
+      if (!streamingMutated) {
+        streamingNodeIds = new Set(streamingNodeIds);
+        streamingMutated = true;
+      }
+      streamingNodeIds.delete(nodeId);
+    };
+
     for (const change of changes) {
       if (change.type === 'position' && change.position && change.dragging === false) {
         graph = GraphMutations.setPosition(graph, change.id, change.position);
@@ -516,13 +526,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         if (fileNodeStatus.has(change.id)) {
           fileNodeStatus = withFileNodeStatus(fileNodeStatus, change.id, null);
         }
-        if (streamingNodeIds.has(change.id)) {
-          if (!streamingMutated) {
-            streamingNodeIds = new Set(streamingNodeIds);
-            streamingMutated = true;
-          }
-          streamingNodeIds.delete(change.id);
-        }
+        stopStreaming(change.id);
       } else if (change.type !== 'select' && change.type !== 'dimensions') {
         dirty = true;
       }
@@ -1216,7 +1220,7 @@ const debouncedSave = debounce(async () => {
 let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 useGraphStore.subscribe((state, prevState) => {
   if (!sameEdits(state, prevState)) {
-    debouncedSave();
+    void debouncedSave();
     if (state.isDirty && recoveryTimer === null) {
       recoveryTimer = setTimeout(() => {
         recoveryTimer = null;
