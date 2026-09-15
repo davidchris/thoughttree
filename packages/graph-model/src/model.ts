@@ -71,6 +71,9 @@ function segmentOf(node: GraphNode): Segment | undefined {
   return segment;
 }
 
+/** Text shown in place of an image-only user node's content inside a Node marker. */
+const IMAGE_ONLY_MARKER_TEXT = '[image attached]';
+
 /** Text shown in place of a file node's content inside a Node marker. */
 function fileMarkerText(node: FileGraphNode): string {
   return `[file: ${node.name}]`;
@@ -224,9 +227,9 @@ function annotatedConversation(g: Graph, targetId: NodeId, ids: NodeId[]): Conve
     const node = g.nodes.get(id);
     const segment = node && segmentOf(node);
     if (!node || !segment) continue;
-    // A file node has no text of its own; the marker still names it so the
-    // agent can attribute the attached file to a graph node.
-    const markerText = node.role === 'file' ? fileMarkerText(node) : segment.text;
+    // A file node or an image-only user node has no text of its own; the
+    // marker still names it so the agent can attribute the attachment to a node.
+    const markerText = node.role === 'file' ? fileMarkerText(node) : segment.text || IMAGE_ONLY_MARKER_TEXT;
     segment.text = nodeMarker(id, node.role, markerText, adj, include, pathIndex, shortIds);
     mergeSegment(merged, segment);
   }

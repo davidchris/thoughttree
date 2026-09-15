@@ -393,10 +393,17 @@ export function Graph() {
     return () => window.removeEventListener('focus', refresh);
   }, []);
 
-  // The webview must not navigate to a dropped file when Tauri hands the
-  // event through to the DOM.
-  const preventNativeDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
+  // The webview must not navigate to a dropped file anywhere in the app when
+  // Tauri hands the event through to the DOM, so this is registered on the
+  // window rather than only on the canvas.
+  useEffect(() => {
+    const preventNativeDrop = (event: DragEvent) => event.preventDefault();
+    window.addEventListener('dragover', preventNativeDrop);
+    window.addEventListener('drop', preventNativeDrop);
+    return () => {
+      window.removeEventListener('dragover', preventNativeDrop);
+      window.removeEventListener('drop', preventNativeDrop);
+    };
   }, []);
 
   // Keyboard shortcuts. The handler reads store state via getState() so it
@@ -499,8 +506,6 @@ export function Graph() {
     <div
       className="graph-container"
       ref={containerRef}
-      onDragOver={preventNativeDrop}
-      onDrop={preventNativeDrop}
     >
       <ReactFlow
         nodes={nodes}

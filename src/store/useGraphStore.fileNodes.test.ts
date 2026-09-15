@@ -297,6 +297,19 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().sendBlocker(userId)).toBeNull();
     });
 
+    it('blocks sending while a lineage file node has not been stat\'d yet', async () => {
+      vi.mocked(transport.statVaultFile).mockResolvedValue(okStatus(1_000, 120));
+      const state = useGraphStore.getState();
+      const fileId = state.addFileNode(NOTE, { x: 0, y: 0 });
+      const userId = state.createUserNodeDownstream(fileId);
+
+      expect(useGraphStore.getState().sendBlocker(userId)).toMatch(/plan\.md.*being checked/);
+      expect(useGraphStore.getState().canGenerate(userId)).toBe(false);
+
+      await useGraphStore.getState().refreshFileNodeStat(fileId);
+      expect(useGraphStore.getState().sendBlocker(userId)).toBeNull();
+    });
+
     it('names a missing ancestor file, even several hops up', async () => {
       vi.mocked(transport.statVaultFile).mockResolvedValue({ status: 'missing' });
       const state = useGraphStore.getState();

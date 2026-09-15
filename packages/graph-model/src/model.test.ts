@@ -399,6 +399,18 @@ describe('GraphModel.conversationPath', () => {
     expect(GraphModel.conversationPath(g, 'b')).toEqual([{ role: 'user', content: 'describe', images: [img] }]);
   });
 
+  it('names an image-only user node inside its Node marker in a non-linear lineage', () => {
+    const img = { data: 'AAAA', mimeType: 'image/png' };
+    const r1: GraphNode = { id: 'r1', role: 'assistant', content: 'one', timestamp: 1 };
+    const r2: GraphNode = { id: 'r2', role: 'assistant', content: 'two', timestamp: 2 };
+    const a: GraphNode = { id: 'a', role: 'user', content: '', timestamp: 3, images: [img] };
+    const g = graphOf([r1, r2, a], [edge('r1', 'a'), edge('r2', 'a')]);
+    const [, user] = GraphModel.conversationPath(g, 'a');
+    expect(user.images).toEqual([img]);
+    expect(user.content).toContain('<node id="a">');
+    expect(user.content).toContain('[image attached]');
+  });
+
   it('merges images when consecutive user messages are concatenated', () => {
     const imgA = { data: 'A', mimeType: 'image/png' };
     const imgB = { data: 'B', mimeType: 'image/png' };

@@ -413,7 +413,10 @@ function withFileNodeStatus(
 }
 
 function blockerReason(node: FileNodeData, status: FileNodeStatus | undefined): string | null {
-  switch (status?.state) {
+  // Not stat'd yet (project just loaded, node just linked): refuse rather than
+  // let a missing or over-limit file reach the backend.
+  if (!status) return `"${node.name}" is still being checked. Try again in a moment.`;
+  switch (status.state) {
     case 'missing':
       return `"${node.name}" is missing from the notes directory. Restore it or delete its node before sending.`;
     case 'invalid':

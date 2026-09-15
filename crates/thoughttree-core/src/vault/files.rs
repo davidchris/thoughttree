@@ -150,6 +150,29 @@ pub struct OpenedVaultFile {
     stat: FileStat,
 }
 
+/// A reparse point that is not a name surrogate (OneDrive Files On-Demand,
+/// iCloud and similar placeholders) holds no data through the reparse-point
+/// handle. Symlinks and junctions were already refused, so following this
+/// one reaches the same entry the sync filter would hydrate.
+#[cfg(windows)]
+fn reopen_cloud_placeholder(
+    path: &Path,
+    file: fs::File,
+    metadata: fs::Metadata,
+) -> Result<(fs::File, fs::Metadata), VaultFileError> {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        return Ok((file, metadata));
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(map_open_error)?;
+    let metadata = file.metadata()?;
+    Ok((file, metadata))
+}
+
 impl OpenedVaultFile {
     pub fn open(root: &Path, relative: &str) -> Result<Self, VaultFileError> {
         Self::open_resolved(resolve_vault_file(root, relative)?)
@@ -168,6 +191,7 @@ impl OpenedVaultFile {
             // Open the reparse point itself rather than its target, so a
             // symlink or junction swapped in after resolution is detected
             // below instead of followed (same flag as the guarded writes).
+            // Non-symlink reparse points are reopened normally afterwards.
             use std::os::windows::fs::OpenOptionsExt;
             use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
             options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
@@ -177,6 +201,8 @@ impl OpenedVaultFile {
         if metadata.file_type().is_symlink() {
             return Err(VaultFileError::InvalidPath);
         }
+        #[cfg(windows)]
+        let (file, metadata) = reopen_cloud_placeholder(&path, file, metadata)?;
         if !metadata.is_file() {
             return Err(VaultFileError::NotAFile);
         }
