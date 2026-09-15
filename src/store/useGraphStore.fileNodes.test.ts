@@ -310,6 +310,21 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().sendBlocker(userId)).toBeNull();
     });
 
+    it('records a failed stat as unavailable so Reload can retry instead of blocking forever', async () => {
+      vi.mocked(transport.statVaultFile).mockRejectedValueOnce(new Error('ipc down'));
+      const state = useGraphStore.getState();
+      const fileId = state.addFileNode(NOTE, { x: 0, y: 0 });
+      const userId = state.createUserNodeDownstream(fileId);
+
+      await useGraphStore.getState().refreshFileNodeStat(fileId);
+      expect(useGraphStore.getState().fileNodeStatus.get(fileId)).toEqual({ state: 'unavailable' });
+      expect(useGraphStore.getState().sendBlocker(userId)).toMatch(/plan\.md.*could not be checked/);
+
+      vi.mocked(transport.statVaultFile).mockResolvedValue(okStatus(1_000, 120));
+      await useGraphStore.getState().acknowledgeFileChange(fileId);
+      expect(useGraphStore.getState().sendBlocker(userId)).toBeNull();
+    });
+
     it('names a missing ancestor file, even several hops up', async () => {
       vi.mocked(transport.statVaultFile).mockResolvedValue({ status: 'missing' });
       const state = useGraphStore.getState();

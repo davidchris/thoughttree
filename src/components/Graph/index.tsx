@@ -395,9 +395,12 @@ export function Graph() {
 
   // The webview must not navigate to a dropped file anywhere in the app when
   // Tauri hands the event through to the DOM, so this is registered on the
-  // window rather than only on the canvas.
+  // window rather than only on the canvas. Text and other non-file drops keep
+  // their default (e.g. dropping text into the side-panel editor).
   useEffect(() => {
-    const preventNativeDrop = (event: DragEvent) => event.preventDefault();
+    const preventNativeDrop = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+    };
     window.addEventListener('dragover', preventNativeDrop);
     window.addEventListener('drop', preventNativeDrop);
     return () => {

@@ -94,7 +94,8 @@ type ProjectFile = CurrentProjectFile | ProjectFileV3OrV4 | ProjectFileLegacyV2;
  * the mtime/size the node has seen. Transient: never written to the Project file.
  */
 export interface FileNodeStatus {
-  state: 'ok' | 'changed' | 'missing' | 'invalid' | 'too-large';
+  /** `unavailable`: the stat itself failed (transport or I/O); Reload retries. */
+  state: 'ok' | 'changed' | 'missing' | 'invalid' | 'too-large' | 'unavailable';
   stat?: FileStat;
   /** What the backend saw on disk at the last stat; adopted into the node on reload. */
   live?: { mimeType: string; name: string };
@@ -423,6 +424,8 @@ function blockerReason(node: FileNodeData, status: FileNodeStatus | undefined): 
       return `"${node.name}" cannot be read from the notes directory. Delete its node before sending.`;
     case 'too-large':
       return `"${node.name}" is too large for the agent. Use a smaller image before sending.`;
+    case 'unavailable':
+      return `"${node.name}" could not be checked. Reload the file before sending.`;
     default:
       return null;
   }
@@ -861,6 +864,12 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       });
     } catch (error) {
       logger.error('Failed to stat file node:', error);
+      // Record the failure so the node is not stuck as "still being checked".
+      set((state) =>
+        state.graph.nodes.get(nodeId)?.role === 'file'
+          ? { fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, { state: 'unavailable' }) }
+          : {}
+      );
     }
   },
 

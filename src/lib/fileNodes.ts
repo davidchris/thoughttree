@@ -17,7 +17,7 @@ export function isRasterImage(mimeType: string): boolean {
 /** The stat result wins for broken files; otherwise a preview refusal (e.g. image side too big) shows. */
 export function resolveFileCardState(status: FileNodeStatus | undefined, preview: PreviewState): FileCardState {
   const stat = status?.state ?? 'ok';
-  if (stat === 'missing' || stat === 'invalid' || stat === 'too-large') return stat;
+  if (stat === 'missing' || stat === 'invalid' || stat === 'too-large' || stat === 'unavailable') return stat;
   if (preview.kind === 'refused') return preview.reason;
   return stat;
 }
@@ -28,6 +28,7 @@ export const FILE_STATE_LABEL: Partial<Record<FileCardState, string>> = {
   missing: 'file missing',
   invalid: 'invalid path',
   'too-large': 'too large for the agent',
+  unavailable: 'could not be checked',
 };
 
 /** Uppercased extension for the type badge, `FILE` when the name has no usable extension. */

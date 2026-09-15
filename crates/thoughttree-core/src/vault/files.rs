@@ -152,8 +152,10 @@ pub struct OpenedVaultFile {
 
 /// A reparse point that is not a name surrogate (OneDrive Files On-Demand,
 /// iCloud and similar placeholders) holds no data through the reparse-point
-/// handle. Symlinks and junctions were already refused, so following this
-/// one reaches the same entry the sync filter would hydrate.
+/// handle. Symlinks and junctions were already refused, so the entry is
+/// reopened normally and the new handle must resolve to the same file record
+/// (volume serial + file index) as the refused-to-follow one; a link swapped
+/// in between the two opens points at a different record and is rejected.
 #[cfg(windows)]
 fn reopen_cloud_placeholder(
     path: &Path,
@@ -165,12 +167,37 @@ fn reopen_cloud_placeholder(
     if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
         return Ok((file, metadata));
     }
-    let file = fs::OpenOptions::new()
+    let expected = file_record_id(&file)?;
+    let reopened = fs::OpenOptions::new()
         .read(true)
         .open(path)
         .map_err(map_open_error)?;
-    let metadata = file.metadata()?;
-    Ok((file, metadata))
+    if file_record_id(&reopened)? != expected {
+        return Err(VaultFileError::InvalidPath);
+    }
+    let metadata = reopened.metadata()?;
+    Ok((reopened, metadata))
+}
+
+/// `(volume serial, file index)` identifying the NTFS record behind a handle.
+#[cfg(windows)]
+fn file_record_id(file: &fs::File) -> Result<(u32, u64), VaultFileError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    // SAFETY: `file` owns a valid open handle for the duration of the call and
+    // `info` is a correctly sized, writable out-parameter that is only read
+    // after the call reports success.
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) };
+    if ok == 0 {
+        return Err(VaultFileError::Io(std::io::Error::last_os_error()));
+    }
+    // SAFETY: the call succeeded, so the struct is fully initialised.
+    let info = unsafe { info.assume_init() };
+    let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+    Ok((info.dwVolumeSerialNumber, index))
 }
 
 impl OpenedVaultFile {
