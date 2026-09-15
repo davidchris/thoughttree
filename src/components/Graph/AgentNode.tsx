@@ -67,7 +67,7 @@ export function AgentNode({ id, selected }: NodeProps) {
   const provider = nodeData?.provider;
 
   // Subscribe directly to store for streaming state (fixes reactivity issue)
-  const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
+  const activeTurns = useGraphStore((state) => state.activeTurns);
   const isNodeBlocked = useGraphStore((state) => state.isNodeBlocked);
   const createUserNodeDownstream = useGraphStore(
     (state) => state.createUserNodeDownstream,
@@ -76,7 +76,7 @@ export function AgentNode({ id, selected }: NodeProps) {
   const setPreviewNode = useUIStore((state) => state.setPreviewNode);
   const isFlashing = useUIStore((state) => state.flashNodeId === id);
 
-  const isStreaming = streamingNodeIds.has(id);
+  const isStreaming = activeTurns.has(id);
   const isBlocked = isNodeBlocked(id);
 
   // Compute collapsed text: short content shown directly, long content uses AI summary

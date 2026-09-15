@@ -36,8 +36,8 @@ function App() {
   useSummaryGeneration();
 
   useEffect(() => {
-    const unsubscribeStream = transport.onStreamChunk(({ nodeId, chunk }) => {
-      useGraphStore.getState().appendToNode(nodeId, chunk);
+    const unsubscribeStream = transport.onStreamChunk(({ nodeId, turnId, chunk }) => {
+      useGraphStore.getState().appendToNode(nodeId, turnId, chunk);
     });
     const unsubscribePermission = transport.onPermissionRequest((permission) => {
       useUIStore.getState().setPendingPermission(permission);

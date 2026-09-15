@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import kagiExport from '../../../test/fixtures/kagi-export-v1.json';
 import { TauriTransport } from './TauriTransport';
 import { KagiImportError } from './types';
@@ -17,6 +18,37 @@ describe('TauriTransport', () => {
 
     await expect(transport.listProjects()).resolves.toEqual(entries);
     expect(invoke).toHaveBeenCalledWith('list_projects');
+  });
+
+  it('preserves Turn identity on stream events', async () => {
+    const transport = new TauriTransport();
+    const receive = vi.fn();
+    const unsubscribe = transport.onStreamChunk(receive);
+    await Promise.resolve();
+    const listener = vi.mocked(listen).mock.calls.find(([name]) => name === 'stream-chunk')![1];
+    const event = { event: 'stream-chunk', id: 1, payload: { node_id: 'node', turn_id: 'turn', chunk: 'answer' } };
+
+    listener(event);
+    expect(receive).toHaveBeenCalledWith({ nodeId: 'node', turnId: 'turn', chunk: 'answer' });
+    unsubscribe();
+    listener(event);
+    expect(receive).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for stream listeners before starting a Turn', async () => {
+    let ready!: (unlisten: () => void) => void;
+    vi.mocked(listen).mockImplementationOnce(() => new Promise((resolve) => { ready = resolve; }));
+    vi.mocked(invoke).mockResolvedValue('ok');
+    const transport = new TauriTransport();
+    const sending = transport.sendPrompt({ nodeId: 'node', turnId: 'turn', messages: [{ role: 'user', content: 'Hello' }] });
+    await Promise.resolve();
+    expect(invoke).not.toHaveBeenCalled();
+
+    ready(() => {});
+    await expect(sending).resolves.toBe('ok');
+    expect(invoke).toHaveBeenCalledWith('send_prompt', {
+      request: expect.objectContaining({ nodeId: 'node', turnId: 'turn' }),
+    });
   });
 
   it('reads and imports a Kagi export through the frontend graph-model seam', async () => {
@@ -68,6 +100,7 @@ describe('TauriTransport', () => {
 
     await transport.sendPrompt({
       nodeId: 'n',
+      turnId: 'turn-1',
       messages: [
         { role: 'user', content: '', files: [{ path: 'notes/a.md', name: 'a.md', mimeType: 'text/markdown', size: 12 }] },
         { role: 'assistant', content: 'read it' },
@@ -75,18 +108,21 @@ describe('TauriTransport', () => {
       ],
     });
 
-    expect(invoke).toHaveBeenCalledWith('send_prompt', expect.objectContaining({
-      nodeId: 'n',
-      messages: [
-        {
-          role: 'user',
-          content: '',
-          images: null,
-          files: [{ path: 'notes/a.md', name: 'a.md', mime_type: 'text/markdown', size: 12 }],
-        },
-        { role: 'assistant', content: 'read it', images: null, files: null },
-      ],
-    }));
+    expect(invoke).toHaveBeenCalledWith('send_prompt', {
+      request: expect.objectContaining({
+        nodeId: 'n',
+        turnId: 'turn-1',
+        messages: [
+          {
+            role: 'user',
+            content: '',
+            images: null,
+            files: [{ path: 'notes/a.md', name: 'a.md', mime_type: 'text/markdown', size: 12 }],
+          },
+          { role: 'assistant', content: 'read it', images: null, files: null },
+        ],
+      }),
+    });
   });
 
   it('maps vault file stat, preview and limits payloads to camelCase', async () => {

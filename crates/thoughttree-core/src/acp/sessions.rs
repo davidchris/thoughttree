@@ -173,6 +173,7 @@ async fn initialize_with_timeout(
 pub struct PromptSessionParams<S> {
     pub sink: S,
     pub node_id: String,
+    pub turn_id: String,
     pub messages: Vec<Message>,
     pub broker: PermissionBroker,
     pub notes_directory: PathBuf,
@@ -189,6 +190,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
     let PromptSessionParams {
         sink,
         node_id,
+        turn_id,
         messages,
         broker,
         notes_directory,
@@ -219,7 +221,8 @@ pub async fn run_prompt_session<S: SessionEventSink>(
     // Create client with notes directory for permission filtering
     let client = Arc::new(StreamingClient::new(
         sink,
-        node_id,
+        node_id.clone(),
+        turn_id.clone(),
         broker,
         notes_directory.clone(),
     ));
@@ -243,7 +246,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
         info!("Creating session with cwd: {:?}", notes_directory);
         let session = new_session(&cx, &notes_directory).await?;
 
-        info!("Session created: {}", session.session_id);
+        info!(%node_id, %turn_id, session_id = %session.session_id, "Prompt session created");
 
         // Switch model if specified and this provider's model selection belongs
         // to ACP session state. Codex is configured at spawn time.

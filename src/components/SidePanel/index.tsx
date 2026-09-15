@@ -17,7 +17,7 @@ export function SidePanel() {
     previewNodeId ? state.nodeData.get(previewNodeId) : null
   );
   const setPreviewNode = useUIStore((state) => state.setPreviewNode);
-  const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
+  const activeTurns = useGraphStore((state) => state.activeTurns);
   const isNodeBlockedFn = useGraphStore((state) => state.isNodeBlocked);
   const defaultProvider = useProviderStore((state) => state.defaultProvider);
   const getEffectiveModel = useGraphStore((state) => state.getEffectiveModel);
@@ -32,7 +32,7 @@ export function SidePanel() {
 
   const isUserNode = data?.role === 'user';
   const images = isUserNode ? (data as UserNodeData).images || [] : [];
-  const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
+  const isStreaming = previewNodeId ? activeTurns.has(previewNodeId) : false;
   const isBlocked = previewNodeId ? isNodeBlockedFn(previewNodeId) : false;
   // Why this user node must not be sent right now (broken file node in its Lineage subgraph).
   const sendBlockedReason = useGraphStore((state) =>

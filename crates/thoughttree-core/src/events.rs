@@ -7,6 +7,7 @@ use std::sync::{
 pub struct StreamChunkEvent {
     #[serde(rename = "node_id")]
     pub node_id: String,
+    pub turn_id: String,
     pub chunk: String,
 }
 
@@ -97,14 +98,18 @@ mod tests {
     use super::{PermissionRequestEvent, PermissionRequestOption, StreamChunkEvent};
 
     #[test]
-    fn stream_chunk_event_serializes_with_existing_wire_shape() {
+    fn stream_chunk_event_serializes_turn_identity() {
         let event = StreamChunkEvent {
             node_id: "node-1".to_string(),
+            turn_id: "turn-1".to_string(),
             chunk: "hello".to_string(),
         };
 
         let json = serde_json::to_string(&event).unwrap();
-        assert_eq!(json, r#"{"node_id":"node-1","chunk":"hello"}"#);
+        assert_eq!(
+            json,
+            r#"{"node_id":"node-1","turn_id":"turn-1","chunk":"hello"}"#
+        );
     }
 
     #[test]

@@ -69,7 +69,7 @@ export function useSummaryGeneration() {
   const timeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const nodeData = useGraphStore((state) => state.nodeData);
-  const streamingNodeIds = useGraphStore((state) => state.streamingNodeIds);
+  const activeTurns = useGraphStore((state) => state.activeTurns);
   const setSummary = useGraphStore((state) => state.setSummary);
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export function useSummaryGeneration() {
       timeoutsRef.current.delete(nodeId);
 
       // Double-check it's not streaming now
-      if (useGraphStore.getState().streamingNodeIds.has(nodeId)) return;
+      if (useGraphStore.getState().activeTurns.has(nodeId)) return;
 
       // Check content hasn't changed significantly
       const currentData = useGraphStore.getState().nodeData.get(nodeId);
@@ -109,7 +109,7 @@ export function useSummaryGeneration() {
     // Check all nodes for pending summaries
     for (const [nodeId, data] of nodeData) {
       // Skip if currently streaming
-      if (streamingNodeIds.has(nodeId)) continue;
+      if (activeTurns.has(nodeId)) continue;
 
       // File nodes carry no text to summarize
       if (data.role === 'file') continue;
@@ -154,5 +154,5 @@ export function useSummaryGeneration() {
         clearTimeout(timeout);
       }
     };
-  }, [nodeData, streamingNodeIds, setSummary]);
+  }, [nodeData, activeTurns, setSummary]);
 }

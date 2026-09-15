@@ -8,7 +8,7 @@ export function StaleSaveDialog() {
   const conflict = useUIStore((state) => state.staleProjectSave);
   const setConflict = useUIStore((state) => state.setStaleProjectSave);
   const projectPath = useGraphStore((state) => state.projectPath);
-  const streaming = useGraphStore((state) => state.streamingNodeIds.size > 0);
+  const streaming = useGraphStore((state) => state.activeTurns.size > 0);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [versions, setVersions] = useState<{ local: string; disk: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
