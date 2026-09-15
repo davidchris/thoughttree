@@ -13,15 +13,6 @@ interface SidePanelBodyProps {
   onGenerate: () => void;
 }
 
-/** Placeholder shown when a node has no content yet. */
-function EmptyContent({ isStreaming }: { isStreaming: boolean }) {
-  return (
-    <span className="side-panel-empty">
-      {isStreaming ? 'Waiting for response...' : 'No content'}
-    </span>
-  );
-}
-
 /** Content area of the side panel: editor, or rendered content plus provenance. */
 export function SidePanelBody({
   nodeId,
@@ -51,7 +42,9 @@ export function SidePanelBody({
               <MarkdownContent content={content} />
             )
           ) : (
-            <EmptyContent isStreaming={isStreaming} />
+            <span className="side-panel-empty">
+              {isStreaming ? 'Waiting for response...' : 'No content'}
+            </span>
           )}
           {provenance && (
             <Provenance key={nodeId} provenance={provenance} content={content} />

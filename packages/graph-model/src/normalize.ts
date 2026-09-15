@@ -221,13 +221,12 @@ function reference(value: unknown, loss: Loss): TurnReference | undefined {
   return undefined;
 }
 
-/** Activity fields shared by every kind, parsed once by the dispatcher. */
-type ActivityCommon = { timestamp: number | undefined };
+type Timestamp = number | undefined;
 
-function commentaryActivity(value: Record<string, unknown>, common: ActivityCommon): TurnActivity | undefined {
+function commentaryActivity(value: Record<string, unknown>, timestamp: Timestamp): TurnActivity | undefined {
   const content = str(value.content);
   if (content === undefined) return undefined;
-  return withOptional({ type: 'commentary' as const, content }, common);
+  return withOptional({ type: 'commentary' as const, content }, { timestamp });
 }
 
 function toolKind(value: unknown): ToolActivityKind {
@@ -242,7 +241,7 @@ function toolStatus(value: unknown): ToolActivityStatus {
     : 'incomplete';
 }
 
-function toolActivity(value: Record<string, unknown>, common: ActivityCommon, loss: Loss): TurnActivity | undefined {
+function toolActivity(value: Record<string, unknown>, timestamp: Timestamp, loss: Loss): TurnActivity | undefined {
   const rawTitle = str(value.title);
   if (rawTitle === undefined) return undefined;
   const kind = toolKind(value.kind);
@@ -256,12 +255,12 @@ function toolActivity(value: Record<string, unknown>, common: ActivityCommon, lo
       titleTruncated: titleTruncated ? true : undefined,
       titleRedacted: titleRedacted ? true : undefined,
       completedAt: num(value.completedAt),
-      ...common,
+      timestamp,
     }
   );
 }
 
-function unknownActivity(value: Record<string, unknown>, common: ActivityCommon, loss: Loss): TurnActivity | undefined {
+function unknownActivity(value: Record<string, unknown>, timestamp: Timestamp, loss: Loss): TurnActivity | undefined {
   const providerType = str(value.providerType);
   const label = str(value.label);
   if (providerType === undefined || label === undefined) return undefined;
@@ -269,20 +268,20 @@ function unknownActivity(value: Record<string, unknown>, common: ActivityCommon,
     type: 'unknown' as const,
     providerType: safeText(providerType, loss) ?? 'unknown',
     label: safeText(label, loss) ?? 'Unknown activity',
-  }, common);
+  }, { timestamp });
 }
 
 function activityEntry(value: unknown, loss: Loss): TurnActivity | undefined {
   if (!isRecord(value)) return undefined;
-  const common: ActivityCommon = { timestamp: num(value.timestamp) };
+  const timestamp = num(value.timestamp);
 
   switch (value.type) {
     case 'commentary':
-      return commentaryActivity(value, common);
+      return commentaryActivity(value, timestamp);
     case 'tool':
-      return toolActivity(value, common, loss);
+      return toolActivity(value, timestamp, loss);
     case 'unknown':
-      return unknownActivity(value, common, loss);
+      return unknownActivity(value, timestamp, loss);
     default:
       return undefined;
   }

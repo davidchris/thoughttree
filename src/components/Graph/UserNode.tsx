@@ -23,19 +23,24 @@ interface AutocompleteState {
   triggerIndex: number;
 }
 
-function userNodeClassName(flags: {
-  selected: boolean;
+interface NodeStateFlags {
+  selected?: boolean;
   isBlocked: boolean;
   isDragOver: boolean;
   isFlashing: boolean;
-}): string {
-  const modifiers = [
-    flags.selected && "selected",
-    flags.isBlocked && "blocked",
-    flags.isDragOver && "drag-over",
-    flags.isFlashing && "flash",
-  ].filter(Boolean);
-  return ["thought-node", "user-node", ...modifiers].join(" ");
+}
+
+function userNodeClassName({ selected, isBlocked, isDragOver, isFlashing }: NodeStateFlags) {
+  return [
+    "thought-node",
+    "user-node",
+    selected && "selected",
+    isBlocked && "blocked",
+    isDragOver && "drag-over",
+    isFlashing && "flash",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 interface UserNodeHeaderProps {
@@ -375,12 +380,7 @@ export function UserNode({ id, selected }: NodeProps) {
   return (
     <div
       ref={nodeRef}
-      className={userNodeClassName({
-        selected: Boolean(selected),
-        isBlocked,
-        isDragOver,
-        isFlashing,
-      })}
+      className={userNodeClassName({ selected, isBlocked, isDragOver, isFlashing })}
       onDoubleClick={handleDoubleClick}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

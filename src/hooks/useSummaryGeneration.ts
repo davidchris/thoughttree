@@ -137,9 +137,7 @@ export function useSummaryGeneration() {
         clearTimeout(existingTimeout);
       }
 
-      const timeout = setTimeout(() => {
-        void runSummaryJob(nodeId);
-      }, DEBOUNCE_MS);
+      const timeout = setTimeout(() => void runSummaryJob(nodeId), DEBOUNCE_MS);
 
       timeoutsRef.current.set(nodeId, timeout);
     }

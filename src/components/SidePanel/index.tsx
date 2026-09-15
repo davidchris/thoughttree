@@ -88,6 +88,7 @@ export function SidePanel() {
       onAgentNodeCreated: (agentNodeId) => setPreviewNode(agentNodeId),
     });
   };
+  const generate = () => void handleGenerate();
 
   if (!previewNodeId || !data) {
     return null;
@@ -122,7 +123,7 @@ export function SidePanel() {
           model={selectedModel}
           onProviderChange={setSelectedProvider}
           onModelChange={setSelectedModel}
-          onGenerate={() => void handleGenerate()}
+          onGenerate={generate}
           onStartEdit={() => setIsEditing(true)}
           onFinishEdit={() => setIsEditing(false)}
           onClose={() => setPreviewNode(null)}
@@ -135,7 +136,7 @@ export function SidePanel() {
         isEditing={isEditing}
         isStreaming={isStreaming}
         provenance={provenance}
-        onGenerate={() => void handleGenerate()}
+        onGenerate={generate}
       />
     </div>
   );

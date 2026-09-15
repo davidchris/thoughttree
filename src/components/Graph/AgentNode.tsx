@@ -19,12 +19,16 @@ interface NodeStateFlags {
 }
 
 function agentNodeClassName({ selected, isStreaming, isBlocked, isFlashing }: NodeStateFlags) {
-  const classes = ["thought-node", "agent-node"];
-  if (selected) classes.push("selected");
-  if (isStreaming) classes.push("streaming");
-  if (isBlocked && !isStreaming) classes.push("blocked");
-  if (isFlashing) classes.push("flash");
-  return classes.join(" ");
+  return [
+    "thought-node",
+    "agent-node",
+    selected && "selected",
+    isStreaming && "streaming",
+    isBlocked && !isStreaming && "blocked",
+    isFlashing && "flash",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 interface AgentNodeBodyProps {
