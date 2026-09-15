@@ -3,6 +3,8 @@ use std::sync::{
     Arc,
 };
 
+use crate::acp::provenance::TurnProvenance;
+
 #[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
 pub struct StreamChunkEvent {
     #[serde(rename = "node_id")]
@@ -87,9 +89,18 @@ impl Default for PermissionRequestEvent {
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+pub struct TurnProvenanceEvent {
+    #[serde(rename = "node_id")]
+    pub node_id: String,
+    pub provenance: TurnProvenance,
+}
+
 pub trait SessionEventSink: Clone + Send + Sync + 'static {
     fn stream_chunk(&self, event: StreamChunkEvent);
     fn permission_request(&self, event: PermissionRequestEvent);
+    /// Emitted once per Turn, after the prompt finishes (successfully or not).
+    fn turn_provenance(&self, event: TurnProvenanceEvent);
 }
 
 #[cfg(test)]

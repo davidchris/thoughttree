@@ -42,6 +42,9 @@ function App() {
     const unsubscribePermission = transport.onPermissionRequest((permission) => {
       useUIStore.getState().setPendingPermission(permission);
     });
+    const unsubscribeProvenance = transport.onTurnProvenance(({ nodeId, provenance }) => {
+      useGraphStore.getState().setTurnProvenance(nodeId, provenance);
+    });
 
     const initialize = async () => {
       try {
@@ -72,6 +75,7 @@ function App() {
     return () => {
       unsubscribeStream();
       unsubscribePermission();
+      unsubscribeProvenance();
     };
   }, [transport]);
 

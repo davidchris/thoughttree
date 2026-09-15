@@ -14,7 +14,9 @@ use std::path::PathBuf;
 use thoughttree_core::acp::sessions::{
     run_model_discovery_session, run_prompt_session, run_summary_session, PromptSessionParams,
 };
-use thoughttree_core::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
+use thoughttree_core::events::{
+    PermissionRequestEvent, SessionEventSink, StreamChunkEvent, TurnProvenanceEvent,
+};
 use thoughttree_core::permissions::PermissionBroker;
 use thoughttree_core::runtime::run_localset_blocking;
 use thoughttree_core::types::{AgentProvider, Message, ProviderPaths};
@@ -30,6 +32,10 @@ impl SessionEventSink for StdoutSink {
     fn permission_request(&self, event: PermissionRequestEvent) {
         // Nobody is around to answer; the broker call will hang, so surface it loudly.
         eprintln!("!! permission prompt (unanswered): {event:?}");
+    }
+
+    fn turn_provenance(&self, event: TurnProvenanceEvent) {
+        eprintln!("\n-- provenance: {:?}", event.provenance);
     }
 }
 

@@ -13,7 +13,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use thoughttree_core::acp::sessions::{run_prompt_session, PromptSessionParams};
-use thoughttree_core::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
+use thoughttree_core::events::{
+    PermissionRequestEvent, SessionEventSink, StreamChunkEvent, TurnProvenanceEvent,
+};
 use thoughttree_core::permissions::PermissionBroker;
 use thoughttree_core::runtime::run_localset_blocking;
 use thoughttree_core::types::{AgentProvider, Message, MessageFile, ProviderPaths};
@@ -29,6 +31,10 @@ impl SessionEventSink for CollectSink {
 
     fn permission_request(&self, event: PermissionRequestEvent) {
         eprintln!("!! permission prompt (unanswered): {event:?}");
+    }
+
+    fn turn_provenance(&self, event: TurnProvenanceEvent) {
+        eprintln!("\n-- provenance: {:?}", event.provenance);
     }
 }
 

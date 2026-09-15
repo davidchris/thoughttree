@@ -10,8 +10,10 @@ use async_trait::async_trait;
 use futures::lock::Mutex;
 use tracing::{debug, info, warn};
 
+use crate::acp::provenance::TurnRecorder;
 use crate::events::{
     PermissionRequestEvent, PermissionRequestOption, SessionEventSink, StreamChunkEvent,
+    TurnProvenanceEvent,
 };
 use crate::permissions::PermissionBroker;
 
@@ -47,6 +49,8 @@ pub struct StreamingClient<S> {
     /// A non-message update (tool call, thought, plan) arrived after message
     /// text, so the next message chunk starts a new segment.
     segment_boundary_pending: AtomicBool,
+    /// Tool activity and file references observed during this Turn.
+    recorder: std::sync::Mutex<TurnRecorder>,
 }
 
 impl<S: SessionEventSink> StreamingClient<S> {
@@ -63,7 +67,19 @@ impl<S: SessionEventSink> StreamingClient<S> {
             notes_directory,
             has_message_text: AtomicBool::new(false),
             segment_boundary_pending: AtomicBool::new(false),
+            recorder: std::sync::Mutex::new(TurnRecorder::new()),
         }
+    }
+
+    /// Close the Turn: build its provenance from everything observed so far
+    /// and hand it to the sink. Call once, after the prompt request settles.
+    pub fn close_turn(&self) {
+        let recorder =
+            std::mem::take(&mut *self.recorder.lock().unwrap_or_else(|e| e.into_inner()));
+        self.sink.turn_provenance(TurnProvenanceEvent {
+            node_id: self.node_id.clone(),
+            provenance: recorder.close(&self.notes_directory),
+        });
     }
 
     /// Record that the agent did something other than emit message text.
@@ -270,6 +286,10 @@ impl<S: SessionEventSink> SessionClient for StreamingClient<S> {
         &self,
         args: SessionNotification,
     ) -> agent_client_protocol::Result<()> {
+        self.recorder
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .observe(&args.update);
         match args.update {
             SessionUpdate::AgentMessageChunk(chunk) => {
                 if let ContentBlock::Text(text) = chunk.content {
@@ -415,13 +435,17 @@ mod tests {
     };
 
     use super::{is_allowed_summary_tool, SessionClient, StreamingClient, SEGMENT_SEPARATOR};
-    use crate::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
+    use crate::acp::provenance::{FileTurnReference, TurnReference, TurnReferenceRelation};
+    use crate::events::{
+        PermissionRequestEvent, SessionEventSink, StreamChunkEvent, TurnProvenanceEvent,
+    };
     use crate::permissions::PermissionBroker;
 
     #[derive(Clone, Default)]
     struct RecordingSink {
         stream_chunks: Arc<StdMutex<Vec<StreamChunkEvent>>>,
         permission_requests: Arc<StdMutex<Vec<PermissionRequestEvent>>>,
+        turn_provenance: Arc<StdMutex<Vec<TurnProvenanceEvent>>>,
     }
 
     impl RecordingSink {
@@ -496,6 +520,10 @@ mod tests {
         fn permission_request(&self, event: PermissionRequestEvent) {
             self.permission_requests.lock().unwrap().push(event);
         }
+
+        fn turn_provenance(&self, event: TurnProvenanceEvent) {
+            self.turn_provenance.lock().unwrap().push(event);
+        }
     }
 
     fn permission_request() -> RequestPermissionRequest {
@@ -521,6 +549,68 @@ mod tests {
         assert!(!is_allowed_summary_tool("Bash"));
         assert!(!is_allowed_summary_tool("Write"));
         assert!(!is_allowed_summary_tool("WebFetch"));
+    }
+
+    #[test]
+    fn close_turn_emits_provenance_with_vault_file_references() {
+        use agent_client_protocol::schema::v1::{ToolCallLocation, ToolCallStatus, ToolKind};
+
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::write(vault.path().join("notes.md"), "hi").unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        runtime.block_on(async {
+            let sink = RecordingSink::default();
+            let client = StreamingClient::new(
+                sink.clone(),
+                "node-42".to_string(),
+                PermissionBroker::new(),
+                vault.path().to_path_buf(),
+            );
+
+            notify_all(
+                &client,
+                vec![
+                    SessionNotification::new(
+                        "session-1",
+                        SessionUpdate::ToolCall(
+                            ToolCall::new(ToolCallId::new("tc-1"), "Read notes.md")
+                                .kind(ToolKind::Read)
+                                .locations(vec![ToolCallLocation::new(
+                                    vault.path().join("notes.md"),
+                                )]),
+                        ),
+                    ),
+                    SessionNotification::new(
+                        "session-1",
+                        SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                            "tc-1",
+                            ToolCallUpdateFields::new().status(ToolCallStatus::Completed),
+                        )),
+                    ),
+                ],
+            )
+            .await;
+            assert!(sink.turn_provenance.lock().unwrap().is_empty());
+
+            client.close_turn();
+
+            let events = sink.turn_provenance.lock().unwrap().clone();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].node_id, "node-42");
+            let TurnReference::File(FileTurnReference::Vault {
+                path, relations, ..
+            }) = &events[0].provenance.references[0]
+            else {
+                panic!("expected vault reference");
+            };
+            assert_eq!(path, "notes.md");
+            assert_eq!(relations, &vec![TurnReferenceRelation::Read]);
+            assert_eq!(events[0].provenance.activity.len(), 1);
+        });
     }
 
     #[test]

@@ -41,6 +41,7 @@ function createMockTransport(): BackendTransport {
     generateSummary: vi.fn(),
     onStreamChunk: vi.fn(() => () => {}),
     onPermissionRequest: vi.fn(() => () => {}),
+    onTurnProvenance: vi.fn(() => () => {}),
     pickVaultFile: vi.fn(),
     resolveDroppedFile: vi.fn(),
     statVaultFile: vi.fn(),

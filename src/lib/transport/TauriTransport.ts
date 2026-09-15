@@ -26,6 +26,7 @@ import type {
   StreamChunk,
   SummaryRequest,
   SummaryResult,
+  TurnProvenanceEvent,
   Unsubscribe,
   VaultFileStatus,
 } from './types';
@@ -56,6 +57,11 @@ interface BackendMessage {
 interface ChunkPayload {
   node_id: string;
   chunk: string;
+}
+
+interface TurnProvenancePayload {
+  node_id: string;
+  provenance: unknown;
 }
 
 interface PermissionPayload {
@@ -241,6 +247,7 @@ export class TauriTransport implements BackendTransport {
 
   private readonly streamChunkSubscribers = new Set<(ev: StreamChunk) => void>();
   private readonly permissionSubscribers = new Set<(ev: PermissionRequest) => void>();
+  private readonly provenanceSubscribers = new Set<(ev: TurnProvenanceEvent) => void>();
   private listenersReady: Promise<void>;
 
   constructor() {
@@ -265,6 +272,15 @@ export class TauriTransport implements BackendTransport {
           subscriber(permission);
         }
       }),
+      listen<TurnProvenancePayload>('turn-provenance', (event) => {
+        const provenance: TurnProvenanceEvent = {
+          nodeId: event.payload.node_id,
+          provenance: event.payload.provenance,
+        };
+        for (const subscriber of this.provenanceSubscribers) {
+          subscriber(provenance);
+        }
+      }),
     ]);
   }
 
@@ -285,6 +301,14 @@ export class TauriTransport implements BackendTransport {
     void this.ensureListeners();
     return () => {
       this.permissionSubscribers.delete(cb);
+    };
+  }
+
+  onTurnProvenance(cb: (ev: TurnProvenanceEvent) => void): Unsubscribe {
+    this.provenanceSubscribers.add(cb);
+    void this.ensureListeners();
+    return () => {
+      this.provenanceSubscribers.delete(cb);
     };
   }
 

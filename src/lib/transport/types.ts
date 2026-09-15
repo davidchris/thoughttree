@@ -74,6 +74,12 @@ export interface StreamChunk {
   chunk: string;
 }
 
+/** Turn provenance captured by the backend; `provenance` is untrusted until normalized by the graph model. */
+export interface TurnProvenanceEvent {
+  nodeId: string;
+  provenance: unknown;
+}
+
 export interface SummaryRequest {
   nodeId: string;
   content: string;
@@ -156,6 +162,8 @@ export interface BackendTransport {
 
   onStreamChunk(cb: (ev: StreamChunk) => void): Unsubscribe;
   onPermissionRequest(cb: (ev: PermissionRequest) => void): Unsubscribe;
+  /** Fires once per Turn, after the prompt settles and before `sendPrompt` resolves. */
+  onTurnProvenance(cb: (ev: TurnProvenanceEvent) => void): Unsubscribe;
 
   readonly capabilities: { nativeDialogs: boolean };
 }

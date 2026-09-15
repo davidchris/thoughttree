@@ -109,6 +109,7 @@ mod tests {
     use super::PermissionBroker;
     use crate::events::{
         PermissionRequestEvent, PermissionRequestOption, SessionEventSink, StreamChunkEvent,
+        TurnProvenanceEvent,
     };
 
     #[derive(Clone, Default)]
@@ -134,6 +135,8 @@ mod tests {
         fn permission_request(&self, event: PermissionRequestEvent) {
             self.permission_requests.lock().unwrap().push(event);
         }
+
+        fn turn_provenance(&self, _event: TurnProvenanceEvent) {}
     }
 
     impl SessionEventSink for FailingSink {
@@ -142,6 +145,8 @@ mod tests {
         fn permission_request(&self, event: PermissionRequestEvent) {
             event.mark_delivery_failed();
         }
+
+        fn turn_provenance(&self, _event: TurnProvenanceEvent) {}
     }
 
     fn sample_request() -> PermissionRequestEvent {

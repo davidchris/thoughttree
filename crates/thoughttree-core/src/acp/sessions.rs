@@ -226,7 +226,7 @@ pub async fn run_prompt_session<S: SessionEventSink>(
 
     info!("Creating ACP connection...");
     let tag = provider.descriptor().id;
-    connect_agent(child, client, tag, async |cx| {
+    let result = connect_agent(child, client.clone(), tag, async |cx| {
         info!("Initializing connection...");
         let init_response = initialize_with_timeout(
             &cx,
@@ -285,7 +285,11 @@ pub async fn run_prompt_session<S: SessionEventSink>(
         info!("Stop reason: {:?}", prompt_response.stop_reason);
         Ok(format!("{:?}", prompt_response.stop_reason))
     })
-    .await
+    .await;
+    // Provenance is emitted on every outcome, so a cancelled or failed Turn
+    // still records what the agent did before it stopped.
+    client.close_turn();
+    result
 }
 
 pub async fn run_model_discovery_session(
