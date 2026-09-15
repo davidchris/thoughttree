@@ -64,7 +64,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
             )}
 
             <button
-              onClick={handleSelectDirectory}
+              onClick={() => void handleSelectDirectory()}
               disabled={isSelecting}
               className="select-button"
             >
@@ -77,7 +77,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
 
         <div className="setup-actions">
           <button
-            onClick={handleConfirm}
+            onClick={() => void handleConfirm()}
             disabled={!selectedPath}
             className="confirm-button"
           >

@@ -53,7 +53,7 @@ export function GenerationControls({
   );
 
   useEffect(() => {
-    fetchModels(provider);
+    void fetchModels(provider);
   }, [provider, fetchModels]);
 
   return (

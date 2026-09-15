@@ -472,6 +472,31 @@ mod tests {
         assert_eq!(read_project_file(&path).unwrap(), initial);
     }
 
+    /// Appends `digit` to the project file once, reloading and retrying until the
+    /// guarded write is no longer stale.
+    fn append_digit_with_reload(path: &std::path::Path, digit: u32) {
+        loop {
+            let doc = read_project_file(path).unwrap();
+            match super::guarded_write_file(
+                path,
+                &format!("{}{digit}", doc.content),
+                Some(&doc.revision),
+            ) {
+                Ok(_) => return,
+                Err(VaultError::Stale { .. }) => continue,
+                Err(err) => panic!("unexpected write error: {err}"),
+            }
+        }
+    }
+
+    /// One writer thread: waits for the start barrier, then appends `digit` ten times.
+    fn append_digit_ten_times(path: &std::path::Path, digit: u32, start: &std::sync::Barrier) {
+        start.wait();
+        for _ in 0..10 {
+            append_digit_with_reload(path, digit);
+        }
+    }
+
     #[test]
     fn concurrent_thoughttree_writers_with_reload_preserve_every_edit() {
         let dir = tempdir().unwrap();
@@ -479,26 +504,10 @@ mod tests {
         fs::write(&path, "0").unwrap();
         let start = std::sync::Barrier::new(8);
         std::thread::scope(|scope| {
-            for digit in 1..=8 {
+            for digit in 1u32..=8 {
                 let path = &path;
                 let start = &start;
-                scope.spawn(move || {
-                    start.wait();
-                    for _ in 0..10 {
-                        loop {
-                            let doc = read_project_file(path).unwrap();
-                            match super::guarded_write_file(
-                                path,
-                                &format!("{}{digit}", doc.content),
-                                Some(&doc.revision),
-                            ) {
-                                Ok(_) => break,
-                                Err(VaultError::Stale { .. }) => continue,
-                                Err(err) => panic!("unexpected write error: {err}"),
-                            }
-                        }
-                    }
-                });
+                scope.spawn(move || append_digit_ten_times(path, digit, start));
             }
         });
         let mut content: Vec<_> = read_project_file(&path).unwrap().content.chars().collect();

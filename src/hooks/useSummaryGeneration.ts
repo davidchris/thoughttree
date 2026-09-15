@@ -52,7 +52,7 @@ async function processQueue() {
 function queueSummaryGeneration(nodeId: string, content: string): Promise<SummaryResult> {
   return new Promise((resolve, reject) => {
     summaryQueue.push({ nodeId, content, resolve, reject });
-    processQueue();
+    void processQueue();
   });
 }
 
@@ -70,6 +70,39 @@ export function useSummaryGeneration() {
   const setSummary = useGraphStore((state) => state.setSummary);
 
   useEffect(() => {
+    // Generates (and stores) the AI summary for one node; handles its own errors.
+    const runSummaryJob = async (nodeId: string) => {
+      timeoutsRef.current.delete(nodeId);
+
+      // Double-check it's not streaming now
+      if (useGraphStore.getState().streamingNodeIds.has(nodeId)) return;
+
+      // Check content hasn't changed significantly
+      const currentData = useGraphStore.getState().nodeData.get(nodeId);
+      if (!currentData || currentData.content.length <= SUMMARY_THRESHOLD) return;
+
+      pendingRef.current.add(nodeId);
+
+      try {
+        logger.debug(`[Summary] Queueing summary generation for node ${nodeId}`);
+        const result = await queueSummaryGeneration(nodeId, currentData.content);
+
+        // Verify node still exists and needs summary
+        const finalData = useGraphStore.getState().nodeData.get(nodeId);
+        if (finalData && finalData.content.length > SUMMARY_THRESHOLD) {
+          setSummary(result.node_id, result.summary);
+          logger.debug(`[Summary] Set summary for ${nodeId}: ${result.summary}`);
+        }
+      } catch (error) {
+        logger.error(`[Summary] Failed to generate summary for ${nodeId}:`, error);
+        // Use truncated content as fallback
+        const fallback = currentData.content.slice(0, 50) + '...';
+        setSummary(nodeId, fallback);
+      } finally {
+        pendingRef.current.delete(nodeId);
+      }
+    };
+
     // Check all nodes for pending summaries
     for (const [nodeId, data] of nodeData) {
       // Skip if currently streaming
@@ -104,37 +137,7 @@ export function useSummaryGeneration() {
         clearTimeout(existingTimeout);
       }
 
-      const timeout = setTimeout(async () => {
-        timeoutsRef.current.delete(nodeId);
-
-        // Double-check it's not streaming now
-        if (useGraphStore.getState().streamingNodeIds.has(nodeId)) return;
-
-        // Check content hasn't changed significantly
-        const currentData = useGraphStore.getState().nodeData.get(nodeId);
-        if (!currentData || currentData.content.length <= SUMMARY_THRESHOLD) return;
-
-        pendingRef.current.add(nodeId);
-
-        try {
-          logger.debug(`[Summary] Queueing summary generation for node ${nodeId}`);
-          const result = await queueSummaryGeneration(nodeId, currentData.content);
-
-          // Verify node still exists and needs summary
-          const finalData = useGraphStore.getState().nodeData.get(nodeId);
-          if (finalData && finalData.content.length > SUMMARY_THRESHOLD) {
-            setSummary(result.node_id, result.summary);
-            logger.debug(`[Summary] Set summary for ${nodeId}: ${result.summary}`);
-          }
-        } catch (error) {
-          logger.error(`[Summary] Failed to generate summary for ${nodeId}:`, error);
-          // Use truncated content as fallback
-          const fallback = currentData.content.slice(0, 50) + '...';
-          setSummary(nodeId, fallback);
-        } finally {
-          pendingRef.current.delete(nodeId);
-        }
-      }, DEBOUNCE_MS);
+      const timeout = setTimeout(() => void runSummaryJob(nodeId), DEBOUNCE_MS);
 
       timeoutsRef.current.set(nodeId, timeout);
     }

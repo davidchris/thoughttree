@@ -38,7 +38,7 @@ export function PermissionDialog() {
           {pendingPermission.options.map((option) => (
             <button
               key={option.id}
-              onClick={() => handleOptionClick(option.id)}
+              onClick={() => void handleOptionClick(option.id)}
               className={option.label.toLowerCase().includes('deny') ? 'deny' : 'approve'}
             >
               {option.label}

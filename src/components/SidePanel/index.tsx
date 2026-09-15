@@ -2,14 +2,11 @@ import { useEffect, useState } from 'react';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useProviderStore } from '../../store/useProviderStore';
 import { useUIStore } from '../../store/useUIStore';
-import { MarkdownContent } from '../Graph/MarkdownContent';
 import { providerShortName, type AgentProvider, type AgentNodeData, type UserNodeData } from '../../types';
 import { useNodeGeneration } from '../../hooks/useNodeGeneration';
-import { logger } from '../../lib/logger';
 import { usePanelResize } from './usePanelResize';
-import { EditArea } from './EditArea';
-import { GenerationControls } from './GenerationControls';
-import { Provenance } from './Provenance';
+import { SidePanelActions } from './SidePanelActions';
+import { SidePanelBody } from './SidePanelBody';
 import './styles.css';
 
 export function SidePanel() {
@@ -26,7 +23,6 @@ export function SidePanel() {
   const clearSidePanelEditTrigger = useUIStore((state) => state.clearSidePanelEditTrigger);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [copySuccess, setCopySuccess] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<AgentProvider>(defaultProvider);
   const [selectedModel, setSelectedModel] = useState<string | undefined>(undefined);
   const { width, handleResizeStart } = usePanelResize();
@@ -77,33 +73,6 @@ export function SidePanel() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [previewNodeId, setPreviewNode, isEditing]);
 
-  const handleCopy = async () => {
-    if (!data?.content) return;
-
-    try {
-      await navigator.clipboard.writeText(data.content);
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
-    } catch (error) {
-      logger.error('Failed to copy content:', error);
-      // Fallback for older browsers
-      const textarea = document.createElement('textarea');
-      textarea.value = data.content;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2000);
-      } catch (err) {
-        logger.error('Fallback copy failed:', err);
-      }
-      document.body.removeChild(textarea);
-    }
-  };
-
   const handleGenerate = async () => {
     if (!previewNodeId || !data?.content.trim() || isBlocked) return;
 
@@ -119,6 +88,7 @@ export function SidePanel() {
       onAgentNodeCreated: (agentNodeId) => setPreviewNode(agentNodeId),
     });
   };
+  const generate = () => void handleGenerate();
 
   if (!previewNodeId || !data) {
     return null;
@@ -144,80 +114,30 @@ export function SidePanel() {
           {isStreaming && <span className="side-panel-streaming">Generating...</span>}
           <span className="side-panel-timestamp">{formattedTime}</span>
         </div>
-        <div className="side-panel-actions">
-          {!isEditing && data?.content && (
-            <button
-              className="side-panel-copy-button"
-              onClick={handleCopy}
-              title="Copy as markdown"
-            >
-              {copySuccess ? 'Copied!' : 'Copy'}
-            </button>
-          )}
-          {isUserNode && !isEditing && (
-            <button
-              className="side-panel-edit-button"
-              onClick={() => setIsEditing(true)}
-              title="Edit content"
-            >
-              Edit
-            </button>
-          )}
-          {isUserNode && (
-            <GenerationControls
-              provider={selectedProvider}
-              model={selectedModel}
-              onProviderChange={setSelectedProvider}
-              onModelChange={setSelectedModel}
-              disabled={isBlocked}
-              generateDisabled={isBlocked || !data?.content.trim()}
-              onGenerate={handleGenerate}
-            />
-          )}
-          {isEditing && (
-            <button
-              className="side-panel-done-button"
-              onClick={() => setIsEditing(false)}
-            >
-              Done
-            </button>
-          )}
-          <button
-            className="side-panel-close"
-            onClick={() => setPreviewNode(null)}
-            title="Close (Escape)"
-          >
-            ×
-          </button>
-        </div>
+        <SidePanelActions
+          content={data.content}
+          isUserNode={isUserNode}
+          isEditing={isEditing}
+          isBlocked={isBlocked}
+          provider={selectedProvider}
+          model={selectedModel}
+          onProviderChange={setSelectedProvider}
+          onModelChange={setSelectedModel}
+          onGenerate={generate}
+          onStartEdit={() => setIsEditing(true)}
+          onFinishEdit={() => setIsEditing(false)}
+          onClose={() => setPreviewNode(null)}
+        />
       </div>
-      <div className="side-panel-content">
-        {isEditing ? (
-          <EditArea
-            nodeId={previewNodeId}
-            initialContent={data.content}
-            images={images}
-            onGenerate={handleGenerate}
-          />
-        ) : (
-          <>
-            {data.content ? (
-              isStreaming ? (
-                <pre className="side-panel-plain-text">{data.content}</pre>
-              ) : (
-                <MarkdownContent content={data.content} />
-              )
-            ) : isStreaming ? (
-              <span className="side-panel-empty">Waiting for response...</span>
-            ) : (
-              <span className="side-panel-empty">No content</span>
-            )}
-            {provenance && (
-              <Provenance key={previewNodeId} provenance={provenance} content={data.content} />
-            )}
-          </>
-        )}
-      </div>
+      <SidePanelBody
+        nodeId={previewNodeId}
+        content={data.content}
+        images={images}
+        isEditing={isEditing}
+        isStreaming={isStreaming}
+        provenance={provenance}
+        onGenerate={generate}
+      />
     </div>
   );
 }

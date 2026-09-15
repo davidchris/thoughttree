@@ -90,7 +90,7 @@ function MermaidDiagram({ code }: MermaidDiagramProps) {
       }
     }
 
-    render();
+    void render();
     return () => { cancelled = true; };
   }, [code, uniqueId]);
 
