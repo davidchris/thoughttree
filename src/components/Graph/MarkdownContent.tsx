@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
 import 'katex/dist/katex.min.css';
+import { normalizeMathDelimiters } from '../../lib/mathDelimiters';
 
 // Initialize mermaid once
 mermaid.initialize({
@@ -207,7 +208,7 @@ export function MarkdownContent({ content, className = '' }: MarkdownContentProp
           },
         }}
       >
-        {content}
+        {normalizeMathDelimiters(content)}
       </ReactMarkdown>
     </div>
   );
