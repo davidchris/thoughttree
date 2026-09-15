@@ -118,16 +118,26 @@ function CollapsedContent({ text, isGeneratingSummary }: CollapsedContentProps) 
 
 interface UserNodeFooterProps {
   isEditing: boolean;
-  hasText: boolean;
-  imageCount: number;
+  /** Text, images, or a file node in the lineage — or a blocker worth showing. */
+  showGenerate: boolean;
+  canGenerate: boolean;
   isBlocked: boolean;
+  /** Why sending is refused right now; shown as the button tooltip. */
+  blockedReason: string | null;
   onGenerate: () => void;
 }
 
 /** Generate button, or the placeholder hint when the node is still empty. */
-function UserNodeFooter({ isEditing, hasText, imageCount, isBlocked, onGenerate }: UserNodeFooterProps) {
+function UserNodeFooter({
+  isEditing,
+  showGenerate,
+  canGenerate,
+  isBlocked,
+  blockedReason,
+  onGenerate,
+}: UserNodeFooterProps) {
   if (isEditing) return null;
-  if (!hasText && imageCount === 0) {
+  if (!showGenerate) {
     return <div className="node-placeholder">Double-click to edit in panel</div>;
   }
 
@@ -135,8 +145,8 @@ function UserNodeFooter({ isEditing, hasText, imageCount, isBlocked, onGenerate 
     <button
       className="generate-button"
       onClick={onGenerate}
-      disabled={isBlocked}
-      title="Generate response (Cmd+Enter)"
+      disabled={isBlocked || !canGenerate}
+      title={blockedReason ?? "Generate response (Cmd+Enter)"}
     >
       {isBlocked ? "..." : "Generate"}
     </button>
@@ -167,8 +177,13 @@ export function UserNode({ id, selected }: NodeProps) {
   const removeNodeImage = useGraphStore((state) => state.removeNodeImage);
   const generateNode = useNodeGeneration();
 
+  // Something to send (text, images, or a file node in the lineage) and no broken file node.
+  const canGenerate = useGraphStore((state) => state.canGenerate(id));
+  const sendBlockedReason = useGraphStore((state) => state.sendBlocker(id));
+
   const isEditing = editingNodeId === id;
   const isBlocked = isNodeBlocked(id);
+  const showGenerate = canGenerate || sendBlockedReason !== null;
 
   // Compute collapsed text: short content shown directly, long content uses AI summary
   const summary = nodeData?.summary;
@@ -272,7 +287,7 @@ export function UserNode({ id, selected }: NodeProps) {
   };
 
   const handleGenerate = async () => {
-    if (!content.trim() || isBlocked) return;
+    if (!canGenerate || isBlocked) return;
 
     // Exit edit mode first
     setEditing(null);
@@ -426,9 +441,10 @@ export function UserNode({ id, selected }: NodeProps) {
 
       <UserNodeFooter
         isEditing={isEditing}
-        hasText={Boolean(content.trim())}
-        imageCount={images.length}
+        showGenerate={showGenerate}
+        canGenerate={canGenerate}
         isBlocked={isBlocked}
+        blockedReason={sendBlockedReason}
         onGenerate={() => void handleGenerate()}
       />
 

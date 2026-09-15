@@ -3,12 +3,20 @@ import type { NodeChange } from '@xyflow/react';
 import { GRAPH_JSON_VERSION, GraphMutations, GraphSerialize } from '@thoughttree/graph-model';
 import type { Graph } from '@thoughttree/graph-model';
 import type { BackendTransport } from '../lib/transport';
+import type { UserNodeData } from '../types';
 import { setBackendTransport, StaleRevisionError } from '../lib/transport';
+import { createMockTransport } from '../test/mockTransport';
 import { STREAM_FLUSH_INTERVAL_MS, useGraphStore } from './useGraphStore';
 import { useProviderStore } from './useProviderStore';
 import { useUIStore } from './useUIStore';
 import { hasFreshSummary } from '../hooks/useSummaryGeneration';
 import projectV4 from '../../test/fixtures/project-v4.json';
+
+function userNodeData(id: string): UserNodeData {
+  const data = useGraphStore.getState().nodeData.get(id);
+  if (data?.role !== 'user') throw new Error(`Expected a user node: ${id}`);
+  return data;
+}
 
 function resetStore() {
   const state = useGraphStore.getState();
@@ -23,35 +31,6 @@ function resetStore() {
     globalEffortPreferences: {},
   });
   useUIStore.getState().reset();
-}
-
-function createMockTransport(): BackendTransport {
-  return {
-    capabilities: { nativeDialogs: true },
-    loadProject: vi.fn(),
-    saveProject: vi.fn(),
-    saveProjectCopy: vi.fn(),
-    snapshotProject: vi.fn().mockResolvedValue('snapshot-1'),
-    listProjectRecovery: vi.fn().mockResolvedValue([]),
-    readProjectRecovery: vi.fn(),
-    listProjects: vi.fn(),
-    importKagiExport: vi.fn(),
-    sendPrompt: vi.fn(),
-    respondToPermission: vi.fn(),
-    checkAcpAvailable: vi.fn(),
-    searchFiles: vi.fn(),
-    getAvailableProviders: vi.fn(),
-    getDefaultProvider: vi.fn(),
-    setDefaultProvider: vi.fn(),
-    getModelPreferences: vi.fn(),
-    setModelPreference: vi.fn(),
-    getEffortPreferences: vi.fn(),
-    setEffortPreference: vi.fn(),
-    getAvailableModels: vi.fn(),
-    generateSummary: vi.fn(),
-    onStreamChunk: vi.fn(() => () => {}),
-    onPermissionRequest: vi.fn(() => () => {}),
-  };
 }
 
 describe('useGraphStore', () => {
@@ -103,16 +82,15 @@ describe('useGraphStore', () => {
     vi.setSystemTime(new Date('2026-01-01T00:00:01.000Z'));
     state.updateNodeContent(id, 'Initial content');
     state.setSummary(id, 'Initial summary');
-    const summaryTimestamp = useGraphStore.getState().nodeData.get(id)?.summaryTimestamp ?? 0;
+    const summaryTimestamp = userNodeData(id).summaryTimestamp ?? 0;
 
     vi.setSystemTime(new Date('2026-01-01T00:00:02.000Z'));
     state.updateNodeContent(id, 'Edited content');
 
-    const updated = useGraphStore.getState().nodeData.get(id);
-    expect(updated).toBeDefined();
-    expect(updated?.contentUpdatedAt).toBeGreaterThan(summaryTimestamp);
-    expect(updated?.summary).toBe('Initial summary');
-    expect(hasFreshSummary(updated!)).toBe(false);
+    const updated = userNodeData(id);
+    expect(updated.contentUpdatedAt).toBeGreaterThan(summaryTimestamp);
+    expect(updated.summary).toBe('Initial summary');
+    expect(hasFreshSummary(updated)).toBe(false);
   });
 
   it('returns exact conversation path IDs even with duplicate content', () => {
@@ -163,7 +141,7 @@ describe('useGraphStore', () => {
     await useGraphStore.getState().saveProject();
 
     const saved = JSON.parse(vi.mocked(transport.saveProject).mock.calls[0][1]);
-    expect(saved.version).toBe(4);
+    expect(saved.version).toBe(5);
     expect(saved.graph.nodes[1]).toEqual(projectV4.graph.nodes[1]);
     expect(JSON.stringify(saved.graph.nodes[1])).not.toMatch(
       /raw(Input|Output|Payload)|commandText|\/Users\//,
@@ -339,7 +317,7 @@ describe('useGraphStore', () => {
       null
     );
     const saved = JSON.parse(vi.mocked(transport.saveProject).mock.calls[0][1]);
-    expect(saved.version).toBe(4);
+    expect(saved.version).toBe(5);
     expect(saved.projectEffortPreferences).toEqual({ 'claude-code': 'high' });
 
     const graph = GraphSerialize.toJSON(GraphMutations.empty());
@@ -427,13 +405,13 @@ describe('useGraphStore', () => {
 
   it('rejects unsupported future Project-file versions', async () => {
     vi.mocked(transport.loadProject).mockResolvedValue({
-      data: JSON.stringify({ ...projectV4, version: 5 }),
+      data: JSON.stringify({ ...projectV4, version: 6 }),
       revision: 'rev-future',
     });
 
     await expect(
       useGraphStore.getState().loadProject('/tmp/future.thoughttree'),
-    ).rejects.toThrow('Unsupported Project file version: 5');
+    ).rejects.toThrow('Unsupported Project file version: 6');
   });
 
   it('preserves unsaved work before reload and restores it as a separate Project', async () => {
@@ -639,5 +617,58 @@ describe('streaming chunk batching', () => {
 
     expect(nodeContent(agentA)).toBe('aaaAAA');
     expect(nodeContent(agentB)).toBe('bbb');
+  });
+});
+
+describe('useGraphStore file nodes', () => {
+  const vaultFile = {
+    path: 'notes/design.md',
+    name: 'design.md',
+    mimeType: 'text/markdown',
+    size: 1234,
+    seenMtime: 1750000000000,
+    seenSize: 1234,
+  };
+
+  beforeEach(() => {
+    setBackendTransport(createMockTransport());
+    resetStore();
+  });
+
+  it('addFileNode links a Vault file as a selected, dirty file node at the given position', () => {
+    const id = useGraphStore.getState().addFileNode(vaultFile, { x: 40, y: 50 });
+
+    const state = useGraphStore.getState();
+    expect(state.graph.nodes.get(id)).toMatchObject({ id, role: 'file', content: '', ...vaultFile });
+    expect(state.graph.layout.get(id)).toEqual({ x: 40, y: 50 });
+    expect(state.selectedNodeId).toBe(id);
+    expect(state.isDirty).toBe(true);
+    expect(state.nodes.find((n) => n.id === id)?.type).toBe('file');
+  });
+
+  it('onConnect never creates an edge into a file node', () => {
+    const fileId = useGraphStore.getState().addFileNode(vaultFile, { x: 0, y: 0 });
+    const userId = useGraphStore.getState().createUserNode({ x: 0, y: 100 });
+
+    useGraphStore.getState().onConnect({ source: userId, target: fileId, sourceHandle: null, targetHandle: null });
+    expect(useGraphStore.getState().graph.edges).toEqual([]);
+
+    useGraphStore.getState().onConnect({ source: fileId, target: userId, sourceHandle: null, targetHandle: null });
+    expect(useGraphStore.getState().graph.edges).toEqual([{ id: `${fileId}->${userId}`, source: fileId, target: userId }]);
+  });
+
+  it('buildConversationContext carries the file ref into the downstream user turn', () => {
+    const fileId = useGraphStore.getState().addFileNode(vaultFile, { x: 0, y: 0 });
+    const userId = useGraphStore.getState().createUserNode({ x: 0, y: 100 });
+    useGraphStore.getState().updateNodeContent(userId, 'summarize');
+    useGraphStore.getState().onConnect({ source: fileId, target: userId, sourceHandle: null, targetHandle: null });
+
+    expect(useGraphStore.getState().buildConversationContext(userId)).toEqual([
+      {
+        role: 'user',
+        content: 'summarize',
+        files: [{ path: 'notes/design.md', name: 'design.md', mimeType: 'text/markdown', size: 1234 }],
+      },
+    ]);
   });
 });

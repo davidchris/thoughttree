@@ -21,6 +21,8 @@ export const GraphMutations = {
   },
 
   addEdge(g: Graph, source: NodeId, target: NodeId): Graph {
+    // File nodes are pure sources of context: they never have incoming edges.
+    if (g.nodes.get(target)?.role === 'file') return g;
     const id = `${source}->${target}`;
     if (g.edges.some((e) => e.id === id)) return g;
     const next = cloneGraph(g);

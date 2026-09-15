@@ -45,14 +45,27 @@ interface Match {
   firstContentPos: number;
 }
 
+/**
+ * The text a node is searched by: its content, or the Vault-relative path for
+ * a file node (which has no content) — so a folder name in the query finds it too.
+ */
+function searchableText(node: GraphNode): string {
+  return node.role === 'file' ? node.path : node.content;
+}
+
+function summaryOf(node: GraphNode): string {
+  return node.role === 'file' ? '' : (node.summary ?? '');
+}
+
 function matchNode(node: GraphNode, matchers: TokenMatcher[]): Match | null {
-  const summary = node.summary ?? '';
+  const content = searchableText(node);
+  const summary = summaryOf(node);
   // Empty nodes have nothing to show in a result row (empty query matches everything else).
-  if (node.content === '' && summary === '') return null;
+  if (content === '' && summary === '') return null;
   let firstContentPos = Infinity;
   let summaryMatched = false;
   for (const matcher of matchers) {
-    const contentMatch = matcher.first.exec(node.content);
+    const contentMatch = matcher.first.exec(content);
     const inSummary = matcher.first.test(summary);
     if (!contentMatch && !inSummary) return null;
     if (contentMatch) firstContentPos = Math.min(firstContentPos, contentMatch.index);
@@ -62,6 +75,7 @@ function matchNode(node: GraphNode, matchers: TokenMatcher[]): Match | null {
 }
 
 function recency(node: GraphNode): number {
+  if (node.role === 'file') return node.timestamp;
   return node.contentUpdatedAt ?? node.timestamp;
 }
 
@@ -85,7 +99,9 @@ function sliceAtCodePoint(text: string, start: number, end: number): string {
 }
 
 function titleText(node: GraphNode): string {
-  if (node.summary) return node.summary;
+  if (node.role === 'file') return sliceAtCodePoint(node.name, 0, TITLE_MAX_CHARS);
+  const summary = summaryOf(node);
+  if (summary) return summary;
   const firstLine = node.content.trimStart().split('\n', 1)[0];
   return sliceAtCodePoint(firstLine, 0, TITLE_MAX_CHARS);
 }
@@ -122,6 +138,19 @@ function extractSnippet(
   return { text, spans: highlightSpans(text, matchers) };
 }
 
+/**
+ * A file node's snippet is always its Vault-relative path (where the file lives);
+ * other nodes get a content line around the first match, none when the match was summary-only.
+ */
+function snippetOf(match: Match, matchers: TokenMatcher[]): HighlightedText | undefined {
+  const { node } = match;
+  if (node.role === 'file') return { text: node.path, spans: highlightSpans(node.path, matchers) };
+  if (matchers.length > 0 && Number.isFinite(match.firstContentPos)) {
+    return extractSnippet(node.content, match.firstContentPos, matchers);
+  }
+  return undefined;
+}
+
 function toHit(match: Match, matchers: TokenMatcher[]): SearchHit {
   const title = titleText(match.node);
   const hit: SearchHit = {
@@ -129,9 +158,8 @@ function toHit(match: Match, matchers: TokenMatcher[]): SearchHit {
     node: match.node,
     title: { text: title, spans: highlightSpans(title, matchers) },
   };
-  if (matchers.length > 0 && Number.isFinite(match.firstContentPos)) {
-    hit.snippet = extractSnippet(match.node.content, match.firstContentPos, matchers);
-  }
+  const snippet = snippetOf(match, matchers);
+  if (snippet) hit.snippet = snippet;
   return hit;
 }
 

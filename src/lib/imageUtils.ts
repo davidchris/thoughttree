@@ -1,15 +1,17 @@
 /**
- * Image processing utilities for Claude API compatibility.
+ * Client-side processing for pasted/dropped inline images.
  *
- * Claude API constraints:
- * - Max 3.75 MB per image
- * - Max 8000x8000 px dimensions
- *
- * We use conservative limits to ensure images always pass validation.
+ * The authoritative attachment limits live in the core crate
+ * (`thoughttree_core::vault::files::limits`: IMAGE_MAX_BYTES, IMAGE_MAX_SIDE)
+ * and are enforced by the backend before any ACP call. The values below are
+ * NOT limits: they are the targets we resize pasted images down to. They sit
+ * deliberately well below the core limits so a resized image always passes
+ * validation with margin (base64 inflation, provider-side re-encoding, and
+ * the fact that inline images are persisted as base64 in the Project file).
  */
 
-const MAX_SIZE_BYTES = 3.5 * 1024 * 1024; // 3.5MB (under 3.75MB limit)
-const MAX_DIMENSION = 4096; // Conservative limit under 8000px
+const RESIZE_TARGET_BYTES = 3.5 * 1024 * 1024; // resize target, below IMAGE_MAX_BYTES (5 MB)
+const RESIZE_TARGET_SIDE = 4096; // resize target, below IMAGE_MAX_SIDE (8000 px)
 
 /**
  * Resize an image if it exceeds size or dimension limits.
@@ -20,8 +22,8 @@ export async function resizeIfNeeded(file: File): Promise<Blob> {
   const img = await loadImage(file);
 
   // Check if resizing is needed
-  const needsDimensionResize = img.width > MAX_DIMENSION || img.height > MAX_DIMENSION;
-  const needsSizeResize = file.size > MAX_SIZE_BYTES;
+  const needsDimensionResize = img.width > RESIZE_TARGET_SIDE || img.height > RESIZE_TARGET_SIDE;
+  const needsSizeResize = file.size > RESIZE_TARGET_BYTES;
 
   if (!needsDimensionResize && !needsSizeResize) {
     return file;
@@ -32,7 +34,7 @@ export async function resizeIfNeeded(file: File): Promise<Blob> {
   let newHeight = img.height;
 
   if (needsDimensionResize) {
-    const scale = Math.min(MAX_DIMENSION / img.width, MAX_DIMENSION / img.height);
+    const scale = Math.min(RESIZE_TARGET_SIDE / img.width, RESIZE_TARGET_SIDE / img.height);
     newWidth = Math.floor(img.width * scale);
     newHeight = Math.floor(img.height * scale);
   }
@@ -55,7 +57,7 @@ export async function resizeIfNeeded(file: File): Promise<Blob> {
   let blob = await canvasToBlob(canvas, mimeType, quality);
 
   // If still too large, reduce quality iteratively
-  while (blob.size > MAX_SIZE_BYTES && quality > 0.1) {
+  while (blob.size > RESIZE_TARGET_BYTES && quality > 0.1) {
     quality -= 0.1;
     blob = await canvasToBlob(canvas, 'image/jpeg', quality);
   }

@@ -125,7 +125,39 @@ export interface AssistantGraphNode {
   provenance?: TurnProvenance;
 }
 
-export type GraphNode = UserGraphNode | AssistantGraphNode;
+/**
+ * A Vault file linked into the Graph by reference. Never holds file bytes;
+ * the backend reads the file at prompt and preview time.
+ */
+export interface FileGraphNode {
+  id: NodeId;
+  role: 'file';
+  /** Always '' — present so every GraphNode has `content`. Never user-edited. */
+  content: '';
+  timestamp: number;
+  /** Vault-relative, forward slashes, passes isVaultRelativePath. */
+  path: string;
+  /** Basename only. */
+  name: string;
+  /** e.g. 'text/markdown', 'image/png', 'application/octet-stream'. */
+  mimeType: string;
+  /** Bytes at link time. */
+  size: number;
+  /** Epoch ms at link/refresh time. */
+  seenMtime: number;
+  /** Bytes at link/refresh time. */
+  seenSize: number;
+}
+
+export type GraphNode = UserGraphNode | AssistantGraphNode | FileGraphNode;
+
+/** What a file node contributes to a Conversation path message. */
+export interface FileRef {
+  path: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
 
 export interface GraphEdge {
   id: string;

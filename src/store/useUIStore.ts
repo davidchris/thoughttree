@@ -5,7 +5,11 @@ import { PermissionRequest } from '../types';
  * src/components/Graph/styles.css. */
 const FLASH_DURATION_MS = 1000;
 
+/** How long a transient notice stays on screen. */
+const NOTICE_DURATION_MS = 6000;
+
 let flashTimer: ReturnType<typeof setTimeout> | undefined;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
  * Transient UI state that is never persisted to the project file.
@@ -23,6 +27,10 @@ interface UIState {
   staleProjectSave: { path: string; currentRevision: string } | null;
   recoveryError: string | null;
   setRecoveryError: (error: string | null) => void;
+  /** Short, self-clearing status message (e.g. why a send was refused). */
+  notice: string | null;
+  /** Show a notice; it expires on its own so callers cannot leak it. `null` clears it at once. */
+  setNotice: (message: string | null) => void;
   settingsOpen: boolean;
   triggerSidePanelEdit: boolean;
 
@@ -51,6 +59,14 @@ export const useUIStore = create<UIState>()((set, get) => ({
   staleProjectSave: null,
   recoveryError: null,
   setRecoveryError: (recoveryError) => set({ recoveryError }),
+  notice: null,
+  setNotice: (message) => {
+    clearTimeout(noticeTimer);
+    set({ notice: message });
+    if (message !== null) {
+      noticeTimer = setTimeout(() => set({ notice: null }), NOTICE_DURATION_MS);
+    }
+  },
   settingsOpen: false,
   triggerSidePanelEdit: false,
 
@@ -91,10 +107,12 @@ export const useUIStore = create<UIState>()((set, get) => ({
   // would discard in-progress edits on every project switch.
   reset: () => {
     clearTimeout(flashTimer);
+    clearTimeout(noticeTimer);
     set({
       editingNodeId: null,
       previewNodeId: null,
       flashNodeId: null,
+      notice: null,
       pendingPermission: null,
       staleProjectSave: null,
       triggerSidePanelEdit: false,

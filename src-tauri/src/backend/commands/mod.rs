@@ -1,10 +1,15 @@
 pub(crate) mod chat;
+pub(crate) mod files;
 pub(crate) mod imports;
 pub(crate) mod projects;
 pub(crate) mod providers;
 pub(crate) mod summary;
 
 pub(crate) use chat::{check_acp_available, respond_to_permission, send_prompt};
+pub(crate) use files::{
+    get_attachment_limits, pick_vault_file, read_vault_file_preview, resolve_dropped_file,
+    stat_vault_file,
+};
 pub(crate) use imports::{import_kagi_export, pick_kagi_export};
 pub(crate) use projects::{
     add_recent_project, export_markdown, get_notes_directory, get_recent_projects,

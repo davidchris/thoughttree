@@ -64,6 +64,25 @@ The built app will be in `target/release/bundle/`.
 
 On first launch, ThoughtTree will prompt you to select a **notes directory** — this is where your `.thoughttree` files are saved and where your selected agent can read files (via `@/path` mentions).
 
+## File nodes
+
+A file node puts a file from your notes directory on the canvas, so one file can anchor several independent branches of conversation.
+
+**Add a file.** Drag a file from your notes directory onto the canvas, or right-click the canvas and choose "Add file…". Only files inside the notes directory can be linked; the picker and the drop target refuse anything outside it. One file per node — add several nodes for several files.
+
+**Preview.** The card shows a type badge (PNG, MD, RS, … or FILE), the file name and size, and a preview: a thumbnail for PNG, JPG, GIF, and WebP; the first 16 KB for text-like files (Markdown, code, JSON, YAML, CSV, …). Other types show only the badge, name, and size. Double-click the card to open the file in the side panel.
+
+**Use it as context.** Connect the file node to a user node. Every node downstream receives the file. File nodes have no incoming edges — they are a source, not a reply.
+
+**How the file reaches the agent.**
+
+- Images are read from disk when you send and delivered inline. Limits: 5 MB per image, 8000 px on the longest side, 20 images per prompt. A larger image shows "too large for the agent" and blocks sending on that branch.
+- Every other file is delivered as a pointer (path, type, size). The agent reads the file with its own tools, through the usual permission prompts. There is no size limit.
+
+**Always fresh.** The node stores only the path, never the file content, so the agent always gets the file as it is on disk at send time. When the file changes, the card shows "changed on disk"; click Refresh to adopt the current version and update the preview. A deleted or moved file shows "file missing" and blocks sending until you restore the file or delete the node.
+
+Project files are saved in format v5 once this version runs; older ThoughtTree builds cannot open v5 files.
+
 ## Architecture
 
 ```

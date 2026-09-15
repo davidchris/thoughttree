@@ -14,10 +14,14 @@ import '@xyflow/react/dist/style.css';
 
 import { UserNode } from './UserNode';
 import { AgentNode } from './AgentNode';
-import { ContextMenu } from './ContextMenu';
+import { FileNode } from './FileNode';
+import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
 import { AlignmentGuides, type AlignmentGuide } from './AlignmentGuides';
 import { useGraphStore } from '../../store/useGraphStore';
 import { useUIStore } from '../../store/useUIStore';
+import { getBackendTransport } from '../../lib/transport';
+import { isTauriRuntime } from '../../lib/desktop';
+import { logger } from '../../lib/logger';
 import './styles.css';
 
 const SNAP_THRESHOLD = 8;
@@ -26,14 +30,25 @@ const DEFAULT_NODE_WIDTH = 170;
 const DEFAULT_NODE_HEIGHT = 120;
 
 // MiniMap paints into an SVG that does not resolve CSS variables reliably.
-// Keep in sync with --tt-accent and --tt-surface in design/tokens.css.
+// Keep in sync with --tt-accent, --tt-surface and --tt-edge in design/tokens.css.
 const MINT = '#c0facc';
 const SURFACE = '#0a3038';
+const FILE_FILL = '#4f7a76';
+
+// Several files dropped at once fan out diagonally instead of stacking.
+const DROP_CASCADE_PX = 24;
 
 const nodeTypes: NodeTypes = {
   user: UserNode,
   agent: AgentNode,
+  file: FileNode,
 };
+
+function minimapColor(node: Node): string {
+  if (node.type === 'user') return MINT;
+  if (node.type === 'file') return FILE_FILL;
+  return SURFACE;
+}
 
 type GraphSnapshot = ReturnType<typeof useGraphStore.getState>;
 type UISnapshot = ReturnType<typeof useUIStore.getState>;
@@ -107,12 +122,13 @@ export function Graph() {
   const setPreviewNode = useUIStore((state) => state.setPreviewNode);
   const { screenToFlowPosition } = useReactFlow();
   const connectingNodeId = useRef<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    nodeId: string;
+    target: ContextMenuTarget;
   } | null>(null);
 
   // Alignment guides state
@@ -300,10 +316,98 @@ export function Graph() {
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: { id: string }) => {
       event.preventDefault();
-      setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+      setContextMenu({ x: event.clientX, y: event.clientY, target: { kind: 'node', nodeId: node.id } });
     },
     []
   );
+
+  const onPaneContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault();
+      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setContextMenu({ x: event.clientX, y: event.clientY, target: { kind: 'pane', position } });
+    },
+    [screenToFlowPosition]
+  );
+
+  // Files dropped from the OS (Tauri reports absolute paths). Each must resolve
+  // inside the Vault; the backend refuses everything else with a message.
+  const linkDroppedFiles = useCallback(
+    async (absolutePaths: string[], point: { x: number; y: number }) => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect || point.x < rect.left || point.x > rect.right || point.y < rect.top || point.y > rect.bottom) {
+        return; // Dropped on the side panel or toolbar, not the Graph
+      }
+      const origin = screenToFlowPosition(point);
+      const transport = getBackendTransport();
+      const { linkVaultFile } = useGraphStore.getState();
+      for (const [index, absolutePath] of absolutePaths.entries()) {
+        try {
+          const path = await transport.resolveDroppedFile(absolutePath);
+          await linkVaultFile(path, {
+            x: origin.x + index * DROP_CASCADE_PX,
+            y: origin.y + index * DROP_CASCADE_PX,
+          });
+        } catch (error) {
+          useUIStore.getState().setNotice(error instanceof Error ? error.message : String(error));
+        }
+      }
+    },
+    [screenToFlowPosition]
+  );
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    // Loaded lazily: the module touches Tauri globals that only exist in the webview.
+    void import('@tauri-apps/api/webview')
+      .then(({ getCurrentWebview }) =>
+        getCurrentWebview().onDragDropEvent((event) => {
+          if (event.payload.type !== 'drop') return;
+          // Tauri reports physical pixels; the DOM (and screenToFlowPosition) use CSS pixels.
+          const scale = window.devicePixelRatio || 1;
+          void linkDroppedFiles(event.payload.paths, {
+            x: event.payload.position.x / scale,
+            y: event.payload.position.y / scale,
+          });
+        })
+      )
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch((error) => logger.warn('File drag-drop unavailable:', error));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [linkDroppedFiles]);
+
+  // Files may change while the app is in the background: re-stat on every focus.
+  useEffect(() => {
+    const refresh = () => {
+      void useGraphStore.getState().refreshAllFileNodeStats();
+    };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, []);
+
+  // The webview must not navigate to a dropped file anywhere in the app when
+  // Tauri hands the event through to the DOM, so this is registered on the
+  // window rather than only on the canvas. Text and other non-file drops keep
+  // their default (e.g. dropping text into the side-panel editor).
+  useEffect(() => {
+    const preventNativeDrop = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+    };
+    window.addEventListener('dragover', preventNativeDrop);
+    window.addEventListener('drop', preventNativeDrop);
+    return () => {
+      window.removeEventListener('dragover', preventNativeDrop);
+      window.removeEventListener('drop', preventNativeDrop);
+    };
+  }, []);
 
   // Keyboard shortcuts. The handler reads store state via getState() so it
   // stays stable and is attached exactly once, instead of detaching and
@@ -402,7 +506,10 @@ export function Graph() {
   );
 
   return (
-    <div className="graph-container">
+    <div
+      className="graph-container"
+      ref={containerRef}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -414,15 +521,16 @@ export function Graph() {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onNodeContextMenu={onNodeContextMenu}
+        onPaneContextMenu={onPaneContextMenu}
         nodeTypes={nodeTypes}
         fitView
         zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
       >
         <Controls />
-        {/* Same grammar as the icon: user = filled mint, assistant = mint outline */}
+        {/* Same grammar as the icon: user = filled mint, assistant = mint outline, file = muted teal */}
         <MiniMap
-          nodeColor={(node) => (node.type === 'user' ? MINT : SURFACE)}
+          nodeColor={minimapColor}
           nodeStrokeColor={MINT}
           nodeStrokeWidth={4}
           maskColor="rgba(4, 37, 44, 0.75)"
@@ -433,7 +541,7 @@ export function Graph() {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          nodeId={contextMenu.nodeId}
+          target={contextMenu.target}
           onClose={() => setContextMenu(null)}
         />
       )}

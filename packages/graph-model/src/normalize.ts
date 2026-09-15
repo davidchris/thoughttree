@@ -1,5 +1,6 @@
 import type {
   AssistantGraphNode,
+  FileGraphNode,
   GraphAgentProvider,
   GraphNode,
   ImageAttachment,
@@ -126,6 +127,11 @@ function str(value: unknown): string | undefined {
 
 function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/** A byte count or epoch-ms value: what the backend reads as `u64`. */
+function u64(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function bool(value: unknown): boolean | undefined {
@@ -362,6 +368,26 @@ export function normalizeGraphNode(value: unknown): GraphNode | undefined {
       incomplete: value.incomplete === true ? true : undefined,
       provenance: normalizeProvenance(value.provenance),
     });
+  }
+
+  if (value.role === 'file') {
+    const path = str(value.path);
+    const rawName = str(value.name);
+    const mimeType = str(value.mimeType);
+    const size = u64(value.size);
+    const seenMtime = u64(value.seenMtime);
+    const seenSize = u64(value.seenSize);
+    if (path === undefined || !isVaultRelativePath(path)) return undefined;
+    // A name with directory components is a host path in disguise; drop rather than repair.
+    if (rawName === undefined || safeDisplayName(rawName, new Loss()) !== rawName) return undefined;
+    if (mimeType === undefined || size === undefined || seenMtime === undefined || seenSize === undefined) {
+      return undefined;
+    }
+    // File nodes never carry text; the file itself is read by the backend on demand.
+    const node: FileGraphNode = {
+      id, role: 'file', content: '', timestamp, path, name: rawName, mimeType, size, seenMtime, seenSize,
+    };
+    return node;
   }
 
   return undefined;

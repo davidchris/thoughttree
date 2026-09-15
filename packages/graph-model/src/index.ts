@@ -14,7 +14,10 @@ export type { ImportedConversation, ImportedConversationTurn, TurnRange } from '
 export { KAGI_EXPORT_MAX_BYTES, KagiExportError, isWebUrl, parseKagiExport } from './kagi';
 export type {
   AssistantCommentary,
+  AssistantGraphNode,
   ExternalFileTurnReference,
+  FileGraphNode,
+  FileRef,
   FileTurnReference,
   Graph,
   GraphAgentProvider,
@@ -33,5 +36,6 @@ export type {
   TurnReferenceRelation,
   UnknownActivity,
   UrlTurnReference,
+  UserGraphNode,
   VaultFileTurnReference,
 } from './types';

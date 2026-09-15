@@ -62,6 +62,83 @@ describe('TauriTransport', () => {
     });
   });
 
+  it('sends file refs on prompt messages in the backend wire shape and keeps text-less file turns', async () => {
+    vi.mocked(invoke).mockResolvedValue('ok');
+    const transport = new TauriTransport();
+
+    await transport.sendPrompt({
+      nodeId: 'n',
+      messages: [
+        { role: 'user', content: '', files: [{ path: 'notes/a.md', name: 'a.md', mimeType: 'text/markdown', size: 12 }] },
+        { role: 'assistant', content: 'read it' },
+        { role: 'user', content: '   ' },
+      ],
+    });
+
+    expect(invoke).toHaveBeenCalledWith('send_prompt', expect.objectContaining({
+      nodeId: 'n',
+      messages: [
+        {
+          role: 'user',
+          content: '',
+          images: null,
+          files: [{ path: 'notes/a.md', name: 'a.md', mime_type: 'text/markdown', size: 12 }],
+        },
+        { role: 'assistant', content: 'read it', images: null, files: null },
+      ],
+    }));
+  });
+
+  it('maps vault file stat, preview and limits payloads to camelCase', async () => {
+    const transport = new TauriTransport();
+
+    vi.mocked(invoke).mockResolvedValueOnce({
+      status: 'ok',
+      stat: { size: 5, modified_epoch_ms: 1720000000000 },
+      mime_type: 'text/markdown',
+      name: 'note.md',
+    });
+    await expect(transport.statVaultFile('notes/note.md')).resolves.toEqual({
+      status: 'ok',
+      stat: { size: 5, modifiedEpochMs: 1720000000000 },
+      mimeType: 'text/markdown',
+      name: 'note.md',
+    });
+    expect(invoke).toHaveBeenCalledWith('stat_vault_file', { path: 'notes/note.md' });
+
+    vi.mocked(invoke).mockResolvedValueOnce({ status: 'missing' });
+    await expect(transport.statVaultFile('gone.md')).resolves.toEqual({ status: 'missing' });
+
+    vi.mocked(invoke).mockResolvedValueOnce({
+      info: { name: 'pic.png', mime_type: 'image/png', size: 900, modified_epoch_ms: 42 },
+      preview: { kind: 'image', data: 'AAAA', mime_type: 'image/png', width: 512, height: 128 },
+    });
+    await expect(transport.readVaultFilePreview('pic.png')).resolves.toEqual({
+      info: { name: 'pic.png', mimeType: 'image/png', size: 900, modifiedEpochMs: 42 },
+      preview: { kind: 'image', data: 'AAAA', mimeType: 'image/png', width: 512, height: 128 },
+    });
+
+    vi.mocked(invoke).mockResolvedValueOnce({
+      image_max_bytes: 5242880,
+      image_max_side: 8000,
+      max_images_per_prompt: 20,
+      preview_text_bytes: 16384,
+    });
+    await expect(transport.getAttachmentLimits()).resolves.toEqual({
+      imageMaxBytes: 5242880,
+      imageMaxSide: 8000,
+      maxImagesPerPrompt: 20,
+      previewTextBytes: 16384,
+    });
+  });
+
+  it('returns null when the vault file picker is cancelled', async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(null);
+
+    await expect(new TauriTransport().pickVaultFile()).resolves.toBeNull();
+    expect(invoke).toHaveBeenCalledWith('pick_vault_file');
+  });
+
   it('rethrows untyped backend failures unchanged', async () => {
     vi.mocked(invoke).mockRejectedValue('boom');
 

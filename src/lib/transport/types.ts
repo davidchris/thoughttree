@@ -8,7 +8,7 @@ import type {
   ProviderStatus,
   ReasoningEffort,
 } from '../../types';
-import type { Graph } from '../../../packages/graph-model/src/types';
+import type { FileRef, Graph } from '../../../packages/graph-model/src/types';
 
 export interface ProjectDoc {
   data: string;
@@ -57,6 +57,8 @@ export interface PromptMessage {
   role: string;
   content: string;
   images?: ImageAttachment[];
+  /** Vault file references contributed by file nodes; the backend reads them at send time. */
+  files?: FileRef[];
 }
 
 export interface PromptRequest {
@@ -82,6 +84,43 @@ export interface SummaryResult {
   summary: string;
 }
 
+/** Size and mtime of a Vault file as seen by the backend (File node staleness check). */
+export interface FileStat {
+  size: number;
+  modifiedEpochMs: number;
+}
+
+/** Stat outcome for a File node; missing/invalid are states, not errors, so the UI can render them. */
+export type VaultFileStatus =
+  | { status: 'ok'; stat: FileStat; mimeType: string; name: string }
+  | { status: 'missing' }
+  | { status: 'invalid' };
+
+export interface FileInfo {
+  name: string;
+  mimeType: string;
+  size: number;
+  modifiedEpochMs: number;
+}
+
+export type FilePreview =
+  | { kind: 'image'; data: string; mimeType: string; width: number; height: number }
+  | { kind: 'text'; excerpt: string; truncated: boolean }
+  | { kind: 'none' };
+
+export interface FilePreviewResponse {
+  info: FileInfo;
+  preview: FilePreview;
+}
+
+/** Attachment limits owned by the core crate; never duplicate the numbers in the frontend. */
+export interface AttachmentLimits {
+  imageMaxBytes: number;
+  imageMaxSide: number;
+  maxImagesPerPrompt: number;
+  previewTextBytes: number;
+}
+
 export interface BackendTransport {
   loadProject(path: string): Promise<ProjectDoc>;
   saveProject(path: string, data: string, baseRevision: string | null): Promise<string>;
@@ -105,6 +144,15 @@ export interface BackendTransport {
   setEffortPreference(provider: AgentProvider, effort: ReasoningEffort | null): Promise<void>;
   getAvailableModels(provider: AgentProvider): Promise<ModelInfo[]>;
   generateSummary(req: SummaryRequest): Promise<SummaryResult>;
+
+  /** Native picker rooted at the Vault; resolves to a Vault-relative path, or null when cancelled. */
+  pickVaultFile(): Promise<string | null>;
+  /** Vault-relative path for a dropped absolute path; rejects when the file is outside the Vault. */
+  resolveDroppedFile(absolutePath: string): Promise<string>;
+  statVaultFile(path: string): Promise<VaultFileStatus>;
+  /** Rejects with a string starting `too_large:`, `missing:` or `invalid:`. */
+  readVaultFilePreview(path: string): Promise<FilePreviewResponse>;
+  getAttachmentLimits(): Promise<AttachmentLimits>;
 
   onStreamChunk(cb: (ev: StreamChunk) => void): Unsubscribe;
   onPermissionRequest(cb: (ev: PermissionRequest) => void): Unsubscribe;

@@ -7,6 +7,10 @@ interface SidePanelActionsProps {
   isUserNode: boolean;
   isEditing: boolean;
   isBlocked: boolean;
+  /** Text, images, or a file node in the lineage, and no blocker. */
+  canGenerate: boolean;
+  /** Why generating is refused right now; shown as the Generate tooltip. */
+  generateBlockedReason: string | null;
   provider: AgentProvider;
   model: string | undefined;
   onProviderChange: (provider: AgentProvider) => void;
@@ -23,6 +27,8 @@ export function SidePanelActions({
   isUserNode,
   isEditing,
   isBlocked,
+  canGenerate,
+  generateBlockedReason,
   provider,
   model,
   onProviderChange,
@@ -51,7 +57,8 @@ export function SidePanelActions({
           onProviderChange={onProviderChange}
           onModelChange={onModelChange}
           disabled={isBlocked}
-          generateDisabled={isBlocked || !content.trim()}
+          generateDisabled={isBlocked || !canGenerate}
+          generateBlockedReason={generateBlockedReason}
           onGenerate={onGenerate}
         />
       )}

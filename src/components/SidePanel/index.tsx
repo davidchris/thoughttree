@@ -5,8 +5,10 @@ import { useUIStore } from '../../store/useUIStore';
 import { providerShortName, type AgentProvider, type AgentNodeData, type UserNodeData } from '../../types';
 import { useNodeGeneration } from '../../hooks/useNodeGeneration';
 import { usePanelResize } from './usePanelResize';
+import { FilePanel } from './FilePanel';
 import { SidePanelActions } from './SidePanelActions';
 import { SidePanelBody } from './SidePanelBody';
+import { fileTypeBadge } from '../../lib/fileNodes';
 import './styles.css';
 
 export function SidePanel() {
@@ -32,6 +34,14 @@ export function SidePanel() {
   const images = isUserNode ? (data as UserNodeData).images || [] : [];
   const isStreaming = previewNodeId ? streamingNodeIds.has(previewNodeId) : false;
   const isBlocked = previewNodeId ? isNodeBlockedFn(previewNodeId) : false;
+  // Why this user node must not be sent right now (broken file node in its Lineage subgraph).
+  const sendBlockedReason = useGraphStore((state) =>
+    isUserNode && previewNodeId ? state.sendBlocker(previewNodeId) : null
+  );
+  // Text, inline images, or a file node in the lineage, and no blocker.
+  const canGenerate = useGraphStore((state) =>
+    isUserNode && previewNodeId ? state.canGenerate(previewNodeId) : false
+  );
 
   // Initialize selectedModel from effective model when user node is selected
   useEffect(() => {
@@ -74,7 +84,7 @@ export function SidePanel() {
   }, [previewNodeId, setPreviewNode, isEditing]);
 
   const handleGenerate = async () => {
-    if (!previewNodeId || !data?.content.trim() || isBlocked) return;
+    if (!previewNodeId || !canGenerate || isBlocked) return;
 
     // Exit edit mode
     setIsEditing(false);
@@ -109,7 +119,7 @@ export function SidePanel() {
           <span className={`side-panel-badge ${isAgent ? 'agent' : 'user'}`}>
             {isAgent
               ? providerShortName((data as AgentNodeData).provider)
-              : 'User'}
+              : isUserNode ? 'User' : fileTypeBadge(data.name)}
           </span>
           {isStreaming && <span className="side-panel-streaming">Generating...</span>}
           <span className="side-panel-timestamp">{formattedTime}</span>
@@ -119,6 +129,8 @@ export function SidePanel() {
           isUserNode={isUserNode}
           isEditing={isEditing}
           isBlocked={isBlocked}
+          canGenerate={canGenerate}
+          generateBlockedReason={sendBlockedReason}
           provider={selectedProvider}
           model={selectedModel}
           onProviderChange={setSelectedProvider}
@@ -129,15 +141,21 @@ export function SidePanel() {
           onClose={() => setPreviewNode(null)}
         />
       </div>
-      <SidePanelBody
-        nodeId={previewNodeId}
-        content={data.content}
-        images={images}
-        isEditing={isEditing}
-        isStreaming={isStreaming}
-        provenance={provenance}
-        onGenerate={generate}
-      />
+      {data.role === 'file' ? (
+        <div className="side-panel-content">
+          <FilePanel key={previewNodeId} node={data} />
+        </div>
+      ) : (
+        <SidePanelBody
+          nodeId={previewNodeId}
+          content={data.content}
+          images={images}
+          isEditing={isEditing}
+          isStreaming={isStreaming}
+          provenance={provenance}
+          onGenerate={generate}
+        />
+      )}
     </div>
   );
 }

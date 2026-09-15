@@ -11,6 +11,7 @@ import {
   AgentNodeData,
   AgentProvider,
   EffortPreferences,
+  FileNodeData,
   ImageAttachment,
   MessageNodeData,
   ModelPreferences,
@@ -24,6 +25,8 @@ import { useUIStore } from './useUIStore';
 import { computeAutoLayout, type AutoLayoutOptions } from '../lib/graphLayout';
 import { logger } from '../lib/logger';
 import { getBackendTransport, StaleRevisionError } from '../lib/transport';
+import type { AttachmentLimits, BackendTransport, FileStat } from '../lib/transport';
+import { isRasterImage } from '../lib/fileNodes';
 import {
   GRAPH_JSON_VERSION,
   GraphModel,
@@ -31,6 +34,7 @@ import {
   GraphSerialize,
   isFileUrlOrBarePath,
   isWebUrl,
+  type FileRef,
   type Graph,
   type GraphJSON,
   type NodeId,
@@ -65,19 +69,37 @@ interface CurrentProjectFile {
   projectEffortPreferences?: StoredProviderRecord<ReasoningEffort> | null;
 }
 
-interface ProjectFileV3 extends Omit<CurrentProjectFile, 'version'> {
-  version: 3;
+// v3 → v4 added Turn provenance (ADR 0006); v4 → v5 added file nodes (ADR 0008).
+// Both are no-op migrations on load: the shape is unchanged, older files just
+// lack the newer optional node kinds/fields.
+interface ProjectFileV3OrV4 extends Omit<CurrentProjectFile, 'version'> {
+  version: 3 | 4;
 }
 
 interface ProjectFileLegacyV2 {
   version: 1 | 2;
   nodes: Array<{ id: string; position: { x: number; y: number }; [key: string]: unknown }>;
   edges: Array<{ id: string; source: string; target: string; [key: string]: unknown }>;
-  nodeData: Record<string, MessageNodeData>;
+  // Legacy files predate file nodes, so only text-bearing roles occur here.
+  nodeData: Record<string, LegacyV2NodeData>;
   projectModelPreferences?: StoredProviderRecord | null;
 }
 
-type ProjectFile = CurrentProjectFile | ProjectFileV3 | ProjectFileLegacyV2;
+type LegacyV2NodeData = UserNodeData | AgentNodeData;
+
+type ProjectFile = CurrentProjectFile | ProjectFileV3OrV4 | ProjectFileLegacyV2;
+
+/**
+ * What the backend last reported about a file node's Vault file, relative to
+ * the mtime/size the node has seen. Transient: never written to the Project file.
+ */
+export interface FileNodeStatus {
+  /** `unavailable`: the stat itself failed (transport or I/O); Reload retries. */
+  state: 'ok' | 'changed' | 'missing' | 'invalid' | 'too-large' | 'unavailable';
+  stat?: FileStat;
+  /** What the backend saw on disk at the last stat; adopted into the node on reload. */
+  live?: { mimeType: string; name: string };
+}
 
 interface GraphState {
   // Source of truth
@@ -106,6 +128,9 @@ interface GraphState {
   selectedNodeId: string | null;
   streamingNodeIds: Set<string>;
 
+  /** Last known on-disk state per file node (see FileNodeStatus). */
+  fileNodeStatus: Map<NodeId, FileNodeStatus>;
+
   // ReactFlow actions
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
@@ -116,6 +141,11 @@ interface GraphState {
   createUserNode: (position?: { x: number; y: number }) => string;
   createAgentNodeDownstream: (parentId: string, provider?: AgentProvider, model?: string) => string;
   createUserNodeDownstream: (parentId: string) => string;
+  /** Links a Vault file as a file node (see ADR 0008); the file itself is never copied into the Graph. */
+  addFileNode: (
+    file: Omit<FileNodeData, 'id' | 'role' | 'content' | 'timestamp'>,
+    position: { x: number; y: number },
+  ) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, chunk: string) => void;
   flushStreamingChunks: () => void;
@@ -128,11 +158,27 @@ interface GraphState {
   addNodeImage: (nodeId: string, image: ImageAttachment) => void;
   removeNodeImage: (nodeId: string, index: number) => void;
 
+  // File node actions
+  /** Stats a Vault-relative path and links it as a file node; posts a notice and returns null when it cannot be linked. */
+  linkVaultFile: (path: string, position: { x: number; y: number }) => Promise<NodeId | null>;
+  /** Cheap stat against the seen mtime/size; updates fileNodeStatus. No-op for other node kinds. */
+  refreshFileNodeStat: (nodeId: string) => Promise<void>;
+  refreshAllFileNodeStats: () => Promise<void>;
+  /** Adopts the current on-disk mtime/size as seen, so a 'changed' node reads as 'ok' again. */
+  acknowledgeFileChange: (nodeId: string) => Promise<void>;
+  /** The preview refused this image as too large (e.g. longest side over the limit); blocks sending until the file changes. */
+  markFileNodeTooLarge: (nodeId: string) => void;
+  /** Human reason why a prompt from this user node must not be sent, or null. Walks the Lineage subgraph. */
+  sendBlocker: (userNodeId: string) => string | null;
+  /** Whether a user node has something to send (text, inline images, or a file node in its lineage) and no sendBlocker. */
+  canGenerate: (userNodeId: string) => boolean;
+
   // Context building
   buildConversationContext: (nodeId: string) => Array<{
     role: string;
     content: string;
     images?: ImageAttachment[];
+    files?: FileRef[];
   }>;
   getConversationPathNodeIds: (nodeId: string) => string[];
 
@@ -170,7 +216,10 @@ function deserializeProjectFile(data: string) {
   let projectModelPreferences: ModelPreferences | null;
   let projectEffortPreferences: EffortPreferences | null;
 
-  if ((parsed.version === GRAPH_JSON_VERSION || parsed.version === 3) && 'graph' in parsed) {
+  if (
+    (parsed.version === GRAPH_JSON_VERSION || parsed.version === 4 || parsed.version === 3) &&
+    'graph' in parsed
+  ) {
     graph = GraphSerialize.fromJSON(parsed.graph);
     projectModelPreferences = parsed.projectModelPreferences
       ? withoutNullEntries(parsed.projectModelPreferences)
@@ -309,6 +358,79 @@ interface ProjectionResult {
   nodeData: Map<NodeId, MessageNodeData>;
 }
 
+// Attachment limits are constants owned by the core crate; fetch them once per
+// transport (a test swaps the transport, which invalidates the cache).
+let limitsCache: { transport: BackendTransport; limits: Promise<AttachmentLimits> } | null = null;
+
+function attachmentLimits(): Promise<AttachmentLimits> {
+  const transport = getBackendTransport();
+  if (limitsCache?.transport !== transport) {
+    const limits = transport.getAttachmentLimits().catch((error) => {
+      limitsCache = null;
+      throw error;
+    });
+    limitsCache = { transport, limits };
+  }
+  return limitsCache.limits;
+}
+
+function sameStat(a: FileStat, b: FileStat): boolean {
+  return a.modifiedEpochMs === b.modifiedEpochMs && a.size === b.size;
+}
+
+// Only raster images are sent as bytes and therefore size-limited; every
+// other file is a pointer the agent reads itself (epic decisions 4 and 5).
+// The mime comes from the backend's live view of the file, not the node: a
+// file replaced under the same path may have changed type.
+function classifyFileStat(
+  node: FileNodeData,
+  live: { stat: FileStat; mimeType: string; name: string },
+  limits: AttachmentLimits | null,
+  previous: FileNodeStatus | undefined,
+): FileNodeStatus {
+  const { stat, mimeType, name } = live;
+  const status = { stat, live: { mimeType, name } };
+  if (limits && isRasterImage(mimeType) && stat.size > limits.imageMaxBytes) {
+    return { state: 'too-large', ...status };
+  }
+  // The preview refused this file version (e.g. longest side over the limit,
+  // which a stat cannot see). Only a new version on disk clears that.
+  if (previous?.state === 'too-large' && (!previous.stat || sameStat(previous.stat, stat))) {
+    return { state: 'too-large', ...status };
+  }
+  const unchanged = stat.modifiedEpochMs === node.seenMtime && stat.size === node.seenSize;
+  return { state: unchanged ? 'ok' : 'changed', ...status };
+}
+
+function withFileNodeStatus(
+  statuses: Map<NodeId, FileNodeStatus>,
+  nodeId: NodeId,
+  status: FileNodeStatus | null,
+): Map<NodeId, FileNodeStatus> {
+  const next = new Map(statuses);
+  if (status) next.set(nodeId, status);
+  else next.delete(nodeId);
+  return next;
+}
+
+function blockerReason(node: FileNodeData, status: FileNodeStatus | undefined): string | null {
+  // Not stat'd yet (project just loaded, node just linked): refuse rather than
+  // let a missing or over-limit file reach the backend.
+  if (!status) return `"${node.name}" is still being checked. Try again in a moment.`;
+  switch (status.state) {
+    case 'missing':
+      return `"${node.name}" is missing from the notes directory. Restore it or delete its node before sending.`;
+    case 'invalid':
+      return `"${node.name}" cannot be read from the notes directory. Delete its node before sending.`;
+    case 'too-large':
+      return `"${node.name}" is too large for the agent. Use a smaller image before sending.`;
+    case 'unavailable':
+      return `"${node.name}" could not be checked. Reload the file before sending.`;
+    default:
+      return null;
+  }
+}
+
 // Recompute the ReactFlow-facing arrays from the canonical Graph value, while
 // preserving each node's `measured` dimensions from the prior projection so
 // ReactFlow doesn't have to remeasure on every store update.
@@ -332,9 +454,9 @@ function projectGraph(
 }
 
 function migrateLegacyV2NodeData(
-  raw: Record<string, MessageNodeData>,
-): Record<string, MessageNodeData> {
-  const migrated: Record<string, MessageNodeData> = {};
+  raw: Record<string, LegacyV2NodeData>,
+): Record<string, LegacyV2NodeData> {
+  const migrated: Record<string, LegacyV2NodeData> = {};
   for (const [id, node] of Object.entries(raw)) {
     const contentUpdatedAt = node.contentUpdatedAt ?? node.timestamp;
     if (node.role === 'assistant' && !('provider' in node)) {
@@ -376,6 +498,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   projectEffortPreferences: null,
   selectedNodeId: null,
   streamingNodeIds: new Set<string>(),
+  fileNodeStatus: new Map(),
 
   onNodesChange: (changes) => {
     const state = get();
@@ -385,6 +508,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     let selectedNodeId = state.selectedNodeId;
     let streamingNodeIds = state.streamingNodeIds;
     let streamingMutated = false;
+    let fileNodeStatus = state.fileNodeStatus;
 
     // Copy-on-write removal so the streaming set is only cloned when it changes
     const stopStreaming = (nodeId: string) => {
@@ -405,6 +529,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         dirty = true;
         if (selectedNodeId === change.id) selectedNodeId = null;
         useUIStore.getState().clearNodeRefs(change.id);
+        if (fileNodeStatus.has(change.id)) {
+          fileNodeStatus = withFileNodeStatus(fileNodeStatus, change.id, null);
+        }
         stopStreaming(change.id);
       } else if (change.type !== 'select' && change.type !== 'dimensions') {
         dirty = true;
@@ -419,6 +546,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       isDirty: dirty,
       selectedNodeId,
       streamingNodeIds,
+      fileNodeStatus,
     });
   },
 
@@ -550,6 +678,20 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     return id;
   },
 
+  addFileNode: (file, position) => {
+    const id = generateId();
+    const data: FileNodeData = { ...file, id, role: 'file', content: '', timestamp: Date.now() };
+    const state = get();
+    const graph = GraphMutations.addNode(state.graph, data, position);
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, id),
+      selectedNodeId: id,
+      isDirty: true,
+    });
+    return id;
+  },
+
   updateNodeContent: (nodeId, content) => {
     const state = get();
     const graph = GraphMutations.updateNode(state.graph, nodeId, {
@@ -633,6 +775,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       ...projectGraph(graph, state.nodes, selectedNodeId),
       streamingNodeIds,
       selectedNodeId,
+      fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, null),
       isDirty: true,
     });
     useUIStore.getState().clearNodeRefs(nodeId);
@@ -671,6 +814,145 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       ...projectGraph(graph, state.nodes, state.selectedNodeId),
       isDirty: true,
     });
+  },
+
+  linkVaultFile: async (path, position) => {
+    // The stat can take a while (cloud placeholders hydrate on first touch);
+    // never insert into a project that was opened meanwhile.
+    const session = get().projectSession;
+    const status = await getBackendTransport().statVaultFile(path);
+    if (get().projectSession !== session) return null;
+    if (status.status !== 'ok') {
+      const why =
+        status.status === 'missing' ? 'was not found in the notes directory' : 'is not a readable file in the notes directory';
+      useUIStore.getState().setNotice(`"${path}" ${why}.`);
+      return null;
+    }
+    const id = get().addFileNode(
+      {
+        path,
+        name: status.name,
+        mimeType: status.mimeType,
+        size: status.stat.size,
+        seenMtime: status.stat.modifiedEpochMs,
+        seenSize: status.stat.size,
+      },
+      position,
+    );
+    await get().refreshFileNodeStat(id);
+    return id;
+  },
+
+  refreshFileNodeStat: async (nodeId) => {
+    const node = get().graph.nodes.get(nodeId);
+    if (node?.role !== 'file') return;
+    try {
+      const status = await getBackendTransport().statVaultFile(node.path);
+      // Limits matter only for raster images, judged by the live mime.
+      const limits =
+        status.status === 'ok' && isRasterImage(status.mimeType)
+          ? await attachmentLimits().catch((error) => {
+              logger.warn('Attachment limits unavailable; skipping image size check:', error);
+              return null;
+            })
+          : null;
+      // The node may have been deleted or the project swapped while we waited.
+      const current = get().graph.nodes.get(nodeId);
+      if (current?.role !== 'file' || current.path !== node.path) return;
+      set((state) => {
+        const next: FileNodeStatus =
+          status.status === 'ok'
+            ? classifyFileStat(current, status, limits, state.fileNodeStatus.get(nodeId))
+            : { state: status.status };
+        return { fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, next) };
+      });
+    } catch (error) {
+      logger.error('Failed to stat file node:', error);
+      // Record the failure so the node is not stuck as "still being checked".
+      set((state) =>
+        state.graph.nodes.get(nodeId)?.role === 'file'
+          ? { fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, { state: 'unavailable' }) }
+          : {}
+      );
+    }
+  },
+
+  refreshAllFileNodeStats: async () => {
+    const ids: NodeId[] = [];
+    for (const node of get().graph.nodes.values()) {
+      if (node.role === 'file') ids.push(node.id);
+    }
+    await Promise.all(ids.map((id) => get().refreshFileNodeStat(id)));
+  },
+
+  acknowledgeFileChange: async (nodeId) => {
+    // Always re-stat: "reload" means the version on disk right now, not the
+    // one a focus event happened to observe earlier.
+    await get().refreshFileNodeStat(nodeId);
+    const state = get();
+    const node = state.graph.nodes.get(nodeId);
+    const status = state.fileNodeStatus.get(nodeId);
+    const stat = status?.stat;
+    const live = status?.live;
+    if (node?.role !== 'file' || !stat || !live) return;
+    // Adopt everything the backend saw: a file replaced under the same path
+    // may have changed type, and the node must describe what will be sent.
+    const updated: FileNodeData = {
+      ...node,
+      name: live.name,
+      mimeType: live.mimeType,
+      size: stat.size,
+      seenMtime: stat.modifiedEpochMs,
+      seenSize: stat.size,
+    };
+    const graph = GraphMutations.updateNode(state.graph, nodeId, updated);
+    const limits = isRasterImage(live.mimeType) ? await attachmentLimits().catch(() => null) : null;
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
+      fileNodeStatus: withFileNodeStatus(
+        state.fileNodeStatus,
+        nodeId,
+        classifyFileStat(updated, { stat, ...live }, limits, status),
+      ),
+      isDirty: true,
+    });
+  },
+
+  markFileNodeTooLarge: (nodeId) => {
+    const state = get();
+    if (state.graph.nodes.get(nodeId)?.role !== 'file') return;
+    const previous = state.fileNodeStatus.get(nodeId);
+    if (previous?.state === 'too-large') return;
+    const next: FileNodeStatus = previous?.stat ? { state: 'too-large', stat: previous.stat } : { state: 'too-large' };
+    set({ fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, next) });
+  },
+
+  sendBlocker: (userNodeId) => {
+    const { graph, fileNodeStatus } = get();
+    for (const id of GraphModel.conversationPathIds(graph, userNodeId)) {
+      const node = graph.nodes.get(id);
+      if (node?.role !== 'file') continue;
+      const reason = blockerReason(node, fileNodeStatus.get(id));
+      if (reason) return reason;
+    }
+    return null;
+  },
+
+  canGenerate: (userNodeId) => {
+    const { graph } = get();
+    const node = graph.nodes.get(userNodeId);
+    if (node?.role !== 'user') return false;
+    // A file node in the lineage stands in for text: the backend sends the
+    // file-only placeholder when the merged user message has no text (decision 3).
+    const hasFileAncestor = () => {
+      for (const id of GraphModel.ancestors(graph, userNodeId)) {
+        if (graph.nodes.get(id)?.role === 'file') return true;
+      }
+      return false;
+    };
+    const hasInput = !!node.content.trim() || (node.images?.length ?? 0) > 0 || hasFileAncestor();
+    return hasInput && get().sendBlocker(userNodeId) === null;
   },
 
   buildConversationContext: (nodeId) => {
@@ -826,8 +1108,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         isDirty: false,
         selectedNodeId: null,
         streamingNodeIds: new Set<string>(),
+        fileNodeStatus: new Map(),
       });
       useUIStore.getState().reset();
+      void get().refreshAllFileNodeStats();
 
       logger.info('Project loaded from:', path);
     } catch (error) {
@@ -853,6 +1137,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       isDirty: false,
       selectedNodeId: null,
       streamingNodeIds: new Set<string>(),
+      fileNodeStatus: new Map(),
     });
     useUIStore.getState().reset();
   },
@@ -871,8 +1156,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       isDirty: true,
       selectedNodeId: null,
       streamingNodeIds: new Set<string>(),
+      fileNodeStatus: new Map(),
     });
     useUIStore.getState().reset();
+    void get().refreshAllFileNodeStats();
   },
 
   exportSubgraph: (nodeIds) => {
@@ -902,6 +1189,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       .map((id) => {
         const node = graph.nodes.get(id);
         if (!node) return '';
+        if (node.role === 'file') return `## File\n\n${node.path}`;
         const header = node.role === 'user' ? '## User' : '## Assistant';
         const provenance =
           node.role === 'assistant' && node.provenance

@@ -1,5 +1,5 @@
 import type { Edge, Node } from '@xyflow/react';
-import type { Graph, NodeId } from '@thoughttree/graph-model';
+import type { Graph, GraphNode, NodeId } from '@thoughttree/graph-model';
 
 export interface FlowNodeData extends Record<string, unknown> {
   id: NodeId;
@@ -14,6 +14,13 @@ interface UiState {
 
 const DEFAULT_POSITION = { x: 0, y: 0 };
 
+// ReactFlow node type registered for each GraphNode role (see Graph/index.tsx nodeTypes).
+const FLOW_TYPE_BY_ROLE: Record<GraphNode['role'], string> = {
+  user: 'user',
+  assistant: 'agent',
+  file: 'file',
+};
+
 export function graphToFlowNodes(g: Graph, ui: UiState): FlowNode[] {
   const result: FlowNode[] = [];
   for (const node of g.nodes.values()) {
@@ -21,7 +28,7 @@ export function graphToFlowNodes(g: Graph, ui: UiState): FlowNode[] {
     const isSelected = ui.selectedNodeId === node.id;
     result.push({
       id: node.id,
-      type: node.role === 'user' ? 'user' : 'agent',
+      type: FLOW_TYPE_BY_ROLE[node.role],
       position,
       selected: isSelected,
       data: { id: node.id, isSelected },

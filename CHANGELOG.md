@@ -13,6 +13,13 @@
 - Guarded saves now serialize local writers across revision validation and atomic replacement to prevent lost updates.
 - Building the core crate now requires Rust 1.89 or later.
 
+### Added
+
+- File nodes - Link a file from your notes directory into the graph by dropping it on the canvas or with right-click → "Add file…". The card shows a type badge, name, size, and a preview (image thumbnail or text excerpt). Connect it to a user node and the file becomes context for everything downstream.
+- Images (PNG, JPG, GIF, WebP) are sent inline, read fresh from disk at send time. Limits: 5 MB per image, 8000 px on the longest side, 20 images per prompt; a larger image is refused before any request is made. Every other file type is sent as a pointer the agent reads from disk itself, with no size limit.
+- A "changed on disk" badge appears when the file differs from what the node last saw; Refresh adopts the current version. A missing file blocks sending on that branch.
+- Project file format v5 - Projects are now saved as v5. Older ThoughtTree builds refuse v5 files so linked files cannot be dropped silently; v3 and v4 files still open and migrate. See `docs/adr/0008-project-file-v5-for-file-nodes.md`.
+
 ## 0.5.0
 
 - New Look - Dark teal-black theme with a single mint accent across the canvas, side panel, dialogs, and palette. Tokens live in `design/tokens.css`

@@ -1,0 +1,1360 @@
+//! Vault file references for File nodes (epic thoughttree-zzr).
+//!
+//! Every filesystem access for a File node goes through [`resolve_vault_file`]:
+//! the path is Vault-relative, canonicalized, and rejected when it escapes the
+//! Vault (`..`, absolute input, symlinks that resolve outside). After that the
+//! file is opened exactly once as an [`OpenedVaultFile`]; stat, mime sniff,
+//! preview and prompt bytes all come from that handle, so a path swapped after
+//! resolution cannot be observed. Bytes never cross this module unbounded:
+//! [`OpenedVaultFile::read_bounded`] and the preview functions cap what they
+//! read.
+
+use std::collections::HashMap;
+use std::fs;
+use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
+use std::time::UNIX_EPOCH;
+
+use super::{validate_relative_path, VaultError};
+
+/// Attachment limits live here only; the frontend reads them via
+/// [`limits::attachment_limits`] instead of duplicating the numbers.
+pub mod limits {
+    /// Image bytes (Anthropic API limit).
+    pub const IMAGE_MAX_BYTES: u64 = 5 * 1024 * 1024;
+    /// Longest image side in pixels (Anthropic API limit).
+    pub const IMAGE_MAX_SIDE: u32 = 8000;
+    pub const MAX_IMAGES_PER_PROMPT: usize = 20;
+    /// Bytes of a text-like file shown in a File node preview.
+    pub const PREVIEW_TEXT_BYTES: usize = 16 * 1024;
+    /// Longest side of an image thumbnail in a File node preview.
+    pub const PREVIEW_IMAGE_MAX_SIDE: u32 = 512;
+
+    #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+    pub struct AttachmentLimits {
+        pub image_max_bytes: u64,
+        pub image_max_side: u32,
+        pub max_images_per_prompt: usize,
+        pub preview_text_bytes: usize,
+    }
+
+    pub fn attachment_limits() -> AttachmentLimits {
+        AttachmentLimits {
+            image_max_bytes: IMAGE_MAX_BYTES,
+            image_max_side: IMAGE_MAX_SIDE,
+            max_images_per_prompt: MAX_IMAGES_PER_PROMPT,
+            preview_text_bytes: PREVIEW_TEXT_BYTES,
+        }
+    }
+}
+
+pub use limits::AttachmentLimits;
+
+#[derive(Debug, thiserror::Error)]
+pub enum VaultFileError {
+    #[error("path escapes vault root")]
+    InvalidPath,
+    #[error("file not found")]
+    NotFound,
+    #[error("path is not a regular file")]
+    NotAFile,
+    #[error("file exceeds the attachment limit ({limit})")]
+    TooLarge { limit: u64 },
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+impl From<VaultError> for VaultFileError {
+    fn from(err: VaultError) -> Self {
+        match err {
+            VaultError::NotFound => Self::NotFound,
+            VaultError::InvalidPath => Self::InvalidPath,
+            VaultError::Io(io) => Self::Io(io),
+            VaultError::Stale { .. } => Self::Io(std::io::Error::other(err.to_string())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FileStat {
+    pub size: u64,
+    pub modified_epoch_ms: u64,
+}
+
+impl FileStat {
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        let modified_epoch_ms = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+        Self {
+            size: metadata.len(),
+            modified_epoch_ms,
+        }
+    }
+}
+
+/// Canonical absolute path of an existing regular file inside the Vault.
+/// Rejects `..`, absolute input, control characters (a path is interpolated
+/// into the prompt text, so it must never carry newlines or escapes),
+/// symlinks that resolve outside the Vault, and directories.
+pub fn resolve_vault_file(root: &Path, relative: &str) -> Result<PathBuf, VaultFileError> {
+    if relative.chars().any(char::is_control) {
+        return Err(VaultFileError::InvalidPath);
+    }
+    let path = validate_relative_path(root, relative)?;
+    let metadata = fs::metadata(&path).map_err(map_not_found)?;
+    if !metadata.is_file() {
+        return Err(VaultFileError::NotAFile);
+    }
+    Ok(path)
+}
+
+/// Vault-relative path (forward slashes) for an absolute path inside the
+/// Vault. Both sides are canonicalized, so symlinks cannot fake membership.
+pub fn relativize_vault_path(root: &Path, absolute: &Path) -> Result<String, VaultFileError> {
+    if !absolute.is_absolute() {
+        return Err(VaultFileError::InvalidPath);
+    }
+    let canonical_root = fs::canonicalize(root).map_err(map_not_found)?;
+    let canonical = fs::canonicalize(absolute).map_err(map_not_found)?;
+    let relative = canonical
+        .strip_prefix(&canonical_root)
+        .map_err(|_| VaultFileError::InvalidPath)?;
+    if relative.as_os_str().is_empty() {
+        return Err(VaultFileError::InvalidPath);
+    }
+    let relative = relative.to_str().ok_or(VaultFileError::InvalidPath)?;
+    Ok(relative.replace('\\', "/"))
+}
+
+pub fn stat_vault_file(root: &Path, relative: &str) -> Result<FileStat, VaultFileError> {
+    Ok(OpenedVaultFile::open(root, relative)?.stat().clone())
+}
+
+/// A Vault file resolved and opened once. Everything derived from the file
+/// (stat, mime, bytes) comes from this handle, never from a second look-up
+/// by path, so a swap between resolution and read cannot redirect a read.
+///
+/// The canonical path from [`resolve_vault_file`] has no symlink components,
+/// so the open never follows a link at the final component (`O_NOFOLLOW` on
+/// unix, `FILE_FLAG_OPEN_REPARSE_POINT` on Windows): one there can only mean
+/// the entry was replaced after resolution, and is refused.
+#[derive(Debug)]
+pub struct OpenedVaultFile {
+    path: PathBuf,
+    file: fs::File,
+    stat: FileStat,
+}
+
+/// A reparse point that is not a name surrogate (OneDrive Files On-Demand,
+/// iCloud and similar placeholders) holds no data through the reparse-point
+/// handle. Symlinks and junctions were already refused, so the entry is
+/// reopened normally and the new handle must resolve to the same file record
+/// (volume serial + file index) as the refused-to-follow one; a link swapped
+/// in between the two opens points at a different record and is rejected.
+#[cfg(windows)]
+fn reopen_cloud_placeholder(
+    path: &Path,
+    file: fs::File,
+    metadata: fs::Metadata,
+) -> Result<(fs::File, fs::Metadata), VaultFileError> {
+    use std::os::windows::fs::MetadataExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        return Ok((file, metadata));
+    }
+    let expected = file_record_id(&file)?;
+    let reopened = fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(map_open_error)?;
+    if file_record_id(&reopened)? != expected {
+        return Err(VaultFileError::InvalidPath);
+    }
+    let metadata = reopened.metadata()?;
+    Ok((reopened, metadata))
+}
+
+/// `(volume serial, file index)` identifying the NTFS record behind a handle.
+#[cfg(windows)]
+fn file_record_id(file: &fs::File) -> Result<(u32, u64), VaultFileError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    // SAFETY: `file` owns a valid open handle for the duration of the call and
+    // `info` is a correctly sized, writable out-parameter that is only read
+    // after the call reports success.
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), info.as_mut_ptr()) };
+    if ok == 0 {
+        return Err(VaultFileError::Io(std::io::Error::last_os_error()));
+    }
+    // SAFETY: the call succeeded, so the struct is fully initialised.
+    let info = unsafe { info.assume_init() };
+    let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
+    Ok((info.dwVolumeSerialNumber, index))
+}
+
+/// Rejects a handle whose real location (as reported by the OS for the open
+/// file object, not looked up by name) is outside the canonical Vault root.
+fn verify_handle_inside(file: &fs::File, canonical_root: &Path) -> Result<(), VaultFileError> {
+    match handle_path(file)? {
+        Some(actual) if actual.starts_with(canonical_root) => Ok(()),
+        Some(_) => Err(VaultFileError::InvalidPath),
+        // No way to ask on this platform; the no-follow open is the guarantee.
+        None => Ok(()),
+    }
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(target_os = "linux")]
+fn handle_path(file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    use std::os::unix::io::AsRawFd;
+    Ok(Some(fs::read_link(format!(
+        "/proc/self/fd/{}",
+        file.as_raw_fd()
+    ))?))
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn handle_path(file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    use std::ffi::CStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::AsRawFd;
+    let mut buf = [0u8; libc::PATH_MAX as usize];
+    // SAFETY: `buf` is PATH_MAX bytes, which is what F_GETPATH requires, and
+    // the descriptor stays open for the duration of the call.
+    let rc = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buf.as_mut_ptr()) };
+    if rc == -1 {
+        return Err(VaultFileError::Io(std::io::Error::last_os_error()));
+    }
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len() - 1);
+    let bytes = CStr::from_bytes_with_nul(&buf[..=end])
+        .map_err(|_| VaultFileError::InvalidPath)?
+        .to_bytes();
+    Ok(Some(PathBuf::from(std::ffi::OsStr::from_bytes(bytes))))
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(windows)]
+fn handle_path(file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED,
+    };
+    let mut buf: Vec<u16> = vec![0; 1024];
+    loop {
+        // SAFETY: the handle is open for the call; `buf` is `buf.len()` u16s
+        // and the API writes at most that many, reporting the needed size.
+        let len = unsafe {
+            GetFinalPathNameByHandleW(
+                file.as_raw_handle(),
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                FILE_NAME_NORMALIZED,
+            )
+        };
+        if len == 0 {
+            return Err(VaultFileError::Io(std::io::Error::last_os_error()));
+        }
+        let len = len as usize;
+        if len < buf.len() {
+            return Ok(Some(PathBuf::from(std::ffi::OsString::from_wide(
+                &buf[..len],
+            ))));
+        }
+        buf.resize(len + 1, 0);
+    }
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios", windows)))]
+fn handle_path(_file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    Ok(None)
+}
+
+impl OpenedVaultFile {
+    pub fn open(root: &Path, relative: &str) -> Result<Self, VaultFileError> {
+        let path = resolve_vault_file(root, relative)?;
+        let canonical_root = fs::canonicalize(root).map_err(map_not_found)?;
+        Self::open_resolved(path, &canonical_root)
+    }
+
+    fn open_resolved(path: PathBuf, canonical_root: &Path) -> Result<Self, VaultFileError> {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW);
+        }
+        #[cfg(windows)]
+        {
+            // Open the reparse point itself rather than its target, so a
+            // symlink or junction swapped in after resolution is detected
+            // below instead of followed (same flag as the guarded writes).
+            // Non-symlink reparse points are reopened normally afterwards.
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+            options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        }
+        let file = options.open(&path).map_err(map_open_error)?;
+        let metadata = file.metadata()?;
+        if metadata.file_type().is_symlink() {
+            return Err(VaultFileError::InvalidPath);
+        }
+        #[cfg(windows)]
+        let (file, metadata) = reopen_cloud_placeholder(&path, file, metadata)?;
+        if !metadata.is_file() {
+            return Err(VaultFileError::NotAFile);
+        }
+        // The no-follow flags only cover the final component. An ancestor
+        // directory replaced by a link between resolution and open would be
+        // followed by name, so ask the handle itself where it lives.
+        verify_handle_inside(&file, canonical_root)?;
+        Ok(Self {
+            path,
+            file,
+            stat: FileStat::from_metadata(&metadata),
+        })
+    }
+
+    /// Canonical absolute path the handle was opened from.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn stat(&self) -> &FileStat {
+        &self.stat
+    }
+
+    /// Final path component, lossily decoded.
+    pub fn name(&self) -> String {
+        self.path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
+    /// Mime from the extension table, magic-sniffed through the handle for
+    /// raster image extensions; see [`mime_for_file`].
+    pub fn mime_type(&self) -> Result<String, VaultFileError> {
+        let mime = extension_mime(&self.path);
+        if is_raster_image(mime)
+            && sniff_image_mime(&mut self.reader(SNIFF_BYTES as u64)?)? != Some(mime)
+        {
+            return Ok(OCTET_STREAM.to_string());
+        }
+        Ok(mime.to_string())
+    }
+
+    /// Whole file, or `TooLarge` if it is bigger than `limit`. The size is
+    /// checked before and after reading so a file growing underneath still
+    /// stops at the limit.
+    pub fn read_bounded(&self, limit: u64) -> Result<Vec<u8>, VaultFileError> {
+        if self.stat.size > limit {
+            return Err(VaultFileError::TooLarge { limit });
+        }
+        let bytes = self.read_prefix(limit + 1)?;
+        if bytes.len() as u64 > limit {
+            return Err(VaultFileError::TooLarge { limit });
+        }
+        Ok(bytes)
+    }
+
+    /// Image bytes for a prompt, after checking the byte limit (stat, no read)
+    /// and, once read, the limits in [`validate_image_bytes`].
+    pub fn read_image_for_prompt(&self) -> Result<Vec<u8>, VaultFileError> {
+        let bytes = self.read_bounded(limits::IMAGE_MAX_BYTES)?;
+        validate_image_bytes(&bytes)?;
+        Ok(bytes)
+    }
+
+    /// Up to `limit` bytes from the start of the file, never an error for a
+    /// longer file.
+    fn read_prefix(&self, limit: u64) -> Result<Vec<u8>, VaultFileError> {
+        let capacity = self.stat.size.min(limit) as usize;
+        let mut bytes = Vec::with_capacity(capacity);
+        self.reader(limit)?.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    fn reader(&self, limit: u64) -> Result<std::io::Take<&fs::File>, VaultFileError> {
+        let mut handle = &self.file;
+        handle.seek(SeekFrom::Start(0))?;
+        Ok(handle.take(limit))
+    }
+}
+
+/// Byte and longest-side limits for image bytes headed for a prompt. The
+/// side check parses only the header, so an oversized image is never decoded.
+pub fn validate_image_bytes(bytes: &[u8]) -> Result<(), VaultFileError> {
+    if bytes.len() as u64 > limits::IMAGE_MAX_BYTES {
+        return Err(VaultFileError::TooLarge {
+            limit: limits::IMAGE_MAX_BYTES,
+        });
+    }
+    let dimensions = imagesize::blob_size(bytes).map_err(image_header_error)?;
+    if dimensions.width > limits::IMAGE_MAX_SIDE as usize
+        || dimensions.height > limits::IMAGE_MAX_SIDE as usize
+    {
+        return Err(VaultFileError::TooLarge {
+            limit: u64::from(limits::IMAGE_MAX_SIDE),
+        });
+    }
+    Ok(())
+}
+
+const OCTET_STREAM: &str = "application/octet-stream";
+
+fn mime_for_extension(extension: &str) -> &'static str {
+    match extension {
+        "md" | "markdown" => "text/markdown",
+        "txt" | "text" | "log" => "text/plain",
+        "rs" => "text/x-rust",
+        "ts" | "tsx" | "mts" => "text/typescript",
+        "js" | "jsx" | "mjs" | "cjs" => "text/javascript",
+        "json" | "jsonc" => "application/json",
+        "yaml" | "yml" => "application/yaml",
+        "toml" => "application/toml",
+        "csv" => "text/csv",
+        "tsv" => "text/tab-separated-values",
+        "py" => "text/x-python",
+        "rb" => "text/x-ruby",
+        "go" => "text/x-go",
+        "java" | "kt" | "kts" => "text/x-java",
+        "c" | "h" => "text/x-c",
+        "cpp" | "cc" | "cxx" | "hpp" | "hh" => "text/x-c++",
+        "sh" | "bash" | "zsh" | "fish" => "text/x-shellscript",
+        "sql" => "application/sql",
+        "html" | "htm" => "text/html",
+        "css" | "scss" | "less" => "text/css",
+        "xml" => "application/xml",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "pdf" => "application/pdf",
+        _ => OCTET_STREAM,
+    }
+}
+
+/// Mime from the extension alone, no filesystem access. Callers that need to
+/// know whether a path *claims* to be an image before opening it use this;
+/// the sniffing variants decide whether it really is one.
+pub fn extension_mime(path: &Path) -> &'static str {
+    let extension = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+    mime_for_extension(&extension)
+}
+
+/// Mime from the extension table, `application/octet-stream` when unknown.
+/// Raster image extensions are magic-sniffed; a mismatch is octet-stream so a
+/// renamed non-image is never sent as an image block.
+pub fn mime_for_file(path: &Path) -> String {
+    let mime = extension_mime(path);
+    if is_raster_image(mime) {
+        let sniffed = fs::File::open(path)
+            .ok()
+            .and_then(|mut file| sniff_image_mime(&mut file).ok().flatten());
+        if sniffed != Some(mime) {
+            return OCTET_STREAM.to_string();
+        }
+    }
+    mime.to_string()
+}
+
+/// Raster mime by magic bytes, `None` when the bytes are not png/jpeg/gif/webp.
+pub fn sniff_raster_mime(bytes: &[u8]) -> Option<&'static str> {
+    let mut reader = bytes;
+    sniff_image_mime(&mut reader).unwrap_or(None)
+}
+
+const SNIFF_BYTES: usize = 12;
+
+fn sniff_image_mime(reader: &mut impl Read) -> Result<Option<&'static str>, VaultFileError> {
+    let mut head = [0u8; SNIFF_BYTES];
+    let mut read = 0;
+    while read < head.len() {
+        match reader.read(&mut head[read..])? {
+            0 => break,
+            n => read += n,
+        }
+    }
+    let head = &head[..read];
+    Ok(if head.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if head.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if head.starts_with(b"GIF87a") || head.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if head.len() >= 12 && &head[0..4] == b"RIFF" && &head[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    })
+}
+
+/// Only these become `ContentBlock::Image`; everything else is a pointer.
+pub fn is_raster_image(mime: &str) -> bool {
+    matches!(
+        mime,
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    )
+}
+
+fn image_header_error(err: imagesize::ImageError) -> VaultFileError {
+    match err {
+        imagesize::ImageError::IoError(io) => map_not_found(io),
+        other => VaultFileError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unreadable image header: {other}"),
+        )),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FileInfo {
+    pub name: String,
+    pub mime_type: String,
+    pub size: u64,
+    pub modified_epoch_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FilePreview {
+    Image {
+        /// Base64 of the thumbnail, never of the original bytes.
+        data: String,
+        mime_type: String,
+        width: u32,
+        height: u32,
+    },
+    Text {
+        excerpt: String,
+        truncated: bool,
+    },
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct FilePreviewResponse {
+    pub info: FileInfo,
+    pub preview: FilePreview,
+}
+
+/// Bounded in-memory preview cache keyed by (relative path, mtime, size).
+/// Cleared wholesale when it grows past [`PREVIEW_CACHE_MAX_ENTRIES`].
+#[derive(Default)]
+pub struct PreviewCache {
+    entries: Mutex<HashMap<PreviewKey, FilePreviewResponse>>,
+}
+
+const PREVIEW_CACHE_MAX_ENTRIES: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct PreviewKey {
+    relative: String,
+    modified_epoch_ms: u64,
+    size: u64,
+}
+
+impl PreviewCache {
+    pub fn preview(
+        &self,
+        root: &Path,
+        relative: &str,
+    ) -> Result<FilePreviewResponse, VaultFileError> {
+        let opened = OpenedVaultFile::open(root, relative)?;
+        let key = PreviewKey {
+            relative: relative.to_string(),
+            modified_epoch_ms: opened.stat().modified_epoch_ms,
+            size: opened.stat().size,
+        };
+        if let Some(hit) = self.lock().get(&key) {
+            return Ok(hit.clone());
+        }
+
+        let response = build_preview(&opened)?;
+        let mut entries = self.lock();
+        if entries.len() >= PREVIEW_CACHE_MAX_ENTRIES {
+            entries.clear();
+        }
+        entries.insert(key, response.clone());
+        Ok(response)
+    }
+
+    fn lock(&self) -> MutexGuard<'_, HashMap<PreviewKey, FilePreviewResponse>> {
+        self.entries
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+fn build_preview(opened: &OpenedVaultFile) -> Result<FilePreviewResponse, VaultFileError> {
+    let mime_type = opened.mime_type()?;
+    let preview = if is_raster_image(&mime_type) {
+        image_preview(opened, &mime_type)?
+    } else if is_text_like(&mime_type) {
+        text_preview(opened)?
+    } else {
+        FilePreview::None
+    };
+    Ok(FilePreviewResponse {
+        info: FileInfo {
+            name: opened.name(),
+            mime_type,
+            size: opened.stat().size,
+            modified_epoch_ms: opened.stat().modified_epoch_ms,
+        },
+        preview,
+    })
+}
+
+fn is_text_like(mime: &str) -> bool {
+    mime.starts_with("text/")
+        || matches!(
+            mime,
+            "application/json"
+                | "application/yaml"
+                | "application/toml"
+                | "application/xml"
+                | "application/sql"
+                | "application/javascript"
+                | "image/svg+xml"
+        )
+}
+
+fn text_preview(opened: &OpenedVaultFile) -> Result<FilePreview, VaultFileError> {
+    let limit = limits::PREVIEW_TEXT_BYTES;
+    let bytes = opened.read_prefix(limit as u64)?;
+    let truncated = opened.stat().size > limit as u64;
+    Ok(FilePreview::Text {
+        excerpt: excerpt_on_char_boundary(&bytes, truncated),
+        truncated,
+    })
+}
+
+/// Lossy UTF-8 of `bytes`; a multibyte char split by the byte cut is dropped
+/// rather than rendered as U+FFFD.
+fn excerpt_on_char_boundary(bytes: &[u8], truncated: bool) -> String {
+    let cut = match std::str::from_utf8(bytes) {
+        Err(err) if truncated && err.error_len().is_none() => err.valid_up_to(),
+        _ => bytes.len(),
+    };
+    String::from_utf8_lossy(&bytes[..cut]).into_owned()
+}
+
+fn image_preview(
+    opened: &OpenedVaultFile,
+    source_mime: &str,
+) -> Result<FilePreview, VaultFileError> {
+    use base64::Engine;
+
+    let bytes = opened.read_image_for_prompt()?;
+    let decoded = image::load_from_memory(&bytes).map_err(image_decode_error)?;
+    let side = limits::PREVIEW_IMAGE_MAX_SIDE;
+    let thumbnail = if decoded.width() > side || decoded.height() > side {
+        decoded.thumbnail(side, side)
+    } else {
+        decoded
+    };
+    let (format, mime_type, encodable) = if source_mime == "image/jpeg" {
+        (
+            image::ImageFormat::Jpeg,
+            "image/jpeg",
+            image::DynamicImage::ImageRgb8(thumbnail.to_rgb8()),
+        )
+    } else {
+        (image::ImageFormat::Png, "image/png", thumbnail)
+    };
+    let mut encoded = Vec::new();
+    encodable
+        .write_to(&mut Cursor::new(&mut encoded), format)
+        .map_err(image_decode_error)?;
+    Ok(FilePreview::Image {
+        data: base64::engine::general_purpose::STANDARD.encode(encoded),
+        mime_type: mime_type.to_string(),
+        width: encodable.width(),
+        height: encodable.height(),
+    })
+}
+
+fn image_decode_error(err: image::ImageError) -> VaultFileError {
+    match err {
+        image::ImageError::IoError(io) => map_not_found(io),
+        other => VaultFileError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unreadable image: {other}"),
+        )),
+    }
+}
+
+fn map_not_found(err: std::io::Error) -> VaultFileError {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        VaultFileError::NotFound
+    } else {
+        VaultFileError::Io(err)
+    }
+}
+
+/// Like [`map_not_found`], plus the `O_NOFOLLOW` refusal (`ELOOP`) of a
+/// symlink that appeared at the final component after resolution.
+fn map_open_error(err: std::io::Error) -> VaultFileError {
+    #[cfg(unix)]
+    if err.raw_os_error() == Some(libc::ELOOP) {
+        return VaultFileError::InvalidPath;
+    }
+    map_not_found(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::limits::{attachment_limits, IMAGE_MAX_BYTES, IMAGE_MAX_SIDE, PREVIEW_TEXT_BYTES};
+    use super::{
+        extension_mime, is_raster_image, mime_for_file, relativize_vault_path, resolve_vault_file,
+        stat_vault_file, validate_image_bytes, FilePreview, OpenedVaultFile, PreviewCache,
+        VaultFileError,
+    };
+
+    fn text_excerpt(preview: &FilePreview) -> (&str, bool) {
+        match preview {
+            FilePreview::Text { excerpt, truncated } => (excerpt, *truncated),
+            other => panic!("expected text preview, got {other:?}"),
+        }
+    }
+
+    fn write_png(path: &std::path::Path, width: u32, height: u32) {
+        image::RgbaImage::from_pixel(width, height, image::Rgba([10, 20, 30, 255]))
+            .save_with_format(path, image::ImageFormat::Png)
+            .unwrap();
+    }
+
+    fn png_bytes(width: u32, height: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image::RgbaImage::from_pixel(width, height, image::Rgba([10, 20, 30, 255]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+        bytes
+    }
+
+    #[test]
+    fn resolves_a_regular_file_inside_the_vault() {
+        let vault = tempdir().unwrap();
+        fs::create_dir_all(vault.path().join("notes")).unwrap();
+        fs::write(vault.path().join("notes/a.md"), "hello").unwrap();
+
+        let resolved = resolve_vault_file(vault.path(), "notes/a.md").unwrap();
+
+        assert_eq!(
+            resolved,
+            fs::canonicalize(vault.path().join("notes/a.md")).unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_parent_directory_traversal() {
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("secret.txt"), "x").unwrap();
+        let traversal = format!(
+            "../{}/secret.txt",
+            outside.path().file_name().unwrap().to_str().unwrap()
+        );
+
+        let err = resolve_vault_file(vault.path(), &traversal).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn rejects_absolute_input_even_when_inside_the_vault() {
+        let vault = tempdir().unwrap();
+        let file = vault.path().join("a.md");
+        fs::write(&file, "x").unwrap();
+
+        let err = resolve_vault_file(vault.path(), file.to_str().unwrap()).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn rejects_paths_with_control_characters_even_when_the_file_exists() {
+        let vault = tempdir().unwrap();
+        for name in ["a\nb.md", "a\rb.md", "a\tb.md", "a\u{1b}[0m.md", "a\0.md"] {
+            // Some filesystems refuse such names; the resolver must refuse all of them.
+            let _ = fs::write(vault.path().join(name), "x");
+            let err = resolve_vault_file(vault.path(), name).unwrap_err();
+            assert!(
+                matches!(err, VaultFileError::InvalidPath),
+                "{name:?}: {err:?}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_that_resolves_outside_the_vault() {
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("secret.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            vault.path().join("link.txt"),
+        )
+        .unwrap();
+
+        let err = resolve_vault_file(vault.path(), "link.txt").unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accepts_symlink_that_stays_inside_the_vault() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("real.md"), "x").unwrap();
+        std::os::unix::fs::symlink(vault.path().join("real.md"), vault.path().join("link.md"))
+            .unwrap();
+
+        let resolved = resolve_vault_file(vault.path(), "link.md").unwrap();
+
+        assert_eq!(
+            resolved,
+            fs::canonicalize(vault.path().join("real.md")).unwrap()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn opens_a_symlink_inside_the_vault_through_its_canonical_target() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("real.md"), "x").unwrap();
+        std::os::unix::fs::symlink(vault.path().join("real.md"), vault.path().join("link.md"))
+            .unwrap();
+
+        let opened = OpenedVaultFile::open(vault.path(), "link.md").unwrap();
+
+        assert_eq!(opened.name(), "real.md");
+        assert_eq!(opened.read_bounded(10).unwrap(), b"x");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_open_a_symlink_that_appeared_after_resolution() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("real.md"), "x").unwrap();
+        let link = vault.path().join("link.md");
+        std::os::unix::fs::symlink(vault.path().join("real.md"), &link).unwrap();
+
+        // A canonical path never ends in a symlink; simulate the swap by
+        // handing the opener the link path directly.
+        let root = fs::canonicalize(vault.path()).unwrap();
+        let err = OpenedVaultFile::open_resolved(link, &root).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn rejects_directories() {
+        let vault = tempdir().unwrap();
+        fs::create_dir_all(vault.path().join("dir")).unwrap();
+
+        let err = resolve_vault_file(vault.path(), "dir").unwrap_err();
+
+        assert!(matches!(err, VaultFileError::NotAFile), "{err:?}");
+    }
+
+    #[test]
+    fn reports_missing_files_as_not_found() {
+        let vault = tempdir().unwrap();
+
+        let err = resolve_vault_file(vault.path(), "nope.md").unwrap_err();
+
+        assert!(matches!(err, VaultFileError::NotFound), "{err:?}");
+    }
+
+    #[test]
+    fn relativizes_absolute_paths_inside_the_vault_with_forward_slashes() {
+        let vault = tempdir().unwrap();
+        fs::create_dir_all(vault.path().join("sub/dir")).unwrap();
+        fs::write(vault.path().join("sub/dir/a.md"), "x").unwrap();
+
+        let relative =
+            relativize_vault_path(vault.path(), &vault.path().join("sub/dir/a.md")).unwrap();
+
+        assert_eq!(relative, "sub/dir/a.md");
+    }
+
+    #[test]
+    fn relativize_rejects_paths_outside_the_vault() {
+        let vault = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        fs::write(outside.path().join("a.md"), "x").unwrap();
+
+        let err = relativize_vault_path(vault.path(), &outside.path().join("a.md")).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn relativize_rejects_relative_input() {
+        let vault = tempdir().unwrap();
+
+        let err = relativize_vault_path(vault.path(), std::path::Path::new("a.md")).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn stat_reports_size_and_modified_time() {
+        let vault = tempdir().unwrap();
+        let file = vault.path().join("a.md");
+        fs::write(&file, "hello").unwrap();
+        let expected_mtime = fs::metadata(&file)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
+        let stat = stat_vault_file(vault.path(), "a.md").unwrap();
+
+        assert_eq!(stat.size, 5);
+        assert_eq!(stat.modified_epoch_ms, expected_mtime);
+    }
+
+    #[test]
+    fn opened_file_exposes_path_name_stat_and_mime_from_one_handle() {
+        let vault = tempdir().unwrap();
+        fs::create_dir_all(vault.path().join("notes")).unwrap();
+        fs::write(vault.path().join("notes/a.md"), "hello").unwrap();
+
+        let opened = OpenedVaultFile::open(vault.path(), "notes/a.md").unwrap();
+
+        assert_eq!(
+            opened.path(),
+            fs::canonicalize(vault.path().join("notes/a.md")).unwrap()
+        );
+        assert_eq!(opened.name(), "a.md");
+        assert_eq!(opened.stat().size, 5);
+        assert_eq!(opened.mime_type().unwrap(), "text/markdown");
+    }
+
+    #[test]
+    fn mime_sniff_does_not_consume_the_bytes_read_afterwards() {
+        let vault = tempdir().unwrap();
+        write_png(&vault.path().join("a.png"), 2, 2);
+        let expected = fs::read(vault.path().join("a.png")).unwrap();
+
+        let opened = OpenedVaultFile::open(vault.path(), "a.png").unwrap();
+        assert_eq!(opened.mime_type().unwrap(), "image/png");
+        assert_eq!(opened.mime_type().unwrap(), "image/png");
+
+        assert_eq!(opened.read_image_for_prompt().unwrap(), expected);
+        assert_eq!(opened.read_bounded(IMAGE_MAX_BYTES).unwrap(), expected);
+    }
+
+    #[test]
+    fn read_bounded_returns_bytes_within_the_limit() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("a.txt"), "hello").unwrap();
+
+        let opened = OpenedVaultFile::open(vault.path(), "a.txt").unwrap();
+
+        assert_eq!(opened.read_bounded(5).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn read_bounded_rejects_files_over_the_limit() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("a.txt"), "hello!").unwrap();
+
+        let err = OpenedVaultFile::open(vault.path(), "a.txt")
+            .unwrap()
+            .read_bounded(5)
+            .unwrap_err();
+
+        assert!(
+            matches!(err, VaultFileError::TooLarge { limit: 5 }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn read_bounded_stops_at_the_limit_when_the_file_grows_after_open() {
+        let vault = tempdir().unwrap();
+        let file = vault.path().join("a.txt");
+        fs::write(&file, "hello").unwrap();
+
+        let opened = OpenedVaultFile::open(vault.path(), "a.txt").unwrap();
+        fs::write(&file, "hello, world").unwrap();
+        let err = opened.read_bounded(5).unwrap_err();
+
+        assert!(
+            matches!(err, VaultFileError::TooLarge { limit: 5 }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn mime_uses_the_extension_table_with_octet_stream_fallback() {
+        let dir = tempdir().unwrap();
+        let cases = [
+            ("a.md", "text/markdown"),
+            ("a.txt", "text/plain"),
+            ("a.rs", "text/x-rust"),
+            ("a.json", "application/json"),
+            ("a.YAML", "application/yaml"),
+            ("a.csv", "text/csv"),
+            ("a.bin", "application/octet-stream"),
+            ("noext", "application/octet-stream"),
+        ];
+        for (name, expected) in cases {
+            let file = dir.path().join(name);
+            fs::write(&file, "x").unwrap();
+            assert_eq!(mime_for_file(&file), expected, "{name}");
+            assert_eq!(extension_mime(&file), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn extension_mime_needs_no_file_and_never_sniffs() {
+        assert_eq!(
+            extension_mime(std::path::Path::new("missing/fake.png")),
+            "image/png"
+        );
+        assert_eq!(
+            extension_mime(std::path::Path::new("Photo.JPG")),
+            "image/jpeg"
+        );
+    }
+
+    #[test]
+    fn mime_sniffs_image_magic_and_rejects_mismatches() {
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("real.png");
+        write_png(&real, 2, 2);
+        let fake = dir.path().join("fake.png");
+        fs::write(&fake, "not a png").unwrap();
+        let jpeg_named_png = dir.path().join("wrong.png");
+        fs::write(&jpeg_named_png, [0xFF, 0xD8, 0xFF, 0xE0, 0, 0]).unwrap();
+
+        assert_eq!(mime_for_file(&real), "image/png");
+        assert_eq!(mime_for_file(&fake), "application/octet-stream");
+        assert_eq!(mime_for_file(&jpeg_named_png), "application/octet-stream");
+        for (name, expected) in [
+            ("real.png", "image/png"),
+            ("fake.png", "application/octet-stream"),
+            ("wrong.png", "application/octet-stream"),
+        ] {
+            let opened = OpenedVaultFile::open(dir.path(), name).unwrap();
+            assert_eq!(opened.mime_type().unwrap(), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn raster_image_mimes_are_png_jpeg_gif_webp_only() {
+        for mime in ["image/png", "image/jpeg", "image/gif", "image/webp"] {
+            assert!(is_raster_image(mime), "{mime}");
+        }
+        for mime in ["image/svg+xml", "text/plain", "application/pdf"] {
+            assert!(!is_raster_image(mime), "{mime}");
+        }
+    }
+
+    #[test]
+    fn image_for_prompt_returns_bytes_of_a_small_image() {
+        let vault = tempdir().unwrap();
+        let file = vault.path().join("a.png");
+        write_png(&file, 4, 3);
+
+        let bytes = OpenedVaultFile::open(vault.path(), "a.png")
+            .unwrap()
+            .read_image_for_prompt()
+            .unwrap();
+
+        assert_eq!(bytes, fs::read(&file).unwrap());
+    }
+
+    #[test]
+    fn image_for_prompt_rejects_files_over_the_byte_limit_before_reading() {
+        let vault = tempdir().unwrap();
+        let handle = fs::File::create(vault.path().join("big.png")).unwrap();
+        handle.set_len(IMAGE_MAX_BYTES + 1).unwrap();
+
+        let err = OpenedVaultFile::open(vault.path(), "big.png")
+            .unwrap()
+            .read_image_for_prompt()
+            .unwrap_err();
+
+        assert!(
+            matches!(err, VaultFileError::TooLarge { limit } if limit == IMAGE_MAX_BYTES),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn image_for_prompt_rejects_images_over_the_side_limit() {
+        let vault = tempdir().unwrap();
+        write_png(&vault.path().join("tall.png"), 1, IMAGE_MAX_SIDE + 1);
+
+        let err = OpenedVaultFile::open(vault.path(), "tall.png")
+            .unwrap()
+            .read_image_for_prompt()
+            .unwrap_err();
+
+        assert!(
+            matches!(err, VaultFileError::TooLarge { limit } if limit == u64::from(IMAGE_MAX_SIDE)),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_image_bytes_accepts_a_small_image() {
+        validate_image_bytes(&png_bytes(4, 3)).unwrap();
+    }
+
+    #[test]
+    fn validate_image_bytes_rejects_the_side_limit_from_the_header_alone() {
+        let err = validate_image_bytes(&png_bytes(IMAGE_MAX_SIDE + 1, 1)).unwrap_err();
+
+        assert!(
+            matches!(err, VaultFileError::TooLarge { limit } if limit == u64::from(IMAGE_MAX_SIDE)),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_image_bytes_rejects_the_byte_limit_before_parsing() {
+        let err = validate_image_bytes(&vec![0u8; IMAGE_MAX_BYTES as usize + 1]).unwrap_err();
+
+        assert!(
+            matches!(err, VaultFileError::TooLarge { limit } if limit == IMAGE_MAX_BYTES),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_image_bytes_rejects_bytes_that_are_not_an_image() {
+        let err = validate_image_bytes(b"not an image").unwrap_err();
+
+        assert!(
+            matches!(&err, VaultFileError::Io(io) if io.kind() == std::io::ErrorKind::InvalidData),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn text_preview_returns_the_whole_small_file_with_info() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("note.md"), "# Title\n\nbody").unwrap();
+
+        let response = PreviewCache::default()
+            .preview(vault.path(), "note.md")
+            .unwrap();
+
+        assert_eq!(response.info.name, "note.md");
+        assert_eq!(response.info.mime_type, "text/markdown");
+        assert_eq!(response.info.size, 13);
+        assert_eq!(text_excerpt(&response.preview), ("# Title\n\nbody", false));
+    }
+
+    #[test]
+    fn text_preview_truncates_at_the_byte_limit_on_a_char_boundary() {
+        let vault = tempdir().unwrap();
+        let mut content = "a".repeat(PREVIEW_TEXT_BYTES - 1);
+        content.push('€'); // 3 bytes, straddles the cut
+        content.push_str(" tail");
+        fs::write(vault.path().join("big.txt"), &content).unwrap();
+
+        let response = PreviewCache::default()
+            .preview(vault.path(), "big.txt")
+            .unwrap();
+
+        let (excerpt, truncated) = text_excerpt(&response.preview);
+        assert!(truncated);
+        assert_eq!(excerpt, "a".repeat(PREVIEW_TEXT_BYTES - 1));
+    }
+
+    #[test]
+    fn image_preview_is_a_downscaled_base64_png_thumbnail() {
+        let vault = tempdir().unwrap();
+        write_png(&vault.path().join("wide.png"), 1024, 256);
+
+        let response = PreviewCache::default()
+            .preview(vault.path(), "wide.png")
+            .unwrap();
+
+        assert_eq!(response.info.mime_type, "image/png");
+        match response.preview {
+            FilePreview::Image {
+                data,
+                mime_type,
+                width,
+                height,
+            } => {
+                assert_eq!((width, height), (512, 128));
+                assert_eq!(mime_type, "image/png");
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(data)
+                    .unwrap();
+                assert!(bytes.starts_with(b"\x89PNG"));
+            }
+            other => panic!("expected image preview, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_preview_keeps_small_images_at_their_size_and_jpeg_stays_jpeg() {
+        let vault = tempdir().unwrap();
+        image::RgbImage::from_pixel(4, 3, image::Rgb([1, 2, 3]))
+            .save_with_format(vault.path().join("tiny.jpg"), image::ImageFormat::Jpeg)
+            .unwrap();
+
+        let response = PreviewCache::default()
+            .preview(vault.path(), "tiny.jpg")
+            .unwrap();
+
+        match response.preview {
+            FilePreview::Image {
+                mime_type,
+                width,
+                height,
+                ..
+            } => {
+                assert_eq!((width, height), (4, 3));
+                assert_eq!(mime_type, "image/jpeg");
+            }
+            other => panic!("expected image preview, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_preview_rejects_over_limit_images() {
+        let vault = tempdir().unwrap();
+        write_png(&vault.path().join("tall.png"), 1, IMAGE_MAX_SIDE + 1);
+
+        let err = PreviewCache::default()
+            .preview(vault.path(), "tall.png")
+            .unwrap_err();
+
+        assert!(matches!(err, VaultFileError::TooLarge { .. }), "{err:?}");
+    }
+
+    #[test]
+    fn unknown_types_get_no_preview_but_still_info() {
+        let vault = tempdir().unwrap();
+        fs::write(vault.path().join("blob.bin"), [0, 1, 2]).unwrap();
+
+        let response = PreviewCache::default()
+            .preview(vault.path(), "blob.bin")
+            .unwrap();
+
+        assert!(matches!(response.preview, FilePreview::None));
+        assert_eq!(response.info.mime_type, "application/octet-stream");
+        assert_eq!(response.info.size, 3);
+    }
+
+    #[test]
+    fn preview_goes_through_the_vault_boundary() {
+        let vault = tempdir().unwrap();
+        let cache = PreviewCache::default();
+
+        assert!(matches!(
+            cache.preview(vault.path(), "nope.md").unwrap_err(),
+            VaultFileError::NotFound
+        ));
+        assert!(matches!(
+            cache.preview(vault.path(), "../etc/passwd").unwrap_err(),
+            VaultFileError::InvalidPath
+        ));
+    }
+
+    #[test]
+    fn preview_cache_hits_while_mtime_and_size_are_unchanged_and_misses_after_change() {
+        let vault = tempdir().unwrap();
+        let file = vault.path().join("note.txt");
+        fs::write(&file, "aaaa").unwrap();
+        let mtime = filetime::FileTime::from_last_modification_time(&fs::metadata(&file).unwrap());
+        let cache = PreviewCache::default();
+
+        let first = cache.preview(vault.path(), "note.txt").unwrap();
+        assert_eq!(text_excerpt(&first.preview).0, "aaaa");
+
+        // Same size and restored mtime: stat is unchanged, so the cache answers.
+        fs::write(&file, "bbbb").unwrap();
+        filetime::set_file_mtime(&file, mtime).unwrap();
+        let cached = cache.preview(vault.path(), "note.txt").unwrap();
+        assert_eq!(text_excerpt(&cached.preview).0, "aaaa");
+
+        // Different size: the cache misses and reads the new content.
+        fs::write(&file, "cccccc").unwrap();
+        let fresh = cache.preview(vault.path(), "note.txt").unwrap();
+        assert_eq!(text_excerpt(&fresh.preview).0, "cccccc");
+        assert_eq!(fresh.info.size, 6);
+    }
+
+    #[test]
+    fn attachment_limits_serialize_the_four_constants() {
+        let json = serde_json::to_value(attachment_limits()).unwrap();
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "image_max_bytes": 5 * 1024 * 1024,
+                "image_max_side": 8000,
+                "max_images_per_prompt": 20,
+                "preview_text_bytes": 16 * 1024,
+            })
+        );
+    }
+
+    #[test]
+    fn handle_outside_the_vault_is_refused_even_after_a_clean_open() {
+        let vault = tempdir().unwrap();
+        let elsewhere = tempdir().unwrap();
+        fs::write(elsewhere.path().join("secret.txt"), b"nope").unwrap();
+        let root = fs::canonicalize(vault.path()).unwrap();
+
+        // Simulates an ancestor swapped for a link after resolution: the open
+        // by name succeeded, but the handle lives outside the Vault.
+        let file = fs::File::open(elsewhere.path().join("secret.txt")).unwrap();
+        let err = super::verify_handle_inside(&file, &root).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn handle_inside_the_vault_passes_the_handle_check() {
+        let vault = tempdir().unwrap();
+        fs::create_dir_all(vault.path().join("notes")).unwrap();
+        fs::write(vault.path().join("notes/a.md"), b"# a").unwrap();
+        let root = fs::canonicalize(vault.path()).unwrap();
+
+        let file = fs::File::open(root.join("notes/a.md")).unwrap();
+
+        super::verify_handle_inside(&file, &root).unwrap();
+    }
+}

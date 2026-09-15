@@ -106,6 +106,60 @@ body.resizing {
   max-width: var(--tt-measure);
 }
 
+/* File node body: metadata table above the bounded preview */
+.side-panel-file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tt-s4);
+}
+
+.side-panel-file-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--tt-s4);
+  row-gap: var(--tt-s1);
+  margin: 0;
+  font-size: var(--tt-size-xs);
+}
+
+.side-panel-file-meta > div {
+  display: contents;
+}
+
+.side-panel-file-meta dt {
+  color: var(--tt-text-faint);
+}
+
+.side-panel-file-meta dd {
+  margin: 0;
+  color: var(--tt-text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.side-panel-file-meta code {
+  font-family: var(--tt-mono);
+  color: var(--tt-text);
+}
+
+.side-panel-file-state {
+  color: var(--tt-accent);
+  font-weight: 600;
+}
+
+.side-panel-file-state.danger {
+  color: var(--tt-danger);
+}
+
+.side-panel-file-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--tt-radius);
+  border: var(--tt-border) solid var(--tt-line);
+  background: var(--tt-surface-2);
+}
+
 .side-panel-provenance {
   margin-top: 20px;
   border: var(--tt-border) solid var(--tt-line);

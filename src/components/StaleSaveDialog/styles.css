@@ -164,6 +164,35 @@
   z-index: 1100;
 }
 
+/* Transient notice (useUIStore.notice): same slot as the recovery warning,
+   stacked above it, neutral colours because it informs rather than alarms. */
+.app-notice {
+  position: fixed;
+  bottom: var(--tt-s4);
+  right: var(--tt-s4);
+  max-width: 420px;
+  padding: var(--tt-s3);
+  background: var(--tt-surface);
+  border: var(--tt-border) solid var(--tt-line-strong);
+  border-left: 3px solid var(--tt-accent);
+  border-radius: var(--tt-radius);
+  color: var(--tt-text);
+  font-size: var(--tt-size-sm);
+  z-index: 1100;
+  animation: app-notice-in var(--tt-base) var(--tt-ease);
+}
+
+@keyframes app-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 650px) {
   .project-comparison {
     grid-template-columns: 1fr;

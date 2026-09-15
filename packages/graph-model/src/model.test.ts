@@ -384,6 +384,33 @@ describe('GraphModel.conversationPath', () => {
     ]);
   });
 
+  it('keeps an image-only user node as a user message with empty text', () => {
+    const img = { data: 'AAAA', mimeType: 'image/png' };
+    const a: GraphNode = { id: 'a', role: 'user', content: '', timestamp: 1, images: [img] };
+    const g = graphOf([a], []);
+    expect(GraphModel.conversationPath(g, 'a')).toEqual([{ role: 'user', content: '', images: [img] }]);
+  });
+
+  it('merges an image-only user node into the following user text without a stray separator', () => {
+    const img = { data: 'AAAA', mimeType: 'image/png' };
+    const a: GraphNode = { id: 'a', role: 'user', content: '', timestamp: 1, images: [img] };
+    const b: GraphNode = { id: 'b', role: 'user', content: 'describe', timestamp: 2 };
+    const g = graphOf([a, b], [edge('a', 'b')]);
+    expect(GraphModel.conversationPath(g, 'b')).toEqual([{ role: 'user', content: 'describe', images: [img] }]);
+  });
+
+  it('names an image-only user node inside its Node marker in a non-linear lineage', () => {
+    const img = { data: 'AAAA', mimeType: 'image/png' };
+    const r1: GraphNode = { id: 'r1', role: 'assistant', content: 'one', timestamp: 1 };
+    const r2: GraphNode = { id: 'r2', role: 'assistant', content: 'two', timestamp: 2 };
+    const a: GraphNode = { id: 'a', role: 'user', content: '', timestamp: 3, images: [img] };
+    const g = graphOf([r1, r2, a], [edge('r1', 'a'), edge('r2', 'a')]);
+    const [, user] = GraphModel.conversationPath(g, 'a');
+    expect(user.images).toEqual([img]);
+    expect(user.content).toContain('<node id="a">');
+    expect(user.content).toContain('[image attached]');
+  });
+
   it('merges images when consecutive user messages are concatenated', () => {
     const imgA = { data: 'A', mimeType: 'image/png' };
     const imgB = { data: 'B', mimeType: 'image/png' };
@@ -406,6 +433,83 @@ describe('GraphModel.conversationPath', () => {
     const g = graphOf([a, b], [edge('a', 'b')]);
     expect(GraphModel.conversationPath(g, 'b')).toEqual([
       { role: 'user', content: 'one\n\ntwo', images: [imgA, imgB] },
+    ]);
+  });
+});
+
+describe('GraphModel.conversationPath with file nodes', () => {
+  function fileNode(id: string, name: string, ts: number): GraphNode {
+    return {
+      id,
+      role: 'file',
+      content: '',
+      timestamp: ts,
+      path: `notes/${name}`,
+      name,
+      mimeType: 'text/markdown',
+      size: 42,
+      seenMtime: ts,
+      seenSize: 42,
+    };
+  }
+  const refOf = (name: string) => ({ path: `notes/${name}`, name, mimeType: 'text/markdown', size: 42 });
+
+  it('merges a file node into the following user turn with the file ref and no stray separator', () => {
+    const f = fileNode('f', 'design.md', 1);
+    const u = userNode('u', 'summarize this', 2);
+    const g = graphOf([f, u], [edge('f', 'u')]);
+    expect(GraphModel.conversationPath(g, 'u')).toEqual([
+      { role: 'user', content: 'summarize this', files: [refOf('design.md')] },
+    ]);
+  });
+
+  it('carries two file nodes into one user turn with refs in Conversation path order', () => {
+    const late = fileNode('late', 'b.md', 2);
+    const early = fileNode('earl', 'a.md', 1);
+    const u = userNode('u', 'compare', 3);
+    const g = graphOf([late, early, u], [edge('late', 'u'), edge('earl', 'u')]);
+    const [message] = GraphModel.conversationPath(g, 'u');
+    expect(message.role).toBe('user');
+    expect(message.files).toEqual([refOf('a.md'), refOf('b.md')]);
+    expect(message.content.indexOf('[file: a.md]')).toBeLessThan(message.content.indexOf('[file: b.md]'));
+    expect(message.content.indexOf('[file: b.md]')).toBeLessThan(message.content.indexOf('compare'));
+  });
+
+  it('emits a user turn with only the file ref when a file node is the last turn with no text', () => {
+    const a = agentNode('a', 'earlier answer', 1);
+    const u1 = userNode('u1', 'ask', 2);
+    const f = fileNode('f', 'design.md', 3);
+    const u2 = userNode('u2', '', 4);
+    const g = graphOf([a, u1, f, u2], [edge('a', 'u1'), edge('u1', 'a'), edge('f', 'u2')]);
+    // Only f → u2 is in u2's Lineage subgraph; u2 has no text of its own.
+    expect(GraphModel.conversationPath(g, 'u2')).toEqual([
+      { role: 'user', content: '', files: [refOf('design.md')] },
+    ]);
+  });
+
+  it('wraps a file node in a Node marker and lists it with role file in the Lineage map', () => {
+    const f1 = fileNode('f1', 'a.md', 1);
+    const f2 = fileNode('f2', 'b.md', 2);
+    const u = userNode('u', 'compare', 3);
+    const g = graphOf([f1, f2, u], [edge('f1', 'u'), edge('f2', 'u')]);
+    expect(GraphModel.conversationPath(g, 'u')).toEqual([
+      {
+        role: 'user',
+        content:
+          '<node id="f1">\n[file: a.md]\n</node>\n\n' +
+          '<node id="f2">\n[file: b.md]\n</node>\n\n' +
+          '<node id="u">\n' +
+          '<graph: this message merges branches f1, f2>\n' +
+          'compare\n' +
+          '</node>\n\n' +
+          '<graph-map>\n' +
+          "This conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\n" +
+          'f1 (file) <- (root)\n' +
+          'f2 (file) <- (root)\n' +
+          'u (user) <- f1, f2 [current]\n' +
+          '</graph-map>',
+        files: [refOf('a.md'), refOf('b.md')],
+      },
     ]);
   });
 });

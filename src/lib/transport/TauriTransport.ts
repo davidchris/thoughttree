@@ -13,7 +13,11 @@ import type {
   StoredProviderRecord,
 } from '../../types';
 import type {
+  AttachmentLimits,
   BackendTransport,
+  FilePreview,
+  FilePreviewResponse,
+  FileStat,
   ProjectDoc,
   ProjectEntry,
   RecoveryEntry,
@@ -23,8 +27,10 @@ import type {
   SummaryRequest,
   SummaryResult,
   Unsubscribe,
+  VaultFileStatus,
 } from './types';
 import { conversationToGraph, parseKagiExport } from '@thoughttree/graph-model';
+import type { FileRef } from '@thoughttree/graph-model';
 import { KagiImportError, StaleRevisionError } from './types';
 import type { KagiImportErrorKind } from './types';
 
@@ -33,10 +39,18 @@ interface BackendMessageImage {
   mime_type: string;
 }
 
+interface BackendMessageFile {
+  path: string;
+  name: string;
+  mime_type: string;
+  size: number;
+}
+
 interface BackendMessage {
   role: string;
   content: string;
   images: BackendMessageImage[] | null;
+  files: BackendMessageFile[] | null;
 }
 
 interface ChunkPayload {
@@ -63,13 +77,18 @@ interface ProjectCommandErrorPayload {
   current_revision?: string;
 }
 
+function hasAttachments(message: PromptMessage): boolean {
+  return Boolean(message.images?.length || message.files?.length);
+}
+
 function toBackendMessages(messages: PromptMessage[]): BackendMessage[] {
   return messages
-    .filter((message) => message.content.trim().length > 0 || (message.images && message.images.length > 0))
+    .filter((message) => message.content.trim().length > 0 || hasAttachments(message))
     .map((message) => ({
       role: message.role,
       content: message.content,
       images: message.images?.map((image) => toBackendImage(image)) || null,
+      files: message.files?.map((file) => toBackendFile(file)) || null,
     }));
 }
 
@@ -77,6 +96,94 @@ function toBackendImage(image: ImageAttachment): BackendMessageImage {
   return {
     data: image.data,
     mime_type: image.mimeType,
+  };
+}
+
+function toBackendFile(file: FileRef): BackendMessageFile {
+  return {
+    path: file.path,
+    name: file.name,
+    mime_type: file.mimeType,
+    size: file.size,
+  };
+}
+
+interface FileStatPayload {
+  size: number;
+  modified_epoch_ms: number;
+}
+
+type VaultFileStatusPayload =
+  | { status: 'ok'; stat: FileStatPayload; mime_type: string; name: string }
+  | { status: 'missing' }
+  | { status: 'invalid' };
+
+type FilePreviewPayload =
+  | { kind: 'image'; data: string; mime_type: string; width: number; height: number }
+  | { kind: 'text'; excerpt: string; truncated: boolean }
+  | { kind: 'none' };
+
+interface FilePreviewResponsePayload {
+  info: { name: string; mime_type: string; size: number; modified_epoch_ms: number };
+  preview: FilePreviewPayload;
+}
+
+interface AttachmentLimitsPayload {
+  image_max_bytes: number;
+  image_max_side: number;
+  max_images_per_prompt: number;
+  preview_text_bytes: number;
+}
+
+function toFileStat(payload: FileStatPayload): FileStat {
+  return { size: payload.size, modifiedEpochMs: payload.modified_epoch_ms };
+}
+
+function toVaultFileStatus(payload: VaultFileStatusPayload): VaultFileStatus {
+  if (payload.status !== 'ok') return { status: payload.status };
+  return {
+    status: 'ok',
+    stat: toFileStat(payload.stat),
+    mimeType: payload.mime_type,
+    name: payload.name,
+  };
+}
+
+function toFilePreview(payload: FilePreviewPayload): FilePreview {
+  switch (payload.kind) {
+    case 'image':
+      return {
+        kind: 'image',
+        data: payload.data,
+        mimeType: payload.mime_type,
+        width: payload.width,
+        height: payload.height,
+      };
+    case 'text':
+      return { kind: 'text', excerpt: payload.excerpt, truncated: payload.truncated };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+function toFilePreviewResponse(payload: FilePreviewResponsePayload): FilePreviewResponse {
+  return {
+    info: {
+      name: payload.info.name,
+      mimeType: payload.info.mime_type,
+      size: payload.info.size,
+      modifiedEpochMs: payload.info.modified_epoch_ms,
+    },
+    preview: toFilePreview(payload.preview),
+  };
+}
+
+function toAttachmentLimits(payload: AttachmentLimitsPayload): AttachmentLimits {
+  return {
+    imageMaxBytes: payload.image_max_bytes,
+    imageMaxSide: payload.image_max_side,
+    maxImagesPerPrompt: payload.max_images_per_prompt,
+    previewTextBytes: payload.preview_text_bytes,
   };
 }
 
@@ -298,5 +405,27 @@ export class TauriTransport implements BackendTransport {
       nodeId: req.nodeId,
       content: req.content,
     });
+  }
+
+  async pickVaultFile(): Promise<string | null> {
+    return (await invoke<string | null>('pick_vault_file')) ?? null;
+  }
+
+  resolveDroppedFile(absolutePath: string): Promise<string> {
+    return invoke<string>('resolve_dropped_file', { absolutePath });
+  }
+
+  async statVaultFile(path: string): Promise<VaultFileStatus> {
+    return toVaultFileStatus(await invoke<VaultFileStatusPayload>('stat_vault_file', { path }));
+  }
+
+  async readVaultFilePreview(path: string): Promise<FilePreviewResponse> {
+    return toFilePreviewResponse(
+      await invoke<FilePreviewResponsePayload>('read_vault_file_preview', { path })
+    );
+  }
+
+  async getAttachmentLimits(): Promise<AttachmentLimits> {
+    return toAttachmentLimits(await invoke<AttachmentLimitsPayload>('get_attachment_limits'));
   }
 }

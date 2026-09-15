@@ -6,6 +6,7 @@
 //! A persistent sibling lock serializes guarded writers across that comparison
 //! and replacement. Writers that bypass this lock are outside this guarantee.
 
+pub mod files;
 mod local_state;
 mod recovery;
 pub use recovery::{
@@ -266,7 +267,10 @@ fn list_projects_under_root(root: &Path) -> Result<Vec<ProjectEntry>, VaultError
     Ok(entries)
 }
 
-fn validate_relative_path(root: &Path, relative_path: &str) -> Result<PathBuf, VaultError> {
+pub(crate) fn validate_relative_path(
+    root: &Path,
+    relative_path: &str,
+) -> Result<PathBuf, VaultError> {
     let relative = Path::new(relative_path);
     if relative.as_os_str().is_empty() || relative.is_absolute() {
         return Err(VaultError::InvalidPath);
