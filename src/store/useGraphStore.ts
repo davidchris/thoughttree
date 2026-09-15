@@ -817,7 +817,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   },
 
   linkVaultFile: async (path, position) => {
+    // The stat can take a while (cloud placeholders hydrate on first touch);
+    // never insert into a project that was opened meanwhile.
+    const session = get().projectSession;
     const status = await getBackendTransport().statVaultFile(path);
+    if (get().projectSession !== session) return null;
     if (status.status !== 'ok') {
       const why =
         status.status === 'missing' ? 'was not found in the notes directory' : 'is not a readable file in the notes directory';

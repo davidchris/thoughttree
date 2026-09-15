@@ -412,6 +412,17 @@ describe('GraphSerialize file nodes', () => {
     expect(restored.layout.get('f')).toEqual({ x: 1, y: 2 });
   });
 
+  it.each([
+    ['negative size', { size: -1 }],
+    ['fractional size', { size: 12.5 }],
+    ['size beyond the safe integer range', { size: 2 ** 53 }],
+    ['negative seenMtime', { seenMtime: -5 }],
+    ['fractional seenSize', { seenSize: 0.5 }],
+  ])('drops a file node with a %s, which the backend could not read as u64', (_label, patch) => {
+    const restored = GraphSerialize.fromJSON(jsonWith({ ...fileNode, ...patch }));
+    expect(restored.nodes.has('f')).toBe(false);
+  });
+
   it('forces file node content to empty so no text is smuggled through the Project file', () => {
     const restored = GraphSerialize.fromJSON(jsonWith({ ...fileNode, content: 'smuggled text' }));
     expect(restored.nodes.get('f')?.content).toBe('');

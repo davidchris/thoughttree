@@ -200,12 +200,94 @@ fn file_record_id(file: &fs::File) -> Result<(u32, u64), VaultFileError> {
     Ok((info.dwVolumeSerialNumber, index))
 }
 
+/// Rejects a handle whose real location (as reported by the OS for the open
+/// file object, not looked up by name) is outside the canonical Vault root.
+fn verify_handle_inside(file: &fs::File, canonical_root: &Path) -> Result<(), VaultFileError> {
+    match handle_path(file)? {
+        Some(actual) if actual.starts_with(canonical_root) => Ok(()),
+        Some(_) => Err(VaultFileError::InvalidPath),
+        // No way to ask on this platform; the no-follow open is the guarantee.
+        None => Ok(()),
+    }
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(target_os = "linux")]
+fn handle_path(file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    use std::os::unix::io::AsRawFd;
+    Ok(Some(fs::read_link(format!(
+        "/proc/self/fd/{}",
+        file.as_raw_fd()
+    ))?))
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn handle_path(file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    use std::ffi::CStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::AsRawFd;
+    let mut buf = [0u8; libc::PATH_MAX as usize];
+    // SAFETY: `buf` is PATH_MAX bytes, which is what F_GETPATH requires, and
+    // the descriptor stays open for the duration of the call.
+    let rc = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buf.as_mut_ptr()) };
+    if rc == -1 {
+        return Err(VaultFileError::Io(std::io::Error::last_os_error()));
+    }
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len() - 1);
+    let bytes = CStr::from_bytes_with_nul(&buf[..=end])
+        .map_err(|_| VaultFileError::InvalidPath)?
+        .to_bytes();
+    Ok(Some(PathBuf::from(std::ffi::OsStr::from_bytes(bytes))))
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(windows)]
+fn handle_path(file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED,
+    };
+    let mut buf: Vec<u16> = vec![0; 1024];
+    loop {
+        // SAFETY: the handle is open for the call; `buf` is `buf.len()` u16s
+        // and the API writes at most that many, reporting the needed size.
+        let len = unsafe {
+            GetFinalPathNameByHandleW(
+                file.as_raw_handle(),
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                FILE_NAME_NORMALIZED,
+            )
+        };
+        if len == 0 {
+            return Err(VaultFileError::Io(std::io::Error::last_os_error()));
+        }
+        let len = len as usize;
+        if len < buf.len() {
+            return Ok(Some(PathBuf::from(std::ffi::OsString::from_wide(
+                &buf[..len],
+            ))));
+        }
+        buf.resize(len + 1, 0);
+    }
+}
+
+/// Real path of an open file, from the handle. `None` where unsupported.
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios", windows)))]
+fn handle_path(_file: &fs::File) -> Result<Option<PathBuf>, VaultFileError> {
+    Ok(None)
+}
+
 impl OpenedVaultFile {
     pub fn open(root: &Path, relative: &str) -> Result<Self, VaultFileError> {
-        Self::open_resolved(resolve_vault_file(root, relative)?)
+        let path = resolve_vault_file(root, relative)?;
+        let canonical_root = fs::canonicalize(root).map_err(map_not_found)?;
+        Self::open_resolved(path, &canonical_root)
     }
 
-    fn open_resolved(path: PathBuf) -> Result<Self, VaultFileError> {
+    fn open_resolved(path: PathBuf, canonical_root: &Path) -> Result<Self, VaultFileError> {
         let mut options = fs::OpenOptions::new();
         options.read(true);
         #[cfg(unix)]
@@ -233,6 +315,10 @@ impl OpenedVaultFile {
         if !metadata.is_file() {
             return Err(VaultFileError::NotAFile);
         }
+        // The no-follow flags only cover the final component. An ancestor
+        // directory replaced by a link between resolution and open would be
+        // followed by name, so ask the handle itself where it lives.
+        verify_handle_inside(&file, canonical_root)?;
         Ok(Self {
             path,
             file,
@@ -782,7 +868,8 @@ mod tests {
 
         // A canonical path never ends in a symlink; simulate the swap by
         // handing the opener the link path directly.
-        let err = OpenedVaultFile::open_resolved(link).unwrap_err();
+        let root = fs::canonicalize(vault.path()).unwrap();
+        let err = OpenedVaultFile::open_resolved(link, &root).unwrap_err();
 
         assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
     }
@@ -1242,5 +1329,32 @@ mod tests {
                 "preview_text_bytes": 16 * 1024,
             })
         );
+    }
+
+    #[test]
+    fn handle_outside_the_vault_is_refused_even_after_a_clean_open() {
+        let vault = tempdir().unwrap();
+        let elsewhere = tempdir().unwrap();
+        fs::write(elsewhere.path().join("secret.txt"), b"nope").unwrap();
+        let root = fs::canonicalize(vault.path()).unwrap();
+
+        // Simulates an ancestor swapped for a link after resolution: the open
+        // by name succeeded, but the handle lives outside the Vault.
+        let file = fs::File::open(elsewhere.path().join("secret.txt")).unwrap();
+        let err = super::verify_handle_inside(&file, &root).unwrap_err();
+
+        assert!(matches!(err, VaultFileError::InvalidPath), "{err:?}");
+    }
+
+    #[test]
+    fn handle_inside_the_vault_passes_the_handle_check() {
+        let vault = tempdir().unwrap();
+        fs::create_dir_all(vault.path().join("notes")).unwrap();
+        fs::write(vault.path().join("notes/a.md"), b"# a").unwrap();
+        let root = fs::canonicalize(vault.path()).unwrap();
+
+        let file = fs::File::open(root.join("notes/a.md")).unwrap();
+
+        super::verify_handle_inside(&file, &root).unwrap();
     }
 }

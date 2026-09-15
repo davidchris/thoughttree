@@ -461,6 +461,22 @@ describe('useGraphStore file node status', () => {
       expect(useGraphStore.getState().fileNodeStatus.get(id!)?.state).toBe('ok');
     });
 
+    it('abandons the link when another project was opened while the stat was pending', async () => {
+      let resolveStat: (status: VaultFileStatus) => void = () => {};
+      vi.mocked(transport.statVaultFile).mockReturnValue(
+        new Promise<VaultFileStatus>((resolve) => {
+          resolveStat = resolve;
+        })
+      );
+      const pending = useGraphStore.getState().linkVaultFile('inbox/todo.txt', { x: 0, y: 0 });
+
+      useGraphStore.getState().newProject();
+      resolveStat(okStatus(7_000, 300, { mimeType: 'text/plain', name: 'todo.txt' }));
+
+      expect(await pending).toBeNull();
+      expect(useGraphStore.getState().graph.nodes.size).toBe(0);
+    });
+
     it('adds nothing and posts a notice when the file is missing or invalid', async () => {
       vi.mocked(transport.statVaultFile).mockResolvedValue({ status: 'missing' });
 
