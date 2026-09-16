@@ -103,6 +103,8 @@ pub enum TurnActivity {
     Tool {
         kind: ToolActivityKind,
         title: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        title_truncated: Option<bool>,
         status: ToolActivityStatus,
         timestamp: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -145,6 +147,7 @@ impl Clock for SystemClock {
 struct ToolRecord {
     kind: ToolKind,
     title: String,
+    title_truncated: bool,
     status: ToolCallStatus,
     locations: Vec<PathBuf>,
     started_at: u64,
@@ -218,9 +221,11 @@ impl TurnRecorder {
     fn observe_tool_call(&mut self, call: &ToolCall) {
         let now = self.clock.now_ms();
         let locations = paths_of(Some(call.locations.as_slice()));
+        let (title, title_truncated) = safe_title(&call.title);
         match self.tools.get_mut(&call.tool_call_id) {
             Some(record) => {
-                record.title = safe_title(&call.title);
+                record.title = title;
+                record.title_truncated = title_truncated;
                 record.kind = call.kind;
                 merge_locations(&mut record.locations, locations);
                 apply_status(record, Some(call.status), now);
@@ -228,7 +233,8 @@ impl TurnRecorder {
             None => {
                 let mut record = ToolRecord {
                     kind: call.kind,
-                    title: safe_title(&call.title),
+                    title,
+                    title_truncated,
                     status: ToolCallStatus::Pending,
                     locations,
                     started_at: now,
@@ -253,7 +259,8 @@ impl TurnRecorder {
                     update.tool_call_id.clone(),
                     ToolRecord {
                         kind: ToolKind::Other,
-                        title: safe_title(""),
+                        title: "Tool call".to_string(),
+                        title_truncated: false,
                         status: ToolCallStatus::Pending,
                         locations: Vec::new(),
                         started_at: now,
@@ -267,7 +274,7 @@ impl TurnRecorder {
             }
         };
         if let Some(title) = &fields.title {
-            record.title = safe_title(title);
+            (record.title, record.title_truncated) = safe_title(title);
         }
         if let Some(kind) = fields.kind {
             record.kind = kind;
@@ -302,7 +309,7 @@ impl TurnRecorder {
                     if record.status == ToolCallStatus::Completed {
                         collect_references(&mut references, record, vault_root);
                     }
-                    if !record.is_terminal() {
+                    if !record.is_terminal() || record.title_truncated {
                         known_loss = true;
                     }
                 }
@@ -357,17 +364,21 @@ fn apply_status(record: &mut ToolRecord, status: Option<ToolCallStatus>, now: u6
 }
 
 /// Tool titles are display summaries; the persisted model caps them at this
-/// length, so anything longer is cut before it crosses the wire.
+/// length, so anything longer is cut and marked before it crosses the wire.
 pub const TOOL_TITLE_MAX_CHARS: usize = 200;
 
 /// Title as recorded: trimmed, capped, never empty (an update that arrives
 /// before its ToolCall has no title yet).
-fn safe_title(title: &str) -> String {
+fn safe_title(title: &str) -> (String, bool) {
     let trimmed = title.trim();
     if trimmed.is_empty() {
-        return "Tool call".to_string();
+        return ("Tool call".to_string(), false);
     }
-    trimmed.chars().take(TOOL_TITLE_MAX_CHARS).collect()
+    let truncated = trimmed.chars().count() > TOOL_TITLE_MAX_CHARS;
+    (
+        trimmed.chars().take(TOOL_TITLE_MAX_CHARS).collect(),
+        truncated,
+    )
 }
 
 /// Append paths not already recorded, preserving first-seen order, so a tool
@@ -384,6 +395,7 @@ fn tool_activity(record: &ToolRecord) -> TurnActivity {
     TurnActivity::Tool {
         kind: kind_mapping(record.kind).0,
         title: record.title.clone(),
+        title_truncated: record.title_truncated.then_some(true),
         status: match record.status {
             ToolCallStatus::Completed => ToolActivityStatus::Completed,
             ToolCallStatus::Failed => ToolActivityStatus::Failed,
@@ -838,6 +850,17 @@ mod tests {
             .collect();
         assert_eq!(titles[0].chars().count(), TOOL_TITLE_MAX_CHARS);
         assert_eq!(titles[1], "Tool call");
+        assert_eq!(provenance.completeness, ProvenanceCompleteness::Partial);
+        assert!(matches!(
+            &provenance.activity[0],
+            TurnActivity::Tool {
+                title_truncated: Some(true),
+                ..
+            }
+        ));
+        let json = serde_json::to_value(&provenance).unwrap();
+        assert_eq!(json["activity"][0]["titleTruncated"], true);
+        assert!(json["activity"][1].get("titleTruncated").is_none());
     }
 
     #[test]
