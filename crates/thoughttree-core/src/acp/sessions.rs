@@ -387,15 +387,26 @@ pub async fn run_summary_session(
     provider: AgentProvider,
     provider_paths: ProviderPaths,
 ) -> anyhow::Result<String> {
-    let model = match provider {
-        AgentProvider::Codex => Some("gpt-5.6-luna"),
-        AgentProvider::ClaudeCode => None,
+    let truncated_content: String = content.chars().take(2000).collect();
+    let suffix = if truncated_content.len() < content.len() {
+        "..."
+    } else {
+        ""
     };
+    let prompt_text = format!(
+        "Write a 3-5 word heading that describes what this text is about. \
+         Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{truncated_content}{suffix}"
+    );
+    if matches!(provider, AgentProvider::Codex) {
+        let result =
+            super::codex_summary::run(&prompt_text, &notes_directory, &provider_paths).await?;
+        return Ok(clean_summary(&result));
+    }
     let child = spawn_agent_subprocess(
         &provider,
         &notes_directory,
         &provider_paths,
-        model,
+        None,
         Some(HOUSEKEEPING_EFFORT),
     )
     .await?;
@@ -438,19 +449,6 @@ pub async fn run_summary_session(
             }
         }
 
-        // Truncate content to avoid huge inputs
-        let truncated_content = if content.len() > 2000 {
-            format!("{}...", &content[..2000])
-        } else {
-            content
-        };
-
-        // Build summarization prompt
-        let prompt_text = format!(
-            "Write a 3-5 word heading that describes what this text is about. \
-             Be specific and concise. Do not call any tools. Return ONLY the heading, nothing else:\n\n{truncated_content}"
-        );
-
         // Send prompt and wait for completion
         let prompt_result = cx
             .send_request(PromptRequest::new(
@@ -468,22 +466,97 @@ pub async fn run_summary_session(
     .await?;
 
     // Get result and clean it up
-    let result = response_text.lock().await.trim().to_string();
+    let result = clean_summary(&response_text.lock().await);
+    Ok(result)
+}
 
+fn clean_summary(result: &str) -> String {
     // Remove any quotes the model might have added
-    let result = result.trim_matches('"').trim_matches('\'').trim();
+    let result = result.trim().trim_matches('"').trim_matches('\'').trim();
 
     // Truncate if too long (aim for ~40 chars max)
-    if result.len() > 40 {
-        Ok(format!("{}…", &result[..37]))
+    if result.chars().count() > 40 {
+        format!("{}…", result.chars().take(37).collect::<String>())
     } else {
-        Ok(result.to_string())
+        result.to_string()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn codex_summary_uses_ephemeral_exec_instead_of_acp() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let script = r#"#!/bin/sh
+printf '%s\n' "$@" > args
+case " $* " in
+  *' --ephemeral '*) ;;
+  *) exit 42 ;;
+esac
+cat > prompt
+printf '%s\n' 'A useful short heading'
+"#;
+        for name in ["codex", "codex-acp"] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, script).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let mut paths = ProviderPaths::default();
+        paths.set(
+            &AgentProvider::Codex,
+            Some(dir.path().join("codex-acp").to_string_lossy().into_owned()),
+        );
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(
+            tokio::task::LocalSet::new().run_until(run_summary_session(
+                format!("Content to summarize {}", "é".repeat(2000)),
+                dir.path().into(),
+                AgentProvider::Codex,
+                paths.clone(),
+            )),
+        );
+        assert_eq!(result.unwrap(), "A useful short heading");
+        let args = std::fs::read_to_string(dir.path().join("args")).unwrap();
+        assert!(args.starts_with("exec\n"));
+        assert!(args.lines().any(|arg| arg == "--ephemeral"));
+        assert!(args.lines().any(|arg| arg == "gpt-5.6-luna"));
+        assert!(args.lines().any(|arg| arg == "read-only"));
+        assert!(args.lines().any(|arg| arg == "--skip-git-repo-check"));
+        assert!(std::fs::read_to_string(dir.path().join("prompt"))
+            .unwrap()
+            .contains("Content to summarize"));
+
+        for (script, expected) in [
+            (
+                "#!/bin/sh\ncat >/dev/null\necho partial\necho failed >&2\nexit 1\n",
+                "Codex summary failed",
+            ),
+            ("#!/bin/sh\ncat >/dev/null\n", "empty summary"),
+        ] {
+            std::fs::write(dir.path().join("codex"), script).unwrap();
+            let result = tokio::runtime::Runtime::new().unwrap().block_on(
+                tokio::task::LocalSet::new().run_until(run_summary_session(
+                    "Content".into(),
+                    dir.path().into(),
+                    AgentProvider::Codex,
+                    paths.clone(),
+                )),
+            );
+            assert!(result.unwrap_err().to_string().contains(expected));
+        }
+    }
+
+    #[test]
+    fn summary_cleanup_handles_multibyte_headings() {
+        assert_eq!(clean_summary("  \"A short heading\"\n"), "A short heading");
+        assert_eq!(
+            clean_summary(&"é".repeat(41)),
+            format!("{}…", "é".repeat(37))
+        );
+    }
 
     fn setup(json: serde_json::Value) -> SessionSetup {
         SessionSetup::parse(json).unwrap()
