@@ -35,6 +35,26 @@ describe('TauriTransport', () => {
     expect(receive).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves Turn identity on provenance events', async () => {
+    const transport = new TauriTransport();
+    const receive = vi.fn();
+    transport.onTurnProvenance(receive);
+    await Promise.resolve();
+    const listener = vi.mocked(listen).mock.calls.find(([name]) => name === 'turn-provenance')![1];
+
+    listener({
+      event: 'turn-provenance',
+      id: 1,
+      payload: { node_id: 'node', turn_id: 'turn', provenance: { completeness: 'complete' } },
+    });
+
+    expect(receive).toHaveBeenCalledWith({
+      nodeId: 'node',
+      turnId: 'turn',
+      provenance: { completeness: 'complete' },
+    });
+  });
+
   it('waits for stream listeners before starting a Turn', async () => {
     let ready!: (unlisten: () => void) => void;
     vi.mocked(listen).mockImplementationOnce(() => new Promise((resolve) => { ready = resolve; }));

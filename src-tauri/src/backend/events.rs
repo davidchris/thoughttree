@@ -1,5 +1,7 @@
 use tauri::{AppHandle, Emitter};
-use thoughttree_core::events::{PermissionRequestEvent, SessionEventSink, StreamChunkEvent};
+use thoughttree_core::events::{
+    PermissionRequestEvent, SessionEventSink, StreamChunkEvent, TurnProvenanceEvent,
+};
 use tracing::error;
 
 #[derive(Clone)]
@@ -24,6 +26,12 @@ impl SessionEventSink for TauriEventSink {
         if let Err(err) = self.app_handle.emit("permission-request", event.clone()) {
             event.mark_delivery_failed();
             error!("Failed to emit permission request: {:?}", err);
+        }
+    }
+
+    fn turn_provenance(&self, event: TurnProvenanceEvent) {
+        if let Err(err) = self.app_handle.emit("turn-provenance", event) {
+            error!("Failed to emit turn provenance: {:?}", err);
         }
     }
 }

@@ -3,6 +3,8 @@ use std::sync::{
     Arc,
 };
 
+use crate::acp::provenance::TurnProvenance;
+
 #[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
 pub struct StreamChunkEvent {
     #[serde(rename = "node_id")]
@@ -88,14 +90,46 @@ impl Default for PermissionRequestEvent {
     }
 }
 
+#[derive(Clone, Debug, serde::Serialize, PartialEq, Eq)]
+pub struct TurnProvenanceEvent {
+    #[serde(rename = "node_id")]
+    pub node_id: String,
+    pub turn_id: String,
+    pub provenance: TurnProvenance,
+}
+
 pub trait SessionEventSink: Clone + Send + Sync + 'static {
     fn stream_chunk(&self, event: StreamChunkEvent);
     fn permission_request(&self, event: PermissionRequestEvent);
+    /// Emitted once per Turn, after the prompt finishes (successfully or not).
+    fn turn_provenance(&self, event: TurnProvenanceEvent);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{PermissionRequestEvent, PermissionRequestOption, StreamChunkEvent};
+    use super::{
+        PermissionRequestEvent, PermissionRequestOption, StreamChunkEvent, TurnProvenanceEvent,
+    };
+    use crate::acp::provenance::{ProvenanceCompleteness, TurnProvenance};
+
+    #[test]
+    fn turn_provenance_event_serializes_with_snake_case_node_id() {
+        let event = TurnProvenanceEvent {
+            node_id: "node-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            provenance: TurnProvenance {
+                completeness: ProvenanceCompleteness::Complete,
+                references: vec![],
+                activity: vec![],
+            },
+        };
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            json,
+            r#"{"node_id":"node-1","turn_id":"turn-1","provenance":{"completeness":"complete","references":[],"activity":[]}}"#
+        );
+    }
 
     #[test]
     fn stream_chunk_event_serializes_turn_identity() {

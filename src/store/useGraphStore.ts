@@ -34,6 +34,7 @@ import {
   GraphSerialize,
   isFileUrlOrBarePath,
   isWebUrl,
+  normalizeProvenance,
   type FileRef,
   type Graph,
   type GraphJSON,
@@ -150,6 +151,8 @@ interface GraphState {
   updateNodeContent: (nodeId: string, content: string) => void;
   appendToNode: (nodeId: string, turnId: string, chunk: string) => void;
   flushStreamingChunks: () => void;
+  /** Attaches backend Turn provenance to an assistant node after normalizing it; no-op for other node kinds. */
+  setTurnProvenance: (nodeId: string, turnId: string, raw: unknown) => void;
   startStreaming: (nodeId: string) => string;
   stopStreaming: (nodeId: string, turnId: string) => void;
   isNodeBlocked: (nodeId: string) => boolean;
@@ -726,6 +729,22 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     }
     pendingStreamChunks.clear();
     if (graph === state.graph) return;
+    set({
+      graph,
+      ...projectGraph(graph, state.nodes, state.selectedNodeId),
+      isDirty: true,
+    });
+  },
+
+  setTurnProvenance: (nodeId, turnId, raw) => {
+    const state = get();
+    if (!turnId || state.activeTurns.get(nodeId) !== turnId) return;
+    if (state.graph.nodes.get(nodeId)?.role !== 'assistant') return;
+    // Normalizing here keeps the persistence allowlist the only trust boundary
+    // for backend-produced provenance (host paths, raw titles, unknown kinds).
+    const provenance = normalizeProvenance(raw);
+    if (!provenance) return;
+    const graph = GraphMutations.updateNode(state.graph, nodeId, { provenance });
     set({
       graph,
       ...projectGraph(graph, state.nodes, state.selectedNodeId),

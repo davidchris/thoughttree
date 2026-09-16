@@ -15,6 +15,7 @@
 
 ### Added
 
+- Turn provenance for live replies - Every assistant reply now records which files the agent read, edited, searched, or otherwise touched, plus the tool activity of the Turn. Open the reply in the side panel and expand "Provenance" to see them. Files inside the notes directory show their Vault path; files outside it show only a name. A cancelled or failed Turn still records what happened before it stopped.
 - File nodes - Link a file from your notes directory into the graph by dropping it on the canvas or with right-click → "Add file…". The card shows a type badge, name, size, and a preview (image thumbnail or text excerpt). Connect it to a user node and the file becomes context for everything downstream.
 - Images (PNG, JPG, GIF, WebP) are sent inline, read fresh from disk at send time. Limits: 5 MB per image, 8000 px on the longest side, 20 images per prompt; a larger image is refused before any request is made. Every other file type is sent as a pointer the agent reads from disk itself, with no size limit.
 - A "changed on disk" badge appears when the file differs from what the node last saw; Refresh adopts the current version. A missing file blocks sending on that branch.
