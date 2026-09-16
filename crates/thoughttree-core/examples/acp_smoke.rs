@@ -100,6 +100,7 @@ async fn run() -> anyhow::Result<()> {
             run_prompt_session(PromptSessionParams {
                 sink: StdoutSink,
                 node_id: "smoke".to_string(),
+                turn_id: uuid::Uuid::new_v4().to_string(),
                 messages: vec![Message {
                     role: "user".to_string(),
                     content: "Read smoke.md in the current directory and tell me the secret word in one short sentence.".to_string(),

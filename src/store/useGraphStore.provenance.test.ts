@@ -8,7 +8,7 @@ import { useUIStore } from './useUIStore';
 
 function resetStore() {
   useGraphStore.getState().newProject();
-  useGraphStore.setState({ selectedNodeId: null, streamingNodeIds: new Set<string>(), isDirty: false });
+  useGraphStore.setState({ selectedNodeId: null, activeTurns: new Map<string, string>(), isDirty: false });
   useUIStore.getState().reset();
 }
 
@@ -20,6 +20,10 @@ function agentNode() {
 
 function provenanceOf(nodeId: string) {
   return (useGraphStore.getState().nodeData.get(nodeId) as AgentNodeData).provenance;
+}
+
+function turnOf(nodeId: string) {
+  return useGraphStore.getState().activeTurns.get(nodeId)!;
 }
 
 const rawProvenance = {
@@ -43,7 +47,7 @@ describe('useGraphStore Turn provenance capture', () => {
     const agentId = agentNode();
     useGraphStore.setState({ isDirty: false });
 
-    useGraphStore.getState().setTurnProvenance(agentId, rawProvenance);
+    useGraphStore.getState().setTurnProvenance(agentId, turnOf(agentId), rawProvenance);
 
     expect(provenanceOf(agentId)).toEqual({
       completeness: 'complete',
@@ -61,7 +65,7 @@ describe('useGraphStore Turn provenance capture', () => {
   it('downgrades a vault reference whose path escapes the Vault', () => {
     const agentId = agentNode();
 
-    useGraphStore.getState().setTurnProvenance(agentId, {
+    useGraphStore.getState().setTurnProvenance(agentId, turnOf(agentId), {
       completeness: 'complete',
       references: [
         { type: 'file', scope: 'vault', path: '../etc/passwd', displayName: 'passwd', relations: ['read'] },
@@ -81,18 +85,26 @@ describe('useGraphStore Turn provenance capture', () => {
     const agentId = state.createAgentNodeDownstream(userId, 'claude-code');
     useGraphStore.setState({ isDirty: false });
 
-    state.setTurnProvenance(userId, rawProvenance);
-    state.setTurnProvenance('missing', rawProvenance);
-    state.setTurnProvenance(agentId, 'not an object');
+    state.setTurnProvenance(userId, 'not-a-turn', rawProvenance);
+    state.setTurnProvenance('missing', 'not-a-turn', rawProvenance);
+    state.setTurnProvenance(agentId, turnOf(agentId), 'not an object');
 
     expect(useGraphStore.getState().nodeData.get(userId)).not.toHaveProperty('provenance');
     expect(useGraphStore.getState().nodeData.get(agentId)).not.toHaveProperty('provenance');
     expect(useGraphStore.getState().isDirty).toBe(false);
   });
 
+  it('ignores provenance from an old Turn', () => {
+    const agentId = agentNode();
+
+    useGraphStore.getState().setTurnProvenance(agentId, 'old-turn', rawProvenance);
+
+    expect(provenanceOf(agentId)).toBeUndefined();
+  });
+
   it('survives a save round-trip', () => {
     const agentId = agentNode();
-    useGraphStore.getState().setTurnProvenance(agentId, rawProvenance);
+    useGraphStore.getState().setTurnProvenance(agentId, turnOf(agentId), rawProvenance);
 
     const restored = GraphSerialize.fromJSON(GraphSerialize.toJSON(useGraphStore.getState().graph));
 

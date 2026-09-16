@@ -63,6 +63,7 @@ export interface PromptMessage {
 
 export interface PromptRequest {
   nodeId: string;
+  turnId: string;
   messages: PromptMessage[];
   provider?: AgentProvider;
   modelId?: string;
@@ -71,12 +72,14 @@ export interface PromptRequest {
 
 export interface StreamChunk {
   nodeId: string;
+  turnId: string;
   chunk: string;
 }
 
 /** Turn provenance captured by the backend; `provenance` is untrusted until normalized by the graph model. */
 export interface TurnProvenanceEvent {
   nodeId: string;
+  turnId: string;
   provenance: unknown;
 }
 

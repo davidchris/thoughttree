@@ -56,11 +56,13 @@ interface BackendMessage {
 
 interface ChunkPayload {
   node_id: string;
+  turn_id: string;
   chunk: string;
 }
 
 interface TurnProvenancePayload {
   node_id: string;
+  turn_id: string;
   provenance: unknown;
 }
 
@@ -260,6 +262,7 @@ export class TauriTransport implements BackendTransport {
         const payload = event.payload;
         const chunk: StreamChunk = {
           nodeId: payload.node_id,
+          turnId: payload.turn_id,
           chunk: payload.chunk,
         };
         for (const subscriber of this.streamChunkSubscribers) {
@@ -275,6 +278,7 @@ export class TauriTransport implements BackendTransport {
       listen<TurnProvenancePayload>('turn-provenance', (event) => {
         const provenance: TurnProvenanceEvent = {
           nodeId: event.payload.node_id,
+          turnId: event.payload.turn_id,
           provenance: event.payload.provenance,
         };
         for (const subscriber of this.provenanceSubscribers) {
@@ -366,12 +370,15 @@ export class TauriTransport implements BackendTransport {
       throw new Error('No valid messages to send');
     }
 
+    await this.ensureListeners();
     return invoke<string>('send_prompt', {
-      nodeId: req.nodeId,
-      messages,
-      provider: req.provider || null,
-      modelId: req.modelId || null,
-      effort: req.effort || null,
+      request: {
+        ...req,
+        messages,
+        provider: req.provider || null,
+        modelId: req.modelId || null,
+        effort: req.effort || null,
+      },
     });
   }
 

@@ -87,6 +87,7 @@ async fn run() -> anyhow::Result<()> {
             run_prompt_session(PromptSessionParams {
                 sink,
                 node_id: "pointer-smoke".to_string(),
+                turn_id: uuid::Uuid::new_v4().to_string(),
                 messages: vec![
                     Message {
                         role: "user".to_string(),

@@ -44,15 +44,16 @@ export function useNodeGeneration() {
       if (!canGenerate(userNodeId)) return null;
 
       const agentNodeId = createAgentNodeDownstream(userNodeId, provider, modelId);
-      onAgentNodeCreated?.(agentNodeId);
-
-      const context = buildConversationContext(userNodeId);
-      const effort = getEffectiveEffort(provider ?? defaultProvider);
-      const transport = getBackendTransport();
+      const turnId = useGraphStore.getState().activeTurns.get(agentNodeId)!;
 
       try {
+        onAgentNodeCreated?.(agentNodeId);
+        const context = buildConversationContext(userNodeId);
+        const effort = getEffectiveEffort(provider ?? defaultProvider);
+        const transport = getBackendTransport();
         await transport.sendPrompt({
           nodeId: agentNodeId,
+          turnId,
           messages: context,
           provider,
           modelId,
@@ -60,9 +61,9 @@ export function useNodeGeneration() {
         });
       } catch (error) {
         logger.error('Generation failed:', error);
-        appendToNode(agentNodeId, `\n\n[Error: ${String(error)}]`);
+        appendToNode(agentNodeId, turnId, `\n\n[Error: ${String(error)}]`);
       } finally {
-        stopStreaming(agentNodeId);
+        stopStreaming(agentNodeId, turnId);
       }
 
       return agentNodeId;

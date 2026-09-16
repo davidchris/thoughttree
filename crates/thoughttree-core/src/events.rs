@@ -9,6 +9,7 @@ use crate::acp::provenance::TurnProvenance;
 pub struct StreamChunkEvent {
     #[serde(rename = "node_id")]
     pub node_id: String,
+    pub turn_id: String,
     pub chunk: String,
 }
 
@@ -93,6 +94,7 @@ impl Default for PermissionRequestEvent {
 pub struct TurnProvenanceEvent {
     #[serde(rename = "node_id")]
     pub node_id: String,
+    pub turn_id: String,
     pub provenance: TurnProvenance,
 }
 
@@ -114,6 +116,7 @@ mod tests {
     fn turn_provenance_event_serializes_with_snake_case_node_id() {
         let event = TurnProvenanceEvent {
             node_id: "node-1".to_string(),
+            turn_id: "turn-1".to_string(),
             provenance: TurnProvenance {
                 completeness: ProvenanceCompleteness::Complete,
                 references: vec![],
@@ -124,19 +127,23 @@ mod tests {
         let json = serde_json::to_string(&event).unwrap();
         assert_eq!(
             json,
-            r#"{"node_id":"node-1","provenance":{"completeness":"complete","references":[],"activity":[]}}"#
+            r#"{"node_id":"node-1","turn_id":"turn-1","provenance":{"completeness":"complete","references":[],"activity":[]}}"#
         );
     }
 
     #[test]
-    fn stream_chunk_event_serializes_with_existing_wire_shape() {
+    fn stream_chunk_event_serializes_turn_identity() {
         let event = StreamChunkEvent {
             node_id: "node-1".to_string(),
+            turn_id: "turn-1".to_string(),
             chunk: "hello".to_string(),
         };
 
         let json = serde_json::to_string(&event).unwrap();
-        assert_eq!(json, r#"{"node_id":"node-1","chunk":"hello"}"#);
+        assert_eq!(
+            json,
+            r#"{"node_id":"node-1","turn_id":"turn-1","chunk":"hello"}"#
+        );
     }
 
     #[test]

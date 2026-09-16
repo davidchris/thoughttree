@@ -36,14 +36,14 @@ function App() {
   useSummaryGeneration();
 
   useEffect(() => {
-    const unsubscribeStream = transport.onStreamChunk(({ nodeId, chunk }) => {
-      useGraphStore.getState().appendToNode(nodeId, chunk);
+    const unsubscribeStream = transport.onStreamChunk(({ nodeId, turnId, chunk }) => {
+      useGraphStore.getState().appendToNode(nodeId, turnId, chunk);
     });
     const unsubscribePermission = transport.onPermissionRequest((permission) => {
       useUIStore.getState().setPendingPermission(permission);
     });
-    const unsubscribeProvenance = transport.onTurnProvenance(({ nodeId, provenance }) => {
-      useGraphStore.getState().setTurnProvenance(nodeId, provenance);
+    const unsubscribeProvenance = transport.onTurnProvenance(({ nodeId, turnId, provenance }) => {
+      useGraphStore.getState().setTurnProvenance(nodeId, turnId, provenance);
     });
 
     const initialize = async () => {

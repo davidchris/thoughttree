@@ -42,6 +42,7 @@ pub trait SessionClient: Send + Sync + 'static {
 pub struct StreamingClient<S> {
     sink: S,
     node_id: String,
+    turn_id: String,
     broker: PermissionBroker,
     notes_directory: PathBuf,
     /// Some message text has been streamed for this turn.
@@ -58,12 +59,14 @@ impl<S: SessionEventSink> StreamingClient<S> {
     pub fn new(
         sink: S,
         node_id: String,
+        turn_id: String,
         broker: PermissionBroker,
         notes_directory: PathBuf,
     ) -> Self {
         Self {
             sink,
             node_id,
+            turn_id,
             broker,
             notes_directory,
             has_message_text: AtomicBool::new(false),
@@ -84,6 +87,7 @@ impl<S: SessionEventSink> StreamingClient<S> {
         let Some(recorder) = recorder else { return };
         self.sink.turn_provenance(TurnProvenanceEvent {
             node_id: self.node_id.clone(),
+            turn_id: self.turn_id.clone(),
             provenance: recorder.close(&self.notes_directory, outcome),
         });
     }
@@ -305,6 +309,7 @@ impl<S: SessionEventSink> SessionClient for StreamingClient<S> {
                 if let ContentBlock::Text(text) = chunk.content {
                     self.sink.stream_chunk(StreamChunkEvent {
                         node_id: self.node_id.clone(),
+                        turn_id: self.turn_id.clone(),
                         chunk: self.with_segment_separator(text.text),
                     });
                 }
@@ -479,6 +484,7 @@ mod tests {
         StreamingClient::new(
             sink,
             "node-42".to_string(),
+            "turn-42".to_string(),
             PermissionBroker::new(),
             PathBuf::from("/tmp"),
         )
@@ -580,6 +586,7 @@ mod tests {
             let client = StreamingClient::new(
                 sink.clone(),
                 "node-42".to_string(),
+                "turn-42".to_string(),
                 PermissionBroker::new(),
                 vault.path().to_path_buf(),
             );
@@ -619,6 +626,7 @@ mod tests {
                 ProvenanceCompleteness::Complete
             );
             assert_eq!(events[0].node_id, "node-42");
+            assert_eq!(events[0].turn_id, "turn-42");
             let TurnReference::File(FileTurnReference::Vault {
                 path, relations, ..
             }) = &events[0].provenance.references[0]
@@ -643,6 +651,7 @@ mod tests {
             let client = StreamingClient::new(
                 sink.clone(),
                 "node-42".to_string(),
+                "turn-42".to_string(),
                 PermissionBroker::new(),
                 PathBuf::from("/tmp"),
             );
@@ -661,6 +670,7 @@ mod tests {
                 sink.stream_chunks(),
                 vec![StreamChunkEvent {
                     node_id: "node-42".to_string(),
+                    turn_id: "turn-42".to_string(),
                     chunk: "hello world".to_string(),
                 }]
             );
@@ -811,6 +821,7 @@ mod tests {
             let client = Arc::new(StreamingClient::new(
                 sink,
                 "node-42".to_string(),
+                "turn-42".to_string(),
                 broker.clone(),
                 PathBuf::from("/tmp"),
             ));

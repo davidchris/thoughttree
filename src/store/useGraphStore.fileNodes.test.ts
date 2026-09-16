@@ -331,7 +331,7 @@ describe('useGraphStore file node status', () => {
       const fileId = state.addFileNode(NOTE, { x: 0, y: 0 });
       const firstUser = state.createUserNodeDownstream(fileId);
       const agent = state.createAgentNodeDownstream(firstUser);
-      state.stopStreaming(agent);
+      state.stopStreaming(agent, useGraphStore.getState().activeTurns.get(agent)!);
       const secondUser = state.createUserNodeDownstream(agent);
       await useGraphStore.getState().refreshFileNodeStat(fileId);
 

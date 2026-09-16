@@ -23,7 +23,7 @@ function resetStore() {
   state.newProject();
   useGraphStore.setState({
     selectedNodeId: null,
-    streamingNodeIds: new Set<string>(),
+    activeTurns: new Map<string, string>(),
     isDirty: false,
   });
   useProviderStore.setState({
@@ -99,7 +99,7 @@ describe('useGraphStore', () => {
     state.updateNodeContent(rootUserId, 'Same content');
 
     const agentId = state.createAgentNodeDownstream(rootUserId);
-    state.stopStreaming(agentId);
+    state.stopStreaming(agentId, useGraphStore.getState().activeTurns.get(agentId)!);
     state.updateNodeContent(agentId, 'Same content');
 
     const branchUserId = state.createUserNodeDownstream(rootUserId);
@@ -259,7 +259,7 @@ describe('useGraphStore', () => {
     const userId = state.createUserNode();
     state.updateNodeContent(userId, 'Question without provenance');
     const assistantId = state.createAgentNodeDownstream(userId);
-    state.stopStreaming(assistantId);
+    state.stopStreaming(assistantId, useGraphStore.getState().activeTurns.get(assistantId)!);
     state.updateNodeContent(assistantId, 'Answer without provenance');
 
     expect(state.exportSubgraph([userId, assistantId])).toBe(
@@ -549,8 +549,8 @@ describe('streaming chunk batching', () => {
   it('buffers chunks and applies them after the flush interval', () => {
     const agentId = createStreamingAgentNode();
 
-    useGraphStore.getState().appendToNode(agentId, 'Hello');
-    useGraphStore.getState().appendToNode(agentId, ' world');
+    useGraphStore.getState().appendToNode(agentId, useGraphStore.getState().activeTurns.get(agentId)!, 'Hello');
+    useGraphStore.getState().appendToNode(agentId, useGraphStore.getState().activeTurns.get(agentId)!, ' world');
 
     expect(nodeContent(agentId)).toBe('');
 
@@ -564,7 +564,7 @@ describe('streaming chunk batching', () => {
     const graphBefore = useGraphStore.getState().graph;
 
     for (let i = 0; i < 50; i++) {
-      useGraphStore.getState().appendToNode(agentId, `chunk${i} `);
+      useGraphStore.getState().appendToNode(agentId, useGraphStore.getState().activeTurns.get(agentId)!, `chunk${i} `);
     }
 
     expect(useGraphStore.getState().graph).toBe(graphBefore);
@@ -579,17 +579,17 @@ describe('streaming chunk batching', () => {
   it('stopStreaming flushes buffered chunks immediately', () => {
     const agentId = createStreamingAgentNode();
 
-    useGraphStore.getState().appendToNode(agentId, 'final tail');
-    useGraphStore.getState().stopStreaming(agentId);
+    useGraphStore.getState().appendToNode(agentId, useGraphStore.getState().activeTurns.get(agentId)!, 'final tail');
+    useGraphStore.getState().stopStreaming(agentId, useGraphStore.getState().activeTurns.get(agentId)!);
 
     expect(nodeContent(agentId)).toBe('final tail');
-    expect(useGraphStore.getState().streamingNodeIds.has(agentId)).toBe(false);
+    expect(useGraphStore.getState().activeTurns.has(agentId)).toBe(false);
   });
 
   it('buildConversationContext sees buffered chunks', () => {
     const agentId = createStreamingAgentNode();
 
-    useGraphStore.getState().appendToNode(agentId, 'partial answer');
+    useGraphStore.getState().appendToNode(agentId, useGraphStore.getState().activeTurns.get(agentId)!, 'partial answer');
     const context = useGraphStore.getState().buildConversationContext(agentId);
 
     expect(context.some((m) => m.content === 'partial answer')).toBe(true);
@@ -598,7 +598,7 @@ describe('streaming chunk batching', () => {
   it('drops buffered chunks for a deleted node without error', () => {
     const agentId = createStreamingAgentNode();
 
-    useGraphStore.getState().appendToNode(agentId, 'never lands');
+    useGraphStore.getState().appendToNode(agentId, useGraphStore.getState().activeTurns.get(agentId)!, 'never lands');
     useGraphStore.getState().deleteNode(agentId);
 
     expect(() => vi.advanceTimersByTime(STREAM_FLUSH_INTERVAL_MS)).not.toThrow();
@@ -609,9 +609,9 @@ describe('streaming chunk batching', () => {
     const agentA = createStreamingAgentNode();
     const agentB = createStreamingAgentNode();
 
-    useGraphStore.getState().appendToNode(agentA, 'aaa');
-    useGraphStore.getState().appendToNode(agentB, 'bbb');
-    useGraphStore.getState().appendToNode(agentA, 'AAA');
+    useGraphStore.getState().appendToNode(agentA, useGraphStore.getState().activeTurns.get(agentA)!, 'aaa');
+    useGraphStore.getState().appendToNode(agentB, useGraphStore.getState().activeTurns.get(agentB)!, 'bbb');
+    useGraphStore.getState().appendToNode(agentA, useGraphStore.getState().activeTurns.get(agentA)!, 'AAA');
 
     vi.advanceTimersByTime(STREAM_FLUSH_INTERVAL_MS);
 

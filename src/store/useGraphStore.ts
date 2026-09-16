@@ -51,7 +51,7 @@ const COLLAPSED_NODE_HEIGHT = 120;
 // interval, so a fast stream doesn't trigger a full graph projection per chunk.
 export const STREAM_FLUSH_INTERVAL_MS = 100;
 
-const pendingStreamChunks = new Map<string, string>();
+const pendingStreamChunks = new Map<string, { turnId: string; text: string }>();
 let streamFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function scheduleStreamFlush() {
@@ -127,7 +127,8 @@ interface GraphState {
   // Selection and streaming feed the graph projection, so they live here
   // rather than in useUIStore
   selectedNodeId: string | null;
-  streamingNodeIds: Set<string>;
+  /** Node ID → Turn ID. Unknown or completed Turns cannot mutate this graph. */
+  activeTurns: Map<string, string>;
 
   /** Last known on-disk state per file node (see FileNodeStatus). */
   fileNodeStatus: Map<NodeId, FileNodeStatus>;
@@ -148,12 +149,12 @@ interface GraphState {
     position: { x: number; y: number },
   ) => string;
   updateNodeContent: (nodeId: string, content: string) => void;
-  appendToNode: (nodeId: string, chunk: string) => void;
+  appendToNode: (nodeId: string, turnId: string, chunk: string) => void;
   flushStreamingChunks: () => void;
   /** Attaches backend Turn provenance to an assistant node after normalizing it; no-op for other node kinds. */
-  setTurnProvenance: (nodeId: string, raw: unknown) => void;
-  startStreaming: (nodeId: string) => void;
-  stopStreaming: (nodeId: string) => void;
+  setTurnProvenance: (nodeId: string, turnId: string, raw: unknown) => void;
+  startStreaming: (nodeId: string) => string;
+  stopStreaming: (nodeId: string, turnId: string) => void;
   isNodeBlocked: (nodeId: string) => boolean;
   deleteNode: (nodeId: string) => void;
 
@@ -258,7 +259,7 @@ function sameEdits(left: GraphState, right: GraphState) {
 async function preserveUnsavedWork() {
   useGraphStore.getState().flushStreamingChunks();
   const state = useGraphStore.getState();
-  if (state.streamingNodeIds.size > 0) throw new Error('Wait for the current response to finish before replacing the graph.');
+  if (state.activeTurns.size > 0) throw new Error('Wait for the current response to finish before replacing the graph.');
   if (!state.isDirty) return state;
   await state.snapshotProject();
   if (!sameEdits(state, useGraphStore.getState())) {
@@ -500,7 +501,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   projectModelPreferences: null,
   projectEffortPreferences: null,
   selectedNodeId: null,
-  streamingNodeIds: new Set<string>(),
+  activeTurns: new Map<string, string>(),
   fileNodeStatus: new Map(),
 
   onNodesChange: (changes) => {
@@ -509,18 +510,18 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     let graph = state.graph;
     let dirty = state.isDirty;
     let selectedNodeId = state.selectedNodeId;
-    let streamingNodeIds = state.streamingNodeIds;
+    let activeTurns = state.activeTurns;
     let streamingMutated = false;
     let fileNodeStatus = state.fileNodeStatus;
 
-    // Copy-on-write removal so the streaming set is only cloned when it changes
+    // Copy-on-write removal so the Turn map is only cloned when it changes
     const stopStreaming = (nodeId: string) => {
-      if (!streamingNodeIds.has(nodeId)) return;
+      if (!activeTurns.has(nodeId)) return;
       if (!streamingMutated) {
-        streamingNodeIds = new Set(streamingNodeIds);
+        activeTurns = new Map(activeTurns);
         streamingMutated = true;
       }
-      streamingNodeIds.delete(nodeId);
+      activeTurns.delete(nodeId);
     };
 
     for (const change of changes) {
@@ -548,7 +549,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       nodeData: graph.nodes,
       isDirty: dirty,
       selectedNodeId,
-      streamingNodeIds,
+      activeTurns,
       fileNodeStatus,
     });
   },
@@ -640,14 +641,14 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     let graph = GraphMutations.addNode(state.graph, data, position);
     graph = GraphMutations.addEdge(graph, parentId, id);
 
-    const streamingNodeIds = new Set(state.streamingNodeIds);
-    streamingNodeIds.add(id);
+    const activeTurns = new Map(state.activeTurns);
+    activeTurns.set(id, crypto.randomUUID());
 
     set({
       graph,
       ...projectGraph(graph, state.nodes, id),
       selectedNodeId: id,
-      streamingNodeIds,
+      activeTurns,
       isDirty: true,
     });
     return id;
@@ -709,8 +710,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     });
   },
 
-  appendToNode: (nodeId, chunk) => {
-    pendingStreamChunks.set(nodeId, (pendingStreamChunks.get(nodeId) ?? '') + chunk);
+  appendToNode: (nodeId, turnId, chunk) => {
+    if (!turnId || get().activeTurns.get(nodeId) !== turnId) return;
+    const pending = pendingStreamChunks.get(nodeId);
+    const text = pending?.turnId === turnId ? pending.text + chunk : chunk;
+    pendingStreamChunks.set(nodeId, { turnId, text });
     scheduleStreamFlush();
   },
 
@@ -719,7 +723,8 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     const state = get();
     const now = Date.now();
     let graph = state.graph;
-    for (const [nodeId, text] of pendingStreamChunks) {
+    for (const [nodeId, { turnId, text }] of pendingStreamChunks) {
+      if (state.activeTurns.get(nodeId) !== turnId) continue;
       graph = GraphMutations.appendContent(graph, nodeId, text, now);
     }
     pendingStreamChunks.clear();
@@ -731,8 +736,9 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     });
   },
 
-  setTurnProvenance: (nodeId, raw) => {
+  setTurnProvenance: (nodeId, turnId, raw) => {
     const state = get();
+    if (!turnId || state.activeTurns.get(nodeId) !== turnId) return;
     if (state.graph.nodes.get(nodeId)?.role !== 'assistant') return;
     // Normalizing here keeps the persistence allowlist the only trust boundary
     // for backend-produced provenance (host paths, raw titles, unknown kinds).
@@ -747,31 +753,33 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
   },
 
   startStreaming: (nodeId) => {
-    logger.debug('[Store] startStreaming called with:', nodeId);
-    set((state) => {
-      const next = new Set(state.streamingNodeIds);
-      next.add(nodeId);
-      return { streamingNodeIds: next };
-    });
+    const state = get();
+    if (state.activeTurns.has(nodeId)) throw new Error('This node already has an active Turn.');
+    if (state.graph.nodes.get(nodeId)?.role !== 'assistant') throw new Error('Only assistant nodes can stream.');
+    const turnId = crypto.randomUUID();
+    const activeTurns = new Map(state.activeTurns);
+    activeTurns.set(nodeId, turnId);
+    set({ activeTurns });
+    return turnId;
   },
 
-  stopStreaming: (nodeId) => {
-    logger.debug('[Store] stopStreaming called with:', nodeId);
+  stopStreaming: (nodeId, turnId) => {
+    if (!turnId || get().activeTurns.get(nodeId) !== turnId) return;
     get().flushStreamingChunks();
     set((state) => {
-      const next = new Set(state.streamingNodeIds);
-      next.delete(nodeId);
-      return { streamingNodeIds: next };
+      const activeTurns = new Map(state.activeTurns);
+      activeTurns.delete(nodeId);
+      return { activeTurns };
     });
   },
 
   isNodeBlocked: (nodeId) => {
-    const { graph, streamingNodeIds } = get();
-    if (streamingNodeIds.size === 0) return false;
-    if (streamingNodeIds.has(nodeId)) return true;
+    const { graph, activeTurns } = get();
+    if (activeTurns.size === 0) return false;
+    if (activeTurns.has(nodeId)) return true;
     const ancs = GraphModel.ancestors(graph, nodeId);
     const desc = GraphModel.descendants(graph, nodeId);
-    for (const id of streamingNodeIds) {
+    for (const id of activeTurns.keys()) {
       if (ancs.has(id) || desc.has(id)) return true;
     }
     return false;
@@ -783,15 +791,15 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     const graph = GraphMutations.removeNode(state.graph, nodeId);
     if (graph === state.graph) return;
 
-    const streamingNodeIds = new Set(state.streamingNodeIds);
-    streamingNodeIds.delete(nodeId);
+    const activeTurns = new Map(state.activeTurns);
+    activeTurns.delete(nodeId);
 
     const selectedNodeId = state.selectedNodeId === nodeId ? null : state.selectedNodeId;
 
     set({
       graph,
       ...projectGraph(graph, state.nodes, selectedNodeId),
-      streamingNodeIds,
+      activeTurns,
       selectedNodeId,
       fileNodeStatus: withFileNodeStatus(state.fileNodeStatus, nodeId, null),
       isDirty: true,
@@ -1125,7 +1133,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
         lastSavedAt: Date.now(),
         isDirty: false,
         selectedNodeId: null,
-        streamingNodeIds: new Set<string>(),
+        activeTurns: new Map<string, string>(),
         fileNodeStatus: new Map(),
       });
       useUIStore.getState().reset();
@@ -1154,7 +1162,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       lastSavedAt: null,
       isDirty: false,
       selectedNodeId: null,
-      streamingNodeIds: new Set<string>(),
+      activeTurns: new Map<string, string>(),
       fileNodeStatus: new Map(),
     });
     useUIStore.getState().reset();
@@ -1173,7 +1181,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       lastSavedAt: null,
       isDirty: true,
       selectedNodeId: null,
-      streamingNodeIds: new Set<string>(),
+      activeTurns: new Map<string, string>(),
       fileNodeStatus: new Map(),
     });
     useUIStore.getState().reset();

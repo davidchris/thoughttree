@@ -75,7 +75,7 @@ describe("SidePanel", () => {
     const state = {
       previewNodeId: "user-node-1",
       nodeData: overrides.nodeData ?? defaultNodeData,
-      streamingNodeIds: new Set<string>(),
+      activeTurns: new Map([["new-agent-node-id", "turn-1"]]),
       setPreviewNode: mockSetPreviewNode,
       updateNodeContent: mockUpdateNodeContent,
       createAgentNodeDownstream: mockCreateAgentNodeDownstream,
@@ -103,6 +103,7 @@ describe("SidePanel", () => {
       ...overrides,
     };
 
+    vi.mocked(useGraphStore.getState).mockReturnValue(state as unknown as ReturnType<typeof useGraphStore.getState>);
     mockUseGraphStore.mockImplementation((selector) =>
       selector(state as unknown as Parameters<typeof selector>[0])
     );
@@ -194,6 +195,7 @@ describe("SidePanel", () => {
       await waitFor(() => {
         expect(transport.sendPrompt).toHaveBeenCalledWith({
           nodeId: "new-agent-node-id",
+          turnId: "turn-1",
           messages: [{ role: "user", content: "Hello" }],
           provider: "claude-code",
           modelId: undefined,
