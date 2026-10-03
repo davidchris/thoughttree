@@ -45,20 +45,77 @@ After downloading:
 
 ## Build from Source
 
-If you prefer to build ThoughtTree yourself:
+ThoughtTree has two desktop frontends: the existing Tauri app and the native [GPUI](https://gpui.rs/) app.
+Both use the same Project format, Vault, and provider adapters.
+The GPUI app uses Rust for its interface and does not require a webview.
+Desktop interaction checks currently cover macOS. Linux and Windows desktop behavior remains unverified.
 
-1. Install [Bun](https://bun.sh) and [Rust](https://rustup.rs/)
-2. Clone and build:
+Install [Rust](https://rustup.rs/) stable and the Xcode command line tools on macOS.
+Install [Bun](https://bun.sh) to build the Tauri app or the bundled Claude adapter.
+Clone the repository:
 
 ```bash
 git clone https://github.com/davidchris/thoughttree.git
 cd thoughttree
+```
+
+### Native GPUI app
+
+Run the desktop app:
+
+```bash
+cargo run --locked -p thoughttree-gpui
+```
+
+To open a Project at launch, pass its path inside your configured Vault:
+
+```bash
+cargo run --locked -p thoughttree-gpui -- "/path/to/vault/research.thoughttree"
+```
+
+Build a local macOS application bundle:
+
+```bash
+bun install --frozen-lockfile
+bun run build:sidecar
+./scripts/build-gpui.sh
+```
+
+The bundle is `target/release/bundle/ThoughtTree GPUI.app`.
+The script includes the Claude adapter when it exists.
+It applies a local signature. It does not notarize or publish the app.
+The manual **GPUI macOS bundle** workflow produces the same development bundle as a download artifact.
+
+### Tauri app
+
+Build the existing desktop app:
+
+```bash
 bun install
 bun run build:sidecar
 bun run tauri:build
 ```
 
 The built app will be in `target/release/bundle/`.
+
+### Development checks
+
+Install Bun for the TypeScript–Rust Project format comparison test.
+Run the portable model and desktop service tests:
+
+```bash
+cargo test --locked -p thoughttree-gpui-model -p thoughttree-desktop
+```
+
+On macOS, run the native view and interaction tests:
+
+```bash
+cargo test --locked -p thoughttree-gpui
+```
+
+The desktop service tests use an offline ACP fixture. They do not use your provider account.
+The [fixture guide](docs/gpui/fixture-adapter.md) explains how to compare both interfaces with isolated settings and synthetic data.
+The [parity checklist](docs/gpui/parity.md) tracks behavior and screenshot evidence.
 
 ## Getting Started
 
@@ -86,26 +143,31 @@ Project files are saved in format v5 once this version runs; older ThoughtTree b
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         ThoughtTree                             │
-├─────────────────────────────────────────────────────────────────┤
-│  React Frontend                                                 │
-│  ├── ReactFlow (DAG visualization)                              │
-│  ├── Zustand (state management)                                 │
-│  └── Chat panel (message display + input)                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Tauri Backend (Rust)                                           │
-│  ├── ACP client (Agent Client Protocol)                         │
-│  ├── Session management                                         │
-│  └── Tauri commands (IPC bridge)                                │
-├─────────────────────────────────────────────────────────────────┤
-│  ACP adapters: codex-acp or bundled claude-code-acp              │
-│  └── Connect to the selected provider                           │
-└─────────────────────────────────────────────────────────────────┘
+React + ReactFlow + Zustand             GPUI + gpui-component
+            │                          │                 │
+     Tauri commands            Desktop service       Graph model
+            │                          │              (pure Rust)
+            └──────────────┬───────────┘
+                   thoughttree-core
+               ACP sessions and permissions
+               Vault files and guarded saves
+               Recovery and provider discovery
+                           │
+           codex-acp or bundled claude-code-acp
 ```
 
 ThoughtTree uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to communicate with Codex and Claude Code.
 Automatic node headings use the default provider: Codex Luna or Claude Haiku.
+
+`thoughttree-gpui-model` owns native Graph edits, undo history, layout, search, import, and Project format migrations.
+`thoughttree-desktop` connects the native interface to the shared core through asynchronous events.
+Neither crate depends on Tauri or GPUI.
+`thoughttree-gpui` owns the canvas, native controls, dialogs, and rich text rendering.
+
+Both desktop apps share settings by default.
+`THOUGHTTREE_CONFIG_DIR` selects a separate directory for `config.json`.
+`THOUGHTTREE_LOCAL_STATE_DIR` selects separate recovery and lock storage.
+These overrides support isolated tests and development sessions.
 
 ## Privacy
 
@@ -116,8 +178,7 @@ Provider CLI configuration also applies to ThoughtTree sessions.
 ## Codex connection check
 
 The integration was checked with `@agentclientprotocol/codex-acp` 1.11.0 on 2026-09-14.
-The Rust ACP SDK remains at 0.9.2 because it supports the protocol used by this adapter.
-The newer 2.x Rust SDK changes the client API and is not required for this connection.
+The shared core uses the 2.x Rust ACP SDK.
 
 The app adds known runtime directories to the adapter PATH for macOS desktop launches.
 Current adapters receive model and reasoning effort through `CODEX_CONFIG`.
@@ -137,3 +198,4 @@ This check sends two small prompts from a temporary directory.
 - [Agent Client Protocol](https://agentclientprotocol.com/)
 - [ReactFlow Docs](https://reactflow.dev/)
 - [Tauri v2 Docs](https://v2.tauri.app/)
+- [GPUI](https://gpui.rs/)
