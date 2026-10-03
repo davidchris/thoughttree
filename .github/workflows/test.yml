@@ -31,6 +31,10 @@ jobs:
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-22.04
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
       - uses: actions/checkout@v5
 
@@ -46,7 +50,11 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            clang cmake pkg-config libfontconfig-dev libwayland-dev \
+            libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libzstd-dev \
+            libvulkan-dev
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -60,10 +68,43 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
-      - name: Run tests
-        run: cargo test --workspace
+      - name: Run core, Tauri, graph model, and desktop service tests
+        # Native view interactions use macOS key bindings in the GPUI job below.
+        run: cargo test --locked --workspace --exclude thoughttree-gpui
 
       - name: Core crate must stay tauri-free
         run: ./scripts/check-core-no-tauri.sh
+
+  gpui-macos:
+    name: GPUI macOS
+    runs-on: macos-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Bun for cross-frontend format tests
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: gpui-macos
+
+      - name: Lint native frontend
+        run: cargo clippy --locked -p thoughttree-gpui --all-targets -- -D warnings
+
+      - name: Test native views, model, and desktop service
+        run: cargo test --locked -p thoughttree-gpui -p thoughttree-gpui-model -p thoughttree-desktop
+
+      - name: Build native executable
+        run: cargo build --locked -p thoughttree-gpui
