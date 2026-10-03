@@ -449,7 +449,7 @@ fn palette_matches_the_existing_typescript_unicode_order_and_display() {
             .collect();
         let result = search_nodes(&corpus, fixture["query"].as_str().unwrap(), 20);
         let text = |value: &HighlightedText| json!({"text":value.text,"spans":value.spans.iter().map(|span| json!({"start":span.start,"end":span.end})).collect::<Vec<_>>()});
-        let hits: Vec<_> = result.hits.iter().map(|hit| json!({"id":hit.node.id,"title":text(&hit.title),"snippet":hit.snippet.as_ref().map(&text)})).collect();
+        let hits: Vec<_> = result.hits.iter().map(|hit| json!({"id":hit.node.id,"title":text(&hit.title),"snippet":hit.snippet.as_ref().map(text)})).collect();
         assert_eq!(json!(hits), fixture["expected"], "{}", fixture["name"]);
     }
 }
