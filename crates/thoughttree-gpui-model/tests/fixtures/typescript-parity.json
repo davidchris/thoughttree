@@ -1,0 +1,4263 @@
+{
+  "cases": [
+    {
+      "name": "linear",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "a",
+              "role": "user",
+              "content": "a",
+              "timestamp": 1
+            },
+            {
+              "id": "b",
+              "role": "assistant",
+              "content": "b",
+              "timestamp": 1
+            },
+            {
+              "id": "c",
+              "role": "user",
+              "content": "c",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "a->b",
+              "source": "a",
+              "target": "b"
+            },
+            {
+              "id": "b->c",
+              "source": "b",
+              "target": "c"
+            }
+          ],
+          "layout": [
+            {
+              "id": "a",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "b",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "c",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "c",
+      "pathIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "a"
+        },
+        {
+          "role": "assistant",
+          "content": "b"
+        },
+        {
+          "role": "user",
+          "content": "c"
+        }
+      ]
+    },
+    {
+      "name": "unrelated siblings stay private",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "a",
+              "role": "user",
+              "content": "a",
+              "timestamp": 1
+            },
+            {
+              "id": "b",
+              "role": "assistant",
+              "content": "b",
+              "timestamp": 1
+            },
+            {
+              "id": "secret",
+              "role": "assistant",
+              "content": "secret",
+              "timestamp": 1
+            },
+            {
+              "id": "c",
+              "role": "user",
+              "content": "c",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "a->b",
+              "source": "a",
+              "target": "b"
+            },
+            {
+              "id": "a->secret",
+              "source": "a",
+              "target": "secret"
+            },
+            {
+              "id": "b->c",
+              "source": "b",
+              "target": "c"
+            }
+          ],
+          "layout": [
+            {
+              "id": "a",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "b",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "secret",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "c",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "c",
+      "pathIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "a"
+        },
+        {
+          "role": "assistant",
+          "content": "b"
+        },
+        {
+          "role": "user",
+          "content": "c"
+        }
+      ]
+    },
+    {
+      "name": "diamond",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "root",
+              "role": "assistant",
+              "content": "base",
+              "timestamp": 1
+            },
+            {
+              "id": "left",
+              "role": "user",
+              "content": "branch one",
+              "timestamp": 2
+            },
+            {
+              "id": "right",
+              "role": "user",
+              "content": "branch two",
+              "timestamp": 2
+            },
+            {
+              "id": "done",
+              "role": "assistant",
+              "content": "answer",
+              "timestamp": 3
+            }
+          ],
+          "edges": [
+            {
+              "id": "root->left",
+              "source": "root",
+              "target": "left"
+            },
+            {
+              "id": "root->right",
+              "source": "root",
+              "target": "right"
+            },
+            {
+              "id": "left->done",
+              "source": "left",
+              "target": "done"
+            },
+            {
+              "id": "right->done",
+              "source": "right",
+              "target": "done"
+            }
+          ],
+          "layout": [
+            {
+              "id": "root",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "left",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "right",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "done",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "done",
+      "pathIds": [
+        "root",
+        "left",
+        "right",
+        "done"
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "<node id=\"root\">\nbase\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"left\">\n<graph: this message starts a new branch from root>\nbranch one\n</node>\n\n<node id=\"righ\">\n<graph: this message starts a new branch from root>\nbranch two\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"done\">\nanswer\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nroot (assistant) <- (root)\nleft (user) <- root\nrigh (user) <- root\ndone (assistant) <- left, righ [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "colliding short ids",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "abcd-left",
+              "role": "assistant",
+              "content": "left",
+              "timestamp": 1
+            },
+            {
+              "id": "abcd-right",
+              "role": "assistant",
+              "content": "right",
+              "timestamp": 2
+            },
+            {
+              "id": "merge",
+              "role": "user",
+              "content": "synthesize",
+              "timestamp": 3
+            }
+          ],
+          "edges": [
+            {
+              "id": "abcd-left->merge",
+              "source": "abcd-left",
+              "target": "merge"
+            },
+            {
+              "id": "abcd-right->merge",
+              "source": "abcd-right",
+              "target": "merge"
+            }
+          ],
+          "layout": [
+            {
+              "id": "abcd-left",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "abcd-right",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "merge",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "merge",
+      "pathIds": [
+        "abcd-left",
+        "abcd-right",
+        "merge"
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "<node id=\"abcd\">\nleft\n</node>\n\n<node id=\"abcd-\">\nright\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"merg\">\n<graph: this message merges branches abcd, abcd->\nsynthesize\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nabcd (assistant) <- (root)\nabcd- (assistant) <- (root)\nmerg (user) <- abcd, abcd- [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "blank intermediate node",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "a",
+              "role": "assistant",
+              "content": "visible",
+              "timestamp": 1
+            },
+            {
+              "id": "b",
+              "role": "assistant",
+              "content": "   ",
+              "timestamp": 1
+            },
+            {
+              "id": "c",
+              "role": "user",
+              "content": "compare",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "a->c",
+              "source": "a",
+              "target": "c"
+            },
+            {
+              "id": "b->c",
+              "source": "b",
+              "target": "c"
+            }
+          ],
+          "layout": [
+            {
+              "id": "a",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "b",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "c",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "c",
+      "pathIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "<node id=\"a\">\nvisible\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"c\">\n<graph: this message merges branches a, b>\ncompare\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\na (assistant) <- (root)\nb (assistant) <- (root)\nc (user) <- a, b [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "file lineage",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "f1",
+              "role": "file",
+              "content": "",
+              "timestamp": 1,
+              "path": "notes/a.md",
+              "name": "a.md",
+              "mimeType": "text/markdown",
+              "size": 5,
+              "seenMtime": 10,
+              "seenSize": 5
+            },
+            {
+              "id": "f2",
+              "role": "file",
+              "content": "",
+              "timestamp": 1,
+              "path": "b.md",
+              "name": "b.md",
+              "mimeType": "text/markdown",
+              "size": 5,
+              "seenMtime": 10,
+              "seenSize": 5
+            },
+            {
+              "id": "u",
+              "role": "user",
+              "content": "compare",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "f1->u",
+              "source": "f1",
+              "target": "u"
+            },
+            {
+              "id": "f2->u",
+              "source": "f2",
+              "target": "u"
+            }
+          ],
+          "layout": [
+            {
+              "id": "f1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "f2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "u",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "u",
+      "pathIds": [
+        "f1",
+        "f2",
+        "u"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"f1\">\n[file: a.md]\n</node>\n\n<node id=\"f2\">\n[file: b.md]\n</node>\n\n<node id=\"u\">\n<graph: this message merges branches f1, f2>\ncompare\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nf1 (file) <- (root)\nf2 (file) <- (root)\nu (user) <- f1, f2 [current]\n</graph-map>",
+          "files": [
+            {
+              "path": "notes/a.md",
+              "name": "a.md",
+              "mimeType": "text/markdown",
+              "size": 5
+            },
+            {
+              "path": "b.md",
+              "name": "b.md",
+              "mimeType": "text/markdown",
+              "size": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "file only input",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "f",
+              "role": "file",
+              "content": "",
+              "timestamp": 1,
+              "path": "a.md",
+              "name": "a.md",
+              "mimeType": "text/markdown",
+              "size": 5,
+              "seenMtime": 10,
+              "seenSize": 5
+            },
+            {
+              "id": "u",
+              "role": "user",
+              "content": "",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "f->u",
+              "source": "f",
+              "target": "u"
+            }
+          ],
+          "layout": [
+            {
+              "id": "f",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "u",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "u",
+      "pathIds": [
+        "f",
+        "u"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "",
+          "files": [
+            {
+              "path": "a.md",
+              "name": "a.md",
+              "mimeType": "text/markdown",
+              "size": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "image-only merge",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "image",
+              "role": "user",
+              "content": "",
+              "timestamp": 1,
+              "images": [
+                {
+                  "data": "cGl4ZWw=",
+                  "mimeType": "image/png",
+                  "name": "image.png"
+                }
+              ]
+            },
+            {
+              "id": "u",
+              "role": "user",
+              "content": "look",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "image->u",
+              "source": "image",
+              "target": "u"
+            }
+          ],
+          "layout": [
+            {
+              "id": "image",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "u",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "u",
+      "pathIds": [
+        "image",
+        "u"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "look",
+          "images": [
+            {
+              "data": "cGl4ZWw=",
+              "mimeType": "image/png",
+              "name": "image.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "legacy cycle tolerance",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "a",
+              "role": "user",
+              "content": "a",
+              "timestamp": 1
+            },
+            {
+              "id": "b",
+              "role": "assistant",
+              "content": "b",
+              "timestamp": 1
+            },
+            {
+              "id": "c",
+              "role": "user",
+              "content": "c",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "a->b",
+              "source": "a",
+              "target": "b"
+            },
+            {
+              "id": "b->a",
+              "source": "b",
+              "target": "a"
+            },
+            {
+              "id": "b->c",
+              "source": "b",
+              "target": "c"
+            }
+          ],
+          "layout": [
+            {
+              "id": "a",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "b",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "c",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "c",
+      "pathIds": [
+        "b",
+        "a",
+        "c"
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "<node id=\"b\">\nb\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"a\">\n<graph: this message starts a new branch from b>\na\n</node>\n\n<node id=\"c\">\n<graph: this message starts a new branch from b>\nc\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nb (assistant) <- a\na (user) <- b\nc (user) <- b [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 1",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "",
+              "timestamp": 1
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 2
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 3
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 1
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 2
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 3
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n0->n3",
+              "source": "n0",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n2->n5",
+              "source": "n2",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            },
+            {
+              "id": "n4->n7",
+              "source": "n4",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>\n\n<node id=\"n2\">\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n0, n2\nn4 (user) <- n3\nn5 (assistant) <- n2, n4\nn6 (user) <- n5\nn7 (assistant) <- n4, n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 2",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 2
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "",
+              "timestamp": 0
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 2
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 2
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 0
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 2
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n1->n4",
+              "source": "n1",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n3->n6",
+              "source": "n3",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>\n\n<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\n<graph: this message merges branches n1, n3>\n<graph: this message starts a new branch from n1>\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\n<graph: this message merges branches n3, n5>\n<graph: this message starts a new branch from n3>\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n2\nn4 (user) <- n1, n3\nn5 (assistant) <- n4\nn6 (user) <- n3, n5\nn7 (assistant) <- n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 3",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 3
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 2
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "",
+              "timestamp": 1
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 3
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 2
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n0->n3",
+              "source": "n0",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n2->n5",
+              "source": "n2",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            },
+            {
+              "id": "n4->n7",
+              "source": "n4",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\ntext-2\n</node>\n\n<node id=\"n4\">\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n0, n2\nn4 (user) <- n3\nn5 (assistant) <- n2, n4\nn6 (user) <- n5\nn7 (assistant) <- n4, n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 4",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 0
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 0
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 0
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 0
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 0
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 0
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n1->n4",
+              "source": "n1",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n3->n6",
+              "source": "n3",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\n<graph: this message starts a new branch from n1>\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>\n\n<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\n<graph: this message merges branches n3, n5>\n<graph: this message starts a new branch from n3>\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n2\nn4 (user) <- n1, n3\nn5 (assistant) <- n4\nn6 (user) <- n3, n5\nn7 (assistant) <- n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 5",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 1
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 2
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 3
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "",
+              "timestamp": 1
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 2
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 3
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n0->n3",
+              "source": "n0",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n2->n5",
+              "source": "n2",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            },
+            {
+              "id": "n4->n7",
+              "source": "n4",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\ntext-4\n</node>\n\n<node id=\"n6\">\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n0, n2\nn4 (user) <- n3\nn5 (assistant) <- n2, n4\nn6 (user) <- n5\nn7 (assistant) <- n4, n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 6",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 2
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 0
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 2
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 2
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "",
+              "timestamp": 0
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 2
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n1->n4",
+              "source": "n1",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n3->n6",
+              "source": "n3",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\n<graph: this message starts a new branch from n1>\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\n<graph: this message merges branches n1, n3>\n<graph: this message starts a new branch from n1>\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>\n\n<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n2\nn4 (user) <- n1, n3\nn5 (assistant) <- n4\nn6 (user) <- n3, n5\nn7 (assistant) <- n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 7",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 3
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 2
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 1
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 3
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 2
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n0->n3",
+              "source": "n0",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n2->n5",
+              "source": "n2",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            },
+            {
+              "id": "n4->n7",
+              "source": "n4",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\ntext-6\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n0, n2\nn4 (user) <- n3\nn5 (assistant) <- n2, n4\nn6 (user) <- n5\nn7 (assistant) <- n4, n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 8",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 0
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 0
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 0
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 0
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 0
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 0
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n1->n4",
+              "source": "n1",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n3->n6",
+              "source": "n3",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\n<graph: this message starts a new branch from n1>\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\n<graph: this message merges branches n1, n3>\n<graph: this message starts a new branch from n1>\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\n<graph: this message merges branches n3, n5>\n<graph: this message starts a new branch from n3>\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n2\nn4 (user) <- n1, n3\nn5 (assistant) <- n4\nn6 (user) <- n3, n5\nn7 (assistant) <- n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 9",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "",
+              "timestamp": 1
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 2
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 3
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 1
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 2
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 3
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n0->n3",
+              "source": "n0",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n2->n5",
+              "source": "n2",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            },
+            {
+              "id": "n4->n7",
+              "source": "n4",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>\n\n<node id=\"n2\">\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n0, n2\nn4 (user) <- n3\nn5 (assistant) <- n2, n4\nn6 (user) <- n5\nn7 (assistant) <- n4, n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 10",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 2
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "",
+              "timestamp": 0
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 2
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 2
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 0
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 2
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n1->n4",
+              "source": "n1",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n3->n6",
+              "source": "n3",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>\n\n<node id=\"n3\">\ntext-3\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n4\">\n<graph: this message merges branches n1, n3>\n<graph: this message starts a new branch from n1>\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\n<graph: this message merges branches n3, n5>\n<graph: this message starts a new branch from n3>\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n2\nn4 (user) <- n1, n3\nn5 (assistant) <- n4\nn6 (user) <- n3, n5\nn7 (assistant) <- n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 11",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 3
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 2
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "",
+              "timestamp": 1
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "text-4",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 3
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 2
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 1
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n0->n3",
+              "source": "n0",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n2->n5",
+              "source": "n2",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            },
+            {
+              "id": "n4->n7",
+              "source": "n4",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\ntext-2\n</node>\n\n<node id=\"n4\">\ntext-4\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n0, n2\nn4 (user) <- n3\nn5 (assistant) <- n2, n4\nn6 (user) <- n5\nn7 (assistant) <- n4, n6 [current]\n</graph-map>"
+        }
+      ]
+    },
+    {
+      "name": "timestamp dag 12",
+      "project": {
+        "version": 5,
+        "graph": {
+          "version": 5,
+          "nodes": [
+            {
+              "id": "n0",
+              "role": "user",
+              "content": "text-0",
+              "timestamp": 0
+            },
+            {
+              "id": "n1",
+              "role": "assistant",
+              "content": "text-1",
+              "timestamp": 0
+            },
+            {
+              "id": "n2",
+              "role": "user",
+              "content": "text-2",
+              "timestamp": 0
+            },
+            {
+              "id": "n3",
+              "role": "assistant",
+              "content": "text-3",
+              "timestamp": 0
+            },
+            {
+              "id": "n4",
+              "role": "user",
+              "content": "",
+              "timestamp": 0
+            },
+            {
+              "id": "n5",
+              "role": "assistant",
+              "content": "text-5",
+              "timestamp": 0
+            },
+            {
+              "id": "n6",
+              "role": "user",
+              "content": "text-6",
+              "timestamp": 0
+            },
+            {
+              "id": "n7",
+              "role": "assistant",
+              "content": "text-7",
+              "timestamp": 0
+            }
+          ],
+          "edges": [
+            {
+              "id": "n0->n1",
+              "source": "n0",
+              "target": "n1"
+            },
+            {
+              "id": "n1->n2",
+              "source": "n1",
+              "target": "n2"
+            },
+            {
+              "id": "n2->n3",
+              "source": "n2",
+              "target": "n3"
+            },
+            {
+              "id": "n3->n4",
+              "source": "n3",
+              "target": "n4"
+            },
+            {
+              "id": "n1->n4",
+              "source": "n1",
+              "target": "n4"
+            },
+            {
+              "id": "n4->n5",
+              "source": "n4",
+              "target": "n5"
+            },
+            {
+              "id": "n5->n6",
+              "source": "n5",
+              "target": "n6"
+            },
+            {
+              "id": "n3->n6",
+              "source": "n3",
+              "target": "n6"
+            },
+            {
+              "id": "n6->n7",
+              "source": "n6",
+              "target": "n7"
+            }
+          ],
+          "layout": [
+            {
+              "id": "n0",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n1",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n2",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n3",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n4",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n5",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n6",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            {
+              "id": "n7",
+              "position": {
+                "x": 0,
+                "y": 0
+              }
+            }
+          ]
+        }
+      },
+      "target": "n7",
+      "pathIds": [
+        "n0",
+        "n1",
+        "n2",
+        "n3",
+        "n4",
+        "n5",
+        "n6",
+        "n7"
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "<node id=\"n0\">\ntext-0\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n1\">\ntext-1\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n2\">\n<graph: this message starts a new branch from n1>\ntext-2\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n3\">\ntext-3\n</node>\n\n<node id=\"n5\">\ntext-5\n</node>"
+        },
+        {
+          "role": "user",
+          "content": "<node id=\"n6\">\n<graph: this message merges branches n3, n5>\n<graph: this message starts a new branch from n3>\ntext-6\n</node>"
+        },
+        {
+          "role": "assistant",
+          "content": "<node id=\"n7\">\ntext-7\n</node>\n\n<graph-map>\nThis conversation is a DAG, not a line: the messages above are a linearization of the current node's ancestor graph. <node id> markers tie each text segment to a graph node; the map below is the topology.\nn0 (user) <- (root)\nn1 (assistant) <- n0\nn2 (user) <- n1\nn3 (assistant) <- n2\nn4 (user) <- n1, n3\nn5 (assistant) <- n4\nn6 (user) <- n3, n5\nn7 (assistant) <- n6 [current]\n</graph-map>"
+        }
+      ]
+    }
+  ],
+  "provenance": [
+    {
+      "input": {
+        "completeness": "complete",
+        "references": [
+          {
+            "type": "url",
+            "url": "https://example.com",
+            "title": "Example",
+            "relations": [
+              "cited"
+            ]
+          }
+        ],
+        "activity": [
+          {
+            "type": "commentary",
+            "content": "Searching",
+            "timestamp": 10
+          }
+        ]
+      },
+      "expected": {
+        "completeness": "complete",
+        "references": [
+          {
+            "type": "url",
+            "url": "https://example.com",
+            "relations": [
+              "cited"
+            ],
+            "title": "Example"
+          }
+        ],
+        "activity": [
+          {
+            "type": "commentary",
+            "content": "Searching",
+            "timestamp": 10
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "completeness": "complete",
+        "references": [
+          {
+            "type": "file",
+            "scope": "vault",
+            "path": "../secret.txt",
+            "displayName": "/Users/alice/secret.txt",
+            "relations": [
+              "read",
+              "bogus"
+            ]
+          },
+          {
+            "type": "url",
+            "url": "file:///Users/alice/key",
+            "relations": []
+          }
+        ],
+        "activity": [
+          {
+            "type": "tool",
+            "kind": "execute",
+            "title": "echo hello",
+            "status": "completed",
+            "rawInput": "secret"
+          },
+          {
+            "type": "unknown",
+            "providerType": "newType",
+            "label": "Unsupported"
+          }
+        ]
+      },
+      "expected": {
+        "completeness": "partial",
+        "references": [
+          {
+            "type": "file",
+            "scope": "external",
+            "displayName": "secret.txt",
+            "relations": [
+              "read"
+            ]
+          }
+        ],
+        "activity": [
+          {
+            "type": "tool",
+            "kind": "execute",
+            "title": "Ran a command",
+            "status": "completed",
+            "titleRedacted": true
+          },
+          {
+            "type": "unknown",
+            "providerType": "newType",
+            "label": "Unsupported"
+          }
+        ]
+      }
+    },
+    {
+      "input": {
+        "completeness": "unknown",
+        "references": [
+          {
+            "type": "url",
+            "url": "custom:thing",
+            "title": "reading /Users/alice/doc",
+            "relations": [
+              "consulted"
+            ]
+          }
+        ],
+        "activity": [
+          {
+            "type": "tool",
+            "kind": "read",
+            "title": "Read src/lib.rs",
+            "status": "unexpected"
+          },
+          {
+            "type": "raw",
+            "payload": "drop me"
+          }
+        ]
+      },
+      "expected": {
+        "completeness": "unknown",
+        "references": [
+          {
+            "type": "url",
+            "url": "custom:thing",
+            "relations": [
+              "consulted"
+            ]
+          }
+        ],
+        "activity": [
+          {
+            "type": "tool",
+            "kind": "read",
+            "title": "Read src/lib.rs",
+            "status": "incomplete"
+          }
+        ]
+      }
+    }
+  ],
+  "palette": [
+    {
+      "name": "UTF16 match position ranking",
+      "corpus": [
+        {
+          "id": "ascii",
+          "role": "user",
+          "content": "xxx rust",
+          "timestamp": 1
+        },
+        {
+          "id": "unicode",
+          "role": "user",
+          "content": "é😀rust",
+          "timestamp": 1
+        }
+      ],
+      "query": "rust",
+      "expected": [
+        {
+          "id": "unicode",
+          "title": {
+            "text": "é😀rust",
+            "spans": [
+              {
+                "start": 6,
+                "end": 10
+              }
+            ]
+          },
+          "snippet": {
+            "text": "é😀rust",
+            "spans": [
+              {
+                "start": 6,
+                "end": 10
+              }
+            ]
+          }
+        },
+        {
+          "id": "ascii",
+          "title": {
+            "text": "xxx rust",
+            "spans": [
+              {
+                "start": 4,
+                "end": 8
+              }
+            ]
+          },
+          "snippet": {
+            "text": "xxx rust",
+            "spans": [
+              {
+                "start": 4,
+                "end": 8
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "title boundary excludes split surrogate",
+      "corpus": [
+        {
+          "id": "title",
+          "role": "user",
+          "content": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀 suffix",
+          "timestamp": 1
+        }
+      ],
+      "query": "",
+      "expected": [
+        {
+          "id": "title",
+          "title": {
+            "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "spans": []
+          },
+          "snippet": null
+        }
+      ]
+    },
+    {
+      "name": "file title limit",
+      "corpus": [
+        {
+          "id": "f",
+          "role": "file",
+          "content": "",
+          "timestamp": 1,
+          "path": "notes/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀.md",
+          "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀.md",
+          "mimeType": "text/markdown",
+          "size": 5,
+          "seenMtime": 10,
+          "seenSize": 5
+        }
+      ],
+      "query": "",
+      "expected": [
+        {
+          "id": "f",
+          "title": {
+            "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "spans": []
+          },
+          "snippet": {
+            "text": "notes/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx😀.md",
+            "spans": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "folder query searches complete Vault path",
+      "corpus": [
+        {
+          "id": "f",
+          "role": "file",
+          "content": "",
+          "timestamp": 1,
+          "path": "研究/reference.md",
+          "name": "reference.md",
+          "mimeType": "text/markdown",
+          "size": 5,
+          "seenMtime": 10,
+          "seenSize": 5
+        },
+        {
+          "id": "u",
+          "role": "user",
+          "content": "unrelated",
+          "timestamp": 1
+        }
+      ],
+      "query": "研究",
+      "expected": [
+        {
+          "id": "f",
+          "title": {
+            "text": "reference.md",
+            "spans": []
+          },
+          "snippet": {
+            "text": "研究/reference.md",
+            "spans": [
+              {
+                "start": 0,
+                "end": 6
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "snippet window and whitespace preserve boundary space",
+      "corpus": [
+        {
+          "id": "snippet",
+          "role": "user",
+          "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 😀\n  target\t  bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "timestamp": 1
+        }
+      ],
+      "query": "target",
+      "expected": [
+        {
+          "id": "snippet",
+          "title": {
+            "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "spans": []
+          },
+          "snippet": {
+            "text": "aaaaaaaaaaaaaaaaaaaaaaaa 😀 target bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "spans": [
+              {
+                "start": 30,
+                "end": 36
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unicode regexp folding stays browser compatible",
+      "corpus": [
+        {
+          "id": "ascii",
+          "role": "user",
+          "content": "k s",
+          "timestamp": 1
+        },
+        {
+          "id": "kelvin",
+          "role": "user",
+          "content": "K",
+          "timestamp": 1
+        },
+        {
+          "id": "long-s",
+          "role": "user",
+          "content": "ſ",
+          "timestamp": 1
+        },
+        {
+          "id": "turkish",
+          "role": "user",
+          "content": "İ ı",
+          "timestamp": 1
+        }
+      ],
+      "query": "k",
+      "expected": [
+        {
+          "id": "ascii",
+          "title": {
+            "text": "k s",
+            "spans": [
+              {
+                "start": 0,
+                "end": 1
+              }
+            ]
+          },
+          "snippet": {
+            "text": "k s",
+            "spans": [
+              {
+                "start": 0,
+                "end": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unicode token matches have valid byte spans",
+      "corpus": [
+        {
+          "id": "greek",
+          "role": "user",
+          "content": "σΣς",
+          "timestamp": 1
+        },
+        {
+          "id": "turkish",
+          "role": "user",
+          "content": "İ ı",
+          "timestamp": 1
+        }
+      ],
+      "query": "σ",
+      "expected": [
+        {
+          "id": "greek",
+          "title": {
+            "text": "σΣς",
+            "spans": [
+              {
+                "start": 0,
+                "end": 6
+              }
+            ]
+          },
+          "snippet": {
+            "text": "σΣς",
+            "spans": [
+              {
+                "start": 0,
+                "end": 6
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "astral case folding stays browser compatible",
+      "corpus": [
+        {
+          "id": "deseret",
+          "role": "user",
+          "content": "𐐀 𐐨",
+          "timestamp": 1
+        }
+      ],
+      "query": "𐐨",
+      "expected": [
+        {
+          "id": "deseret",
+          "title": {
+            "text": "𐐀 𐐨",
+            "spans": [
+              {
+                "start": 5,
+                "end": 9
+              }
+            ]
+          },
+          "snippet": {
+            "text": "𐐀 𐐨",
+            "spans": [
+              {
+                "start": 5,
+                "end": 9
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Javascript whitespace token boundaries",
+      "corpus": [
+        {
+          "id": "and",
+          "role": "user",
+          "content": "rust parser",
+          "timestamp": 1
+        },
+        {
+          "id": "one",
+          "role": "user",
+          "content": "rust",
+          "timestamp": 1
+        }
+      ],
+      "query": "rust﻿parser",
+      "expected": [
+        {
+          "id": "and",
+          "title": {
+            "text": "rust parser",
+            "spans": [
+              {
+                "start": 0,
+                "end": 4
+              },
+              {
+                "start": 5,
+                "end": 11
+              }
+            ]
+          },
+          "snippet": {
+            "text": "rust parser",
+            "spans": [
+              {
+                "start": 0,
+                "end": 4
+              },
+              {
+                "start": 5,
+                "end": 11
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "overlapping literals merge highlights",
+      "corpus": [
+        {
+          "id": "overlap",
+          "role": "user",
+          "content": "a+b aba ababa",
+          "timestamp": 1
+        }
+      ],
+      "query": "aba ba",
+      "expected": [
+        {
+          "id": "overlap",
+          "title": {
+            "text": "a+b aba ababa",
+            "spans": [
+              {
+                "start": 4,
+                "end": 7
+              },
+              {
+                "start": 8,
+                "end": 13
+              }
+            ]
+          },
+          "snippet": {
+            "text": "a+b aba ababa",
+            "spans": [
+              {
+                "start": 4,
+                "end": 7
+              },
+              {
+                "start": 8,
+                "end": 13
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "summary ranks before early content",
+      "corpus": [
+        {
+          "id": "body",
+          "role": "user",
+          "content": "Rust",
+          "timestamp": 1
+        },
+        {
+          "id": "summary",
+          "role": "assistant",
+          "content": "Later Rust",
+          "timestamp": 1,
+          "summary": "Rust overview"
+        }
+      ],
+      "query": "Rust",
+      "expected": [
+        {
+          "id": "summary",
+          "title": {
+            "text": "Rust overview",
+            "spans": [
+              {
+                "start": 0,
+                "end": 4
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Later Rust",
+            "spans": [
+              {
+                "start": 6,
+                "end": 10
+              }
+            ]
+          }
+        },
+        {
+          "id": "body",
+          "title": {
+            "text": "Rust",
+            "spans": [
+              {
+                "start": 0,
+                "end": 4
+              }
+            ]
+          },
+          "snippet": {
+            "text": "Rust",
+            "spans": [
+              {
+                "start": 0,
+                "end": 4
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "authored visual fixture Native rich answer",
+      "corpus": [
+        {
+          "id": "parity-file",
+          "role": "file",
+          "content": "",
+          "timestamp": 1790848800000,
+          "path": "vault/reading-notes.md",
+          "name": "reading-notes.md",
+          "mimeType": "text/markdown",
+          "size": 382,
+          "seenMtime": 1790848800000,
+          "seenSize": 382
+        },
+        {
+          "id": "parity-question",
+          "role": "user",
+          "content": "Explore this small research graph. Compare native rendering and safe persistence, then bring the two branches together.",
+          "timestamp": 1790848860000,
+          "contentUpdatedAt": 1790848860000,
+          "summary": "Explore native desktop behavior",
+          "summaryTimestamp": 1790848860000
+        },
+        {
+          "id": "parity-overview",
+          "role": "assistant",
+          "content": "We can investigate two independent questions: how the desktop renders an answer, and how the project preserves its data. Each branch can continue before the synthesis.",
+          "timestamp": 1790848920000,
+          "contentUpdatedAt": 1790848920000,
+          "summary": "Two independent research branches",
+          "summaryTimestamp": 1790848920000,
+          "provider": "claude-code",
+          "model": "fixture-claude"
+        },
+        {
+          "id": "parity-render-question",
+          "role": "user",
+          "content": "How can a Rust desktop show Markdown, code, formulas, and diagrams?",
+          "timestamp": 1790848980000,
+          "contentUpdatedAt": 1790848980000,
+          "summary": "Render rich answers in Rust",
+          "summaryTimestamp": 1790848980000
+        },
+        {
+          "id": "parity-save-question",
+          "role": "user",
+          "content": "How can the desktop preserve edits when another window changes the project?",
+          "timestamp": 1790849040000,
+          "contentUpdatedAt": 1790849040000,
+          "summary": "Preserve edits across conflicts",
+          "summaryTimestamp": 1790849040000
+        },
+        {
+          "id": "parity-render-answer",
+          "role": "assistant",
+          "content": "## Render the answer\n\nUse native text for **Markdown**, highlighted code, and tables. Render formulas and Mermaid into images in memory. Keep the exact Markdown available through Copy.\n\n```rust\nlet answer = RichText::new(markdown, cx);\n```\n\nThe interface remains a native desktop window.",
+          "timestamp": 1790849100000,
+          "contentUpdatedAt": 1790849100000,
+          "summary": "Native Markdown, math, and diagrams",
+          "summaryTimestamp": 1790849100000,
+          "provider": "codex",
+          "model": "fixture-codex"
+        },
+        {
+          "id": "parity-save-answer",
+          "role": "assistant",
+          "content": "## Preserve the project\n\n1. Save with the revision that the window loaded.\n2. If the revision changed, keep the unsaved graph open.\n3. Compare both versions without replacing either.\n4. Save a separate copy or preserve a snapshot before reload.\n\nIndependent branches remain available while an answer streams.",
+          "timestamp": 1790849160000,
+          "contentUpdatedAt": 1790849160000,
+          "summary": "Revision checks and recovery snapshots",
+          "summaryTimestamp": 1790849160000,
+          "provider": "claude-code",
+          "model": "fixture-claude"
+        },
+        {
+          "id": "parity-merge",
+          "role": "user",
+          "content": "Merge both branches into one desktop acceptance example. Keep the code, formula, table, diagram, and evidence visible.",
+          "timestamp": 1790849220000,
+          "contentUpdatedAt": 1790849220000,
+          "summary": "Synthesize both branches",
+          "summaryTimestamp": 1790849220000
+        },
+        {
+          "id": "parity-synthesis",
+          "role": "assistant",
+          "content": "# A native desktop, one shared graph\n\nThis is **authored demonstration data**. It contains no live provider response.\n\n| Capability | Desktop behavior |\n| --- | --- |\n| Branches | Independent answers, shared ancestry |\n| Files | Vault references with bounded previews |\n| Saves | Revision checks and recovery snapshots |\n\n```rust\nlet ancestors = graph.conversation_path_ids(&node_id);\nlet response = render_markdown(answer);\nsave_with_revision(project, revision)?;\n```\n\nInline math: \\(E = mc^2\\). Display math:\n\n\\[\n\\frac{1}{n}\\sum_{i=1}^{n} x_i = \\bar{x}\n\\]\n\n```mermaid\nflowchart LR\n    A[Native view] --> B[Shared Rust core]\n    B --> C[Saved project]\n```\n\n- [x] Preserve the answer text\n- [x] Keep provenance separate\n- [ ] Complete interactive acceptance checks\n\nThe two branches agree on these boundaries.【1】 A missing citation stays visible for inspection.【9】\n",
+          "timestamp": 1790849280000,
+          "contentUpdatedAt": 1790849280000,
+          "summary": "Native rich answer and evidence",
+          "summaryTimestamp": 1790849280000,
+          "provider": "codex",
+          "model": "fixture-codex",
+          "provenance": {
+            "completeness": "partial",
+            "references": [
+              {
+                "type": "url",
+                "url": "https://example.com/desktop-evidence",
+                "title": "Authored desktop evidence",
+                "index": 1,
+                "is_search_result": false,
+                "relations": [
+                  "consulted",
+                  "cited"
+                ]
+              },
+              {
+                "type": "url",
+                "url": "https://example.org/related-reading",
+                "title": "Related reading (fixture)",
+                "index": 2,
+                "is_search_result": true,
+                "relations": [
+                  "searched",
+                  "consulted"
+                ]
+              },
+              {
+                "type": "file",
+                "scope": "vault",
+                "path": "vault/reading-notes.md",
+                "displayName": "reading-notes.md",
+                "relations": [
+                  "read",
+                  "cited"
+                ]
+              },
+              {
+                "type": "file",
+                "scope": "external",
+                "displayName": "external-summary.txt",
+                "relations": [
+                  "read"
+                ]
+              }
+            ],
+            "activity": [
+              {
+                "type": "commentary",
+                "content": "I will compare the two authored branches and retain their shared context.",
+                "timestamp": 1790849220000
+              },
+              {
+                "type": "tool",
+                "kind": "read",
+                "status": "completed",
+                "title": "Read the authored notes fixture",
+                "timestamp": 1790849220100,
+                "completedAt": 1790849220200
+              },
+              {
+                "type": "tool",
+                "kind": "search",
+                "status": "completed",
+                "title": "Search for desktop acceptance evidence",
+                "titleRedacted": true
+              },
+              {
+                "type": "commentary",
+                "content": "The fixture contains one cited source, one consulted source, and a deliberately unmatched citation."
+              },
+              {
+                "type": "unknown",
+                "providerType": "fixture_status",
+                "label": "Historical status update"
+              }
+            ]
+          }
+        },
+        {
+          "id": "parity-image",
+          "role": "user",
+          "content": "Describe the synthetic chart. The image is embedded in this user node and can be removed in the editor.",
+          "timestamp": 1790849340000,
+          "contentUpdatedAt": 1790849340000,
+          "summary": "An attached image",
+          "summaryTimestamp": 1790849340000,
+          "images": [
+            {
+              "data": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADACAYAAAB1V7rGAAAGQUlEQVR4nO3Usa0YVBBE0R/QCpl7oRsCqMSSyyAEiQKoyIlJfwFezey+E5z8aZ/mfvzy65cfAC/6SD8AIEUAgWcJIPAsAQSeJYDAswQQeJYAAs8SQOBZAgg8SwCBZwkg8CwBBJ4lgMCzBBB4lgACzxJA4FkCCDxLAKHIv9//45PpewsgFEkHp830vQUQiqSD02b63gIIRdLBaTN9bwGEIungtJm+twBCkXRw2kzfWwChSDo4babvLYBQJB2cNtP3FkAokg5Om+l7CyAUSQenzfS9BRCKpIPTZvreAghF0sFpM31vAYQi6eC0mb63AEKRdHDaTN97PIC//fE7n6QHRrd0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AD4awD//+con6f8QQAF8QnpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAm6wPIEArAQSeJYDAswQQeJYAAs8SQOBZAgg866cH8NvffwGMqA8gwBYCCDxLAIFnCSDwLAEEniWAwLMEEHiWAALPEkDgWQIIPEsAgWcJIPAsAQSeJYDAswQQeJYAAs8SQOBZAgg8SwCBZwkg8CwBBJ4lgMCzBBB4lgACz/ofv5lgbSxPUz4AAAAASUVORK5CYII=",
+              "mimeType": "image/png",
+              "name": "synthetic-chart.png"
+            }
+          ]
+        },
+        {
+          "id": "parity-history",
+          "role": "assistant",
+          "content": "This imported historical answer stopped before its final conclusion. Its original provider attribution and partial evidence remain available.",
+          "timestamp": 1790849400000,
+          "contentUpdatedAt": 1790849400000,
+          "summary": "Imported incomplete history",
+          "summaryTimestamp": 1790849400000,
+          "provider": "gemini-cli",
+          "model": "fixture-retired-model",
+          "incomplete": true,
+          "provenance": {
+            "completeness": "partial",
+            "references": [],
+            "activity": [
+              {
+                "type": "commentary",
+                "content": "This is an authored historical import example."
+              }
+            ]
+          }
+        }
+      ],
+      "query": "Native rich answer",
+      "expected": [
+        {
+          "id": "parity-synthesis",
+          "title": {
+            "text": "Native rich answer and evidence",
+            "spans": [
+              {
+                "start": 0,
+                "end": 6
+              },
+              {
+                "start": 7,
+                "end": 11
+              },
+              {
+                "start": 12,
+                "end": 18
+              }
+            ]
+          },
+          "snippet": {
+            "text": "# A native desktop, one shared graph This is **authored demonstration data**. It contains no live p",
+            "spans": [
+              {
+                "start": 4,
+                "end": 10
+              }
+            ]
+          }
+        },
+        {
+          "id": "parity-render-answer",
+          "title": {
+            "text": "Native Markdown, math, and diagrams",
+            "spans": [
+              {
+                "start": 0,
+                "end": 6
+              }
+            ]
+          },
+          "snippet": {
+            "text": "## Render the answer Use native text for **Markdown**, highlighted code, and tables. Render formula",
+            "spans": [
+              {
+                "start": 14,
+                "end": 20
+              },
+              {
+                "start": 25,
+                "end": 31
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "imports": [
+    {
+      "name": "kagi-export-v1.json",
+      "input": "{\n  \"version\": 1,\n  \"exported_at\": \"2026-01-15T12:00:00Z\",\n  \"fixture_note\": \"unknown top-level field\",\n  \"conversation\": {\n    \"title\": \"Example research conversation\",\n    \"model_name\": \"example-model\"\n  },\n  \"messages\": [\n      {\n        \"role\": \"user\",\n        \"content\": \"Compare the example sources.\"\n      },\n      {\n        \"role\": \"assistant\",\n        \"content\": \"The fetched page supports the first point【1】, while the search result supports the second【2】. A dangling citation is retained【9】.\",\n        \"model_name\": \"example-model\",\n        \"tokens\": 42,\n        \"cost_usd\": 0.001,\n        \"duration_ms\": 250,\n        \"model_version\": \"example-model-2026-01-01\",\n        \"unknown_message_field\": \"ignored\",\n        \"references\": [\n          {\n            \"index\": 1,\n            \"title\": \"Fetched example page\",\n            \"url\": \"https://example.com/articles/fetched-page\",\n            \"domain\": \"example.com\",\n            \"snippet\": \"A harmless fetched-page snippet.\",\n            \"favicon\": \"https://example.com/favicon.ico\",\n            \"percentage\": 96,\n            \"is_search_result\": false,\n            \"passages\": null\n          },\n          {\n            \"index\": 2,\n            \"title\": \"Example search result\",\n            \"url\": \"https://search.example.com/results/cited\",\n            \"domain\": \"search.example.com\",\n            \"snippet\": \"A harmless search-result snippet.\",\n            \"favicon\": \"https://search.example.com/favicon.ico\",\n            \"percentage\": 88,\n            \"is_search_result\": true,\n            \"passages\": [\n              {\n                \"text\": \"A short example passage.\",\n                \"start\": 0,\n                \"end\": 24\n              }\n            ]\n          },\n          {\n            \"index\": 3,\n            \"title\": \"Consulted search result\",\n            \"url\": \"https://example.com/results/consulted-only\",\n            \"domain\": \"example.com\",\n            \"snippet\": \"This result was consulted but not cited.\",\n            \"favicon\": \"https://example.com/favicon.ico\",\n            \"percentage\": 71,\n            \"is_search_result\": true\n          }\n        ]\n      },\n      {\n        \"role\": \"user\",\n        \"content\": \"Give a brief conclusion.\"\n      },\n      {\n        \"role\": \"assistant\",\n        \"content\": \"The example sources illustrate the requested reference shapes.\",\n        \"model_name\": \"example-model\",\n        \"tokens\": 12,\n        \"cost_usd\": 0.0002,\n        \"duration_ms\": 90,\n        \"model_version\": \"example-model-2026-01-01\"\n      }\n  ]\n}\n",
+      "graph": {
+        "version": 5,
+        "nodes": [
+          {
+            "id": "import:Example%20research%20conversation:turn:0:user",
+            "role": "user",
+            "content": "Compare the example sources.",
+            "timestamp": 0
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:0:assistant",
+            "role": "assistant",
+            "content": "The fetched page supports the first point【1】, while the search result supports the second【2】. A dangling citation is retained【9】.",
+            "timestamp": 1,
+            "model": "example-model",
+            "provenance": {
+              "completeness": "complete",
+              "references": [
+                {
+                  "type": "url",
+                  "url": "https://example.com/articles/fetched-page",
+                  "relations": [
+                    "cited"
+                  ],
+                  "title": "Fetched example page",
+                  "domain": "example.com",
+                  "index": 1,
+                  "percentage": 96,
+                  "is_search_result": false
+                },
+                {
+                  "type": "url",
+                  "url": "https://search.example.com/results/cited",
+                  "relations": [
+                    "cited"
+                  ],
+                  "title": "Example search result",
+                  "domain": "search.example.com",
+                  "index": 2,
+                  "percentage": 88,
+                  "is_search_result": true
+                },
+                {
+                  "type": "url",
+                  "url": "https://example.com/results/consulted-only",
+                  "relations": [
+                    "consulted"
+                  ],
+                  "title": "Consulted search result",
+                  "domain": "example.com",
+                  "index": 3,
+                  "percentage": 71,
+                  "is_search_result": true
+                }
+              ],
+              "activity": []
+            }
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:1:user",
+            "role": "user",
+            "content": "Give a brief conclusion.",
+            "timestamp": 2
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:1:assistant",
+            "role": "assistant",
+            "content": "The example sources illustrate the requested reference shapes.",
+            "timestamp": 3,
+            "model": "example-model",
+            "provenance": {
+              "completeness": "complete",
+              "references": [],
+              "activity": []
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "import:Example%20research%20conversation:turn:0:user->import:Example%20research%20conversation:turn:0:assistant",
+            "source": "import:Example%20research%20conversation:turn:0:user",
+            "target": "import:Example%20research%20conversation:turn:0:assistant"
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:0:assistant->import:Example%20research%20conversation:turn:1:user",
+            "source": "import:Example%20research%20conversation:turn:0:assistant",
+            "target": "import:Example%20research%20conversation:turn:1:user"
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:1:user->import:Example%20research%20conversation:turn:1:assistant",
+            "source": "import:Example%20research%20conversation:turn:1:user",
+            "target": "import:Example%20research%20conversation:turn:1:assistant"
+          }
+        ],
+        "layout": [
+          {
+            "id": "import:Example%20research%20conversation:turn:0:user",
+            "position": {
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:0:assistant",
+            "position": {
+              "x": 0,
+              "y": 120
+            }
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:1:user",
+            "position": {
+              "x": 0,
+              "y": 240
+            }
+          },
+          {
+            "id": "import:Example%20research%20conversation:turn:1:assistant",
+            "position": {
+              "x": 0,
+              "y": 360
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/thoughttree-core", "src-tauri"]
+members = ["crates/thoughttree-core", "crates/thoughttree-gpui-model", "crates/thoughttree-desktop", "crates/thoughttree-gpui", "src-tauri"]
 resolver = "2"
 
 [profile.release]

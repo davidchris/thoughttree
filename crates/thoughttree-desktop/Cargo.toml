@@ -1,0 +1,20 @@
+[package]
+name = "thoughttree-desktop"
+version = "0.5.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "Native desktop services for ThoughtTree, independent of any UI toolkit"
+
+[dependencies]
+async-channel = "2"
+dirs = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thoughttree-core = { path = "../thoughttree-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+walkdir = "2"
+
+[dev-dependencies]
+filetime = "0.2"

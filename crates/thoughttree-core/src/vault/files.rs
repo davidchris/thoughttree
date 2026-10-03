@@ -555,7 +555,9 @@ pub struct FilePreviewResponse {
     pub preview: FilePreview,
 }
 
-/// Bounded in-memory preview cache keyed by (relative path, mtime, size).
+/// Bounded in-memory preview cache keyed by (canonical file path, mtime, size).
+/// The absolute path includes Vault identity, so switching Vaults cannot reuse
+/// a different file's preview with coincidentally identical relative metadata.
 /// Cleared wholesale when it grows past [`PREVIEW_CACHE_MAX_ENTRIES`].
 #[derive(Default)]
 pub struct PreviewCache {
@@ -566,7 +568,7 @@ const PREVIEW_CACHE_MAX_ENTRIES: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct PreviewKey {
-    relative: String,
+    canonical_path: PathBuf,
     modified_epoch_ms: u64,
     size: u64,
 }
@@ -579,7 +581,7 @@ impl PreviewCache {
     ) -> Result<FilePreviewResponse, VaultFileError> {
         let opened = OpenedVaultFile::open(root, relative)?;
         let key = PreviewKey {
-            relative: relative.to_string(),
+            canonical_path: opened.path().to_path_buf(),
             modified_epoch_ms: opened.stat().modified_epoch_ms,
             size: opened.stat().size,
         };
@@ -1314,6 +1316,28 @@ mod tests {
         let fresh = cache.preview(vault.path(), "note.txt").unwrap();
         assert_eq!(text_excerpt(&fresh.preview).0, "cccccc");
         assert_eq!(fresh.info.size, 6);
+    }
+
+    #[test]
+    fn preview_cache_does_not_reuse_content_from_another_vault() {
+        let first_vault = tempdir().unwrap();
+        let second_vault = tempdir().unwrap();
+        let first_path = first_vault.path().join("note.txt");
+        let second_path = second_vault.path().join("note.txt");
+        fs::write(&first_path, "first").unwrap();
+        fs::write(&second_path, "other").unwrap();
+        let mtime = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+        filetime::set_file_mtime(&first_path, mtime).unwrap();
+        filetime::set_file_mtime(&second_path, mtime).unwrap();
+        let cache = PreviewCache::default();
+
+        let first = cache.preview(first_vault.path(), "note.txt").unwrap();
+        let second = cache.preview(second_vault.path(), "note.txt").unwrap();
+
+        assert_eq!(first.info.size, second.info.size);
+        assert_eq!(first.info.modified_epoch_ms, second.info.modified_epoch_ms);
+        assert_eq!(text_excerpt(&first.preview).0, "first");
+        assert_eq!(text_excerpt(&second.preview).0, "other");
     }
 
     #[test]

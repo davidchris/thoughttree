@@ -9,13 +9,22 @@ use thoughttree_core::types::{AgentProvider, EffortPreferences, ModelPreferences
 
 const CONFIG_STORE: &str = "config.json";
 
+// Both desktop frontends use this override for isolated development and parity
+// fixtures. Without it, Tauri keeps its existing application data location.
+fn config_store() -> PathBuf {
+    std::env::var_os("THOUGHTTREE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .map(|path| path.join(CONFIG_STORE))
+        .unwrap_or_else(|| PathBuf::from(CONFIG_STORE))
+}
+
 fn save_serialized_value<T: Serialize + ?Sized>(
     app: &AppHandle,
     key: &str,
     value: &T,
 ) -> Result<(), String> {
     let store = app
-        .store(CONFIG_STORE)
+        .store(config_store())
         .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     let json_value =
@@ -32,7 +41,7 @@ fn get_deserialized_value<T: DeserializeOwned + Default>(
     key: &str,
 ) -> Result<T, String> {
     let store = app
-        .store(CONFIG_STORE)
+        .store(config_store())
         .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
@@ -43,7 +52,7 @@ fn get_deserialized_value<T: DeserializeOwned + Default>(
 
 pub(crate) fn get_notes_directory_optional(app: &AppHandle) -> Result<Option<String>, String> {
     let store = app
-        .store(CONFIG_STORE)
+        .store(config_store())
         .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store
@@ -104,7 +113,7 @@ pub(crate) fn set_provider_paths(app: &AppHandle, paths: &ProviderPaths) -> Resu
 
 pub(crate) fn get_recent_projects(app: &AppHandle) -> Result<Vec<String>, String> {
     let store = app
-        .store(CONFIG_STORE)
+        .store(config_store())
         .map_err(|e| format!("Failed to open config store: {e}"))?;
 
     Ok(store

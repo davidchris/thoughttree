@@ -1,0 +1,350 @@
+{
+  "version": 5,
+  "graph": {
+    "version": 5,
+    "nodes": [
+      {
+        "id": "parity-file",
+        "role": "file",
+        "content": "",
+        "timestamp": 1790848800000,
+        "path": "vault/reading-notes.md",
+        "name": "reading-notes.md",
+        "mimeType": "text/markdown",
+        "size": 382,
+        "seenMtime": 1790848800000,
+        "seenSize": 382
+      },
+      {
+        "id": "parity-question",
+        "role": "user",
+        "content": "Explore this small research graph. Compare native rendering and safe persistence, then bring the two branches together.",
+        "timestamp": 1790848860000,
+        "contentUpdatedAt": 1790848860000,
+        "summary": "Explore native desktop behavior",
+        "summaryTimestamp": 1790848860000
+      },
+      {
+        "id": "parity-overview",
+        "role": "assistant",
+        "content": "We can investigate two independent questions: how the desktop renders an answer, and how the project preserves its data. Each branch can continue before the synthesis.",
+        "timestamp": 1790848920000,
+        "contentUpdatedAt": 1790848920000,
+        "summary": "Two independent research branches",
+        "summaryTimestamp": 1790848920000,
+        "provider": "claude-code",
+        "model": "fixture-claude"
+      },
+      {
+        "id": "parity-render-question",
+        "role": "user",
+        "content": "How can a Rust desktop show Markdown, code, formulas, and diagrams?",
+        "timestamp": 1790848980000,
+        "contentUpdatedAt": 1790848980000,
+        "summary": "Render rich answers in Rust",
+        "summaryTimestamp": 1790848980000
+      },
+      {
+        "id": "parity-save-question",
+        "role": "user",
+        "content": "How can the desktop preserve edits when another window changes the project?",
+        "timestamp": 1790849040000,
+        "contentUpdatedAt": 1790849040000,
+        "summary": "Preserve edits across conflicts",
+        "summaryTimestamp": 1790849040000
+      },
+      {
+        "id": "parity-render-answer",
+        "role": "assistant",
+        "content": "## Render the answer\n\nUse native text for **Markdown**, highlighted code, and tables. Render formulas and Mermaid into images in memory. Keep the exact Markdown available through Copy.\n\n```rust\nlet answer = RichText::new(markdown, cx);\n```\n\nThe interface remains a native desktop window.",
+        "timestamp": 1790849100000,
+        "contentUpdatedAt": 1790849100000,
+        "summary": "Native Markdown, math, and diagrams",
+        "summaryTimestamp": 1790849100000,
+        "provider": "codex",
+        "model": "fixture-codex"
+      },
+      {
+        "id": "parity-save-answer",
+        "role": "assistant",
+        "content": "## Preserve the project\n\n1. Save with the revision that the window loaded.\n2. If the revision changed, keep the unsaved graph open.\n3. Compare both versions without replacing either.\n4. Save a separate copy or preserve a snapshot before reload.\n\nIndependent branches remain available while an answer streams.",
+        "timestamp": 1790849160000,
+        "contentUpdatedAt": 1790849160000,
+        "summary": "Revision checks and recovery snapshots",
+        "summaryTimestamp": 1790849160000,
+        "provider": "claude-code",
+        "model": "fixture-claude"
+      },
+      {
+        "id": "parity-merge",
+        "role": "user",
+        "content": "Merge both branches into one desktop acceptance example. Keep the code, formula, table, diagram, and evidence visible.",
+        "timestamp": 1790849220000,
+        "contentUpdatedAt": 1790849220000,
+        "summary": "Synthesize both branches",
+        "summaryTimestamp": 1790849220000
+      },
+      {
+        "id": "parity-synthesis",
+        "role": "assistant",
+        "content": "# A native desktop, one shared graph\n\nThis is **authored demonstration data**. It contains no live provider response.\n\n| Capability | Desktop behavior |\n| --- | --- |\n| Branches | Independent answers, shared ancestry |\n| Files | Vault references with bounded previews |\n| Saves | Revision checks and recovery snapshots |\n\n```rust\nlet ancestors = graph.conversation_path_ids(&node_id);\nlet response = render_markdown(answer);\nsave_with_revision(project, revision)?;\n```\n\nInline math: \\(E = mc^2\\). Display math:\n\n\\[\n\\frac{1}{n}\\sum_{i=1}^{n} x_i = \\bar{x}\n\\]\n\n```mermaid\nflowchart LR\n    A[Native view] --> B[Shared Rust core]\n    B --> C[Saved project]\n```\n\n- [x] Preserve the answer text\n- [x] Keep provenance separate\n- [ ] Complete interactive acceptance checks\n\nThe two branches agree on these boundaries.【1】 A missing citation stays visible for inspection.【9】\n",
+        "timestamp": 1790849280000,
+        "contentUpdatedAt": 1790849280000,
+        "summary": "Native rich answer and evidence",
+        "summaryTimestamp": 1790849280000,
+        "provider": "codex",
+        "model": "fixture-codex",
+        "provenance": {
+          "completeness": "partial",
+          "references": [
+            {
+              "type": "url",
+              "url": "https://example.com/desktop-evidence",
+              "title": "Authored desktop evidence",
+              "index": 1,
+              "is_search_result": false,
+              "relations": [
+                "consulted",
+                "cited"
+              ]
+            },
+            {
+              "type": "url",
+              "url": "https://example.org/related-reading",
+              "title": "Related reading (fixture)",
+              "index": 2,
+              "is_search_result": true,
+              "relations": [
+                "searched",
+                "consulted"
+              ]
+            },
+            {
+              "type": "file",
+              "scope": "vault",
+              "path": "vault/reading-notes.md",
+              "displayName": "reading-notes.md",
+              "relations": [
+                "read",
+                "cited"
+              ]
+            },
+            {
+              "type": "file",
+              "scope": "external",
+              "displayName": "external-summary.txt",
+              "relations": [
+                "read"
+              ]
+            }
+          ],
+          "activity": [
+            {
+              "type": "commentary",
+              "content": "I will compare the two authored branches and retain their shared context.",
+              "timestamp": 1790849220000
+            },
+            {
+              "type": "tool",
+              "kind": "read",
+              "status": "completed",
+              "title": "Read the authored notes fixture",
+              "timestamp": 1790849220100,
+              "completedAt": 1790849220200
+            },
+            {
+              "type": "tool",
+              "kind": "search",
+              "status": "completed",
+              "title": "Search for desktop acceptance evidence",
+              "titleRedacted": true
+            },
+            {
+              "type": "commentary",
+              "content": "The fixture contains one cited source, one consulted source, and a deliberately unmatched citation."
+            },
+            {
+              "type": "unknown",
+              "providerType": "fixture_status",
+              "label": "Historical status update"
+            }
+          ]
+        }
+      },
+      {
+        "id": "parity-image",
+        "role": "user",
+        "content": "Describe the synthetic chart. The image is embedded in this user node and can be removed in the editor.",
+        "timestamp": 1790849340000,
+        "contentUpdatedAt": 1790849340000,
+        "summary": "An attached image",
+        "summaryTimestamp": 1790849340000,
+        "images": [
+          {
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAUAAAADACAYAAAB1V7rGAAAGQUlEQVR4nO3Usa0YVBBE0R/QCpl7oRsCqMSSyyAEiQKoyIlJfwFezey+E5z8aZ/mfvzy65cfAC/6SD8AIEUAgWcJIPAsAQSeJYDAswQQeJYAAs8SQOBZAgg8SwCBZwkg8CwBBJ4lgMCzBBB4lgACzxJA4FkCCDxLAKHIv9//45PpewsgFEkHp830vQUQiqSD02b63gIIRdLBaTN9bwGEIungtJm+twBCkXRw2kzfWwChSDo4babvLYBQJB2cNtP3FkAokg5Om+l7CyAUSQenzfS9BRCKpIPTZvreAghF0sFpM31vAYQi6eC0mb63AEKRdHDaTN97PIC//fE7n6QHRrd0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AAogRdLBaTN9bwEUQIqkg9Nm+t4CKIAUSQenzfS9BVAAKZIOTpvpewugAFIkHZw20/cWQAGkSDo4babvLYACSJF0cNpM31sABZAi6eC0mb63AD4awD//+con6f8QQAF8QnpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAmwjgMemBCaAAbiKAx6QHJoACuIkAHpMemAAK4CYCeEx6YAIogJsI4DHpgQmgAG4igMekByaAAriJAB6THpgACuAmAnhMemACKICbCOAx6YEJoABuIoDHpAcmgAK4iQAekx6YAArgJgJ4THpgAiiAm6wPIEArAQSeJYDAswQQeJYAAs8SQOBZAgg866cH8NvffwGMqA8gwBYCCDxLAIFnCSDwLAEEniWAwLMEEHiWAALPEkDgWQIIPEsAgWcJIPAsAQSeJYDAswQQeJYAAs8SQOBZAgg8SwCBZwkg8CwBBJ4lgMCzBBB4lgACz/ofv5lgbSxPUz4AAAAASUVORK5CYII=",
+            "mimeType": "image/png",
+            "name": "synthetic-chart.png"
+          }
+        ]
+      },
+      {
+        "id": "parity-history",
+        "role": "assistant",
+        "content": "This imported historical answer stopped before its final conclusion. Its original provider attribution and partial evidence remain available.",
+        "timestamp": 1790849400000,
+        "contentUpdatedAt": 1790849400000,
+        "summary": "Imported incomplete history",
+        "summaryTimestamp": 1790849400000,
+        "provider": "gemini-cli",
+        "model": "fixture-retired-model",
+        "incomplete": true,
+        "provenance": {
+          "completeness": "partial",
+          "references": [],
+          "activity": [
+            {
+              "type": "commentary",
+              "content": "This is an authored historical import example."
+            }
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "parity-file->parity-question",
+        "source": "parity-file",
+        "target": "parity-question"
+      },
+      {
+        "id": "parity-question->parity-overview",
+        "source": "parity-question",
+        "target": "parity-overview"
+      },
+      {
+        "id": "parity-overview->parity-render-question",
+        "source": "parity-overview",
+        "target": "parity-render-question"
+      },
+      {
+        "id": "parity-overview->parity-save-question",
+        "source": "parity-overview",
+        "target": "parity-save-question"
+      },
+      {
+        "id": "parity-render-question->parity-render-answer",
+        "source": "parity-render-question",
+        "target": "parity-render-answer"
+      },
+      {
+        "id": "parity-save-question->parity-save-answer",
+        "source": "parity-save-question",
+        "target": "parity-save-answer"
+      },
+      {
+        "id": "parity-render-answer->parity-merge",
+        "source": "parity-render-answer",
+        "target": "parity-merge"
+      },
+      {
+        "id": "parity-save-answer->parity-merge",
+        "source": "parity-save-answer",
+        "target": "parity-merge"
+      },
+      {
+        "id": "parity-merge->parity-synthesis",
+        "source": "parity-merge",
+        "target": "parity-synthesis"
+      },
+      {
+        "id": "parity-image->parity-history",
+        "source": "parity-image",
+        "target": "parity-history"
+      }
+    ],
+    "layout": [
+      {
+        "id": "parity-file",
+        "position": {
+          "x": 20,
+          "y": 20
+        }
+      },
+      {
+        "id": "parity-question",
+        "position": {
+          "x": 300,
+          "y": 20
+        }
+      },
+      {
+        "id": "parity-overview",
+        "position": {
+          "x": 300,
+          "y": 180
+        }
+      },
+      {
+        "id": "parity-render-question",
+        "position": {
+          "x": 60,
+          "y": 350
+        }
+      },
+      {
+        "id": "parity-save-question",
+        "position": {
+          "x": 540,
+          "y": 350
+        }
+      },
+      {
+        "id": "parity-render-answer",
+        "position": {
+          "x": 60,
+          "y": 510
+        }
+      },
+      {
+        "id": "parity-save-answer",
+        "position": {
+          "x": 540,
+          "y": 510
+        }
+      },
+      {
+        "id": "parity-merge",
+        "position": {
+          "x": 300,
+          "y": 690
+        }
+      },
+      {
+        "id": "parity-synthesis",
+        "position": {
+          "x": 300,
+          "y": 850
+        }
+      },
+      {
+        "id": "parity-image",
+        "position": {
+          "x": 800,
+          "y": 190
+        }
+      },
+      {
+        "id": "parity-history",
+        "position": {
+          "x": 800,
+          "y": 390
+        }
+      }
+    ]
+  },
+  "projectModelPreferences": null,
+  "projectEffortPreferences": {
+    "codex": "high",
+    "claude-code": "medium"
+  }
+}
