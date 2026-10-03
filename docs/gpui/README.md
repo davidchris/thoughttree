@@ -6,7 +6,7 @@ The existing Tauri application remains available.
 
 The [parity matrix](parity.md) records the acceptance requirements and their verification status.
 Unchecked rows are not verified. Screenshots alone cannot establish full feature parity.
-The [capture record](screenshots/README.md) contains the available running-app screenshots and the remaining capture work.
+The [capture record](screenshots/README.md) contains the available running-app screenshots and manual drop confirmations.
 
 ## Build and start on macOS
 
@@ -127,10 +127,11 @@ Local macOS verification on 2026-10-03 passed:
 - Locked offline native executable build and local macOS debug bundle creation.
 - Strict bundle signature verification and property-list validation.
 
-At [commit 6ff1b32](https://github.com/davidchris/thoughttree/commit/6ff1b320b393f149b2658d29d0ebcb1366b2ce12), Linux CI, GPUI macOS CI, frontend checks, and CodeQL passed.
+At [commit b4d01c2](https://github.com/davidchris/thoughttree/commit/b4d01c280dfa3dacb1b7f86ded5ae8273da16dd2), Linux CI, GPUI macOS CI, frontend checks, and CodeQL passed.
 
 The [capture record](screenshots/README.md) contains ten paired states from the running applications.
-The [matrix](parity.md) verifies 121 of 123 requirements. Real OS file and image drops remain unverified.
+The [matrix](parity.md) records evidence for all 123 requirements.
+On 2026-10-04, the user confirmed real Finder file and image drops and supplied the [final screenshots](screenshots/README.md#finder-drop-checks).
 
 Run focused native checks first:
 

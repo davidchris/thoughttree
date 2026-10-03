@@ -1,18 +1,20 @@
 # Desktop comparison captures
 
-These images came from the running macOS applications through the native screenshot tool.
+The paired JPEG images came from the running macOS applications through the native screenshot tool.
+The two PNG images under [Finder drop checks](#finder-drop-checks) were supplied by the user.
 They contain the [authored parity project](../fixtures/README.md) and use isolated configuration and recovery directories.
 Provider responses came from the [offline ACP fixture](../fixture-adapter.md).
 No live model account was used.
 
 Ten states now have captures from both frontends, with one additional native capture of blocked cards.
-Real OS file and image drops remain unverified.
-The [parity matrix](../parity.md) records the completed checks and remaining work.
+The user also supplied two images confirming real OS file and image drops.
+The [parity matrix](../parity.md) records evidence for all 123 requirements.
 These images show visible behavior. They do not establish full feature parity without the accompanying interaction and persistence checks.
 
 The Tauri captures are 4112×2580 pixels, except for the 1600×1200 project chooser.
-All GPUI captures are 2880×1946 pixels. The dimensions include native window chrome.
-No pixels were edited. The file extensions match the JPEG bytes returned by the screenshot service.
+The GPUI JPEG captures are 2880×1946 pixels. These dimensions include native window chrome.
+The user-supplied PNGs show graph regions and measure 1134×450 and 1328×890 pixels.
+All files are stored unchanged from the screenshot tool or user attachment. File extensions match the image bytes.
 
 ## Project chooser
 
@@ -125,11 +127,19 @@ These macOS interactions were observed in the running native application on 2026
 Native regressions verify that Settings, search, and permission overlays cover the full window, including the toolbar.
 Scrolling or clicking these overlays cannot move or clear the graph underneath them.
 
-## Remaining OS checks
+## Finder drop checks
 
-Actual file drops onto the graph and image drops onto a user card or editor remain unverified.
-Their native event callbacks, coordinate transforms, attachment validation, thumbnails, and removal controls have passing tests.
-These tests do not prove dispatch from Finder or another application.
+On 2026-10-04, the user performed both checks in ThoughtTree Native Review with the isolated parity project and confirmed both succeeded.
+These checks complete P11 and F02 in the matrix. The images below are the user's supplied screenshots, stored without modification.
 
-The desktop automation service lost window access during the Finder attempt. Further UI actions returned `noWindowsAvailable`.
-The user confirmed that ThoughtTree itself remained responsive. Manual help was requested for these two acceptance checks.
+1. Drag `fixture-notes.md` from Finder onto empty graph space. A new file card appears with its name, size, and content preview.
+2. Drag `vault/synthetic-chart.png` onto a green user card. A new chart thumbnail appears on the “How can the desktop” card.
+
+Both source files are inside `/private/tmp/thoughttree-parity-run/vault`.
+The image already present on the separate “An attached image” card belongs to the original fixture.
+
+| File drop onto the graph | Image drop onto a user card |
+| --- | --- |
+| ![User-confirmed native file drop](gpui-file-drop.png) | ![User-confirmed native image drop](gpui-image-drop.png) |
+
+Native tests separately cover drop coordinate transforms, multiple-file placement, attachment validation, editor routing, thumbnails, and removal controls.
