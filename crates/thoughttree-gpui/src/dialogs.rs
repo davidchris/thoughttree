@@ -354,6 +354,8 @@ impl Workspace {
         let setup = matches!(modal, Modal::Setup | Modal::ChangingVault);
         Some(
             div()
+                .debug_selector(|| "desktop-overlay".into())
+                .occlude()
                 .absolute()
                 .inset_0()
                 .flex()
@@ -372,6 +374,7 @@ impl Workspace {
                 .child(
                     div()
                         .id("desktop-dialog")
+                        .debug_selector(|| "desktop-dialog".into())
                         .w(px(if matches!(modal, Modal::Conflict) {
                             960.
                         } else {
@@ -426,6 +429,7 @@ impl Workspace {
                         .child(
                             div()
                                 .id("dialog-scroll")
+                                .debug_selector(|| "dialog-scroll".into())
                                 .overflow_y_scroll()
                                 .min_h_0()
                                 .p_5()

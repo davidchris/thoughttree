@@ -759,6 +759,7 @@ impl Workspace {
             format!("{} matches", palette.total)
         };
         div()
+            .occlude()
             .absolute()
             .inset_0()
             .flex()

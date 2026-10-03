@@ -703,6 +703,7 @@ impl Workspace {
             let id = option.id.clone();
             let request = permission.request_id.clone();
             Button::new(SharedString::from(format!("permission-{id}")))
+                .debug_selector(|| format!("permission-{id}"))
                 .label(option.label.clone())
                 .on_click(
                     cx.listener(move |this, _, _, cx| this.answer_permission(&request, &id, cx)),
@@ -710,6 +711,7 @@ impl Workspace {
                 .into_any_element()
         });
         div()
+            .occlude()
             .absolute()
             .inset_0()
             .bg(rgba(0x00000099))

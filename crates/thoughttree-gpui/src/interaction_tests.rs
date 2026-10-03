@@ -1704,3 +1704,273 @@ fn native_toolbar_exposes_all_actions_and_respects_selection_and_turn_guards(
         Some(crate::dialogs::Modal::Recovery)
     ));
 }
+
+#[gpui::test]
+fn expanded_fixture_provenance_scrolls_with_native_line_and_pixel_wheels(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1360.), px(900.)));
+    workspace.update(cx, |this, cx| {
+        this.editor = Editor::new(
+            Project::from_json(include_str!(
+                "../../../docs/gpui/fixtures/parity.thoughttree"
+            ))
+            .unwrap(),
+        );
+        this.panel_width = 600.;
+        this.refresh(cx);
+    });
+    cx.update(|window, cx| {
+        workspace.update(cx, |this, cx| {
+            this.preview("parity-synthesis".into(), false, window, cx);
+            this.activity_expanded = true;
+            this.raw_expanded = (0..5).map(|index| index.to_string()).collect();
+            cx.notify();
+        })
+    });
+    cx.run_until_parked();
+    // Generated figures decode after the first paint. Let their measured size
+    // settle before comparing displacement caused by the wheel itself.
+    for _ in 0..6 {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+    }
+    let scroll = cx.debug_bounds("panel-scroll").unwrap();
+    let last = cx.debug_bounds("activity-4").unwrap();
+    assert!(
+        last.bottom() > scroll.bottom(),
+        "fixture must overflow: last={last:?}, scroll={scroll:?}"
+    );
+    let graph = workspace.read_with(cx, |this, cx| this.canvas.read(cx).viewport);
+    for (step, (delta, touch_phase)) in [
+        (
+            gpui::ScrollDelta::Lines(point(0., -5.)),
+            gpui::TouchPhase::Moved,
+        ),
+        (
+            gpui::ScrollDelta::Pixels(point(px(0.), px(-120.))),
+            gpui::TouchPhase::Started,
+        ),
+        (
+            gpui::ScrollDelta::Pixels(point(px(0.), px(-120.))),
+            gpui::TouchPhase::Moved,
+        ),
+        (
+            gpui::ScrollDelta::Pixels(point(px(0.), px(-120.))),
+            gpui::TouchPhase::Ended,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let before = cx.debug_bounds("activity-4").unwrap();
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: scroll.center(),
+            delta,
+            touch_phase,
+            ..Default::default()
+        });
+        cx.run_until_parked();
+        let after = cx.debug_bounds("activity-4").unwrap();
+        assert!(after.top() < before.top(), "wheel step {step} did not move expanded evidence: before={before:?}, after={after:?}, scroll={scroll:?}");
+    }
+    workspace.read_with(cx, |this, cx| {
+        assert_eq!(this.canvas.read(cx).viewport.pan, graph.pan);
+        assert_eq!(this.canvas.read(cx).viewport.zoom, graph.zoom);
+    });
+}
+
+#[gpui::test]
+fn modal_palette_and_permission_scrolls_do_not_move_or_zoom_the_graph(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1440.), px(940.)));
+    for overlay in ["settings", "palette", "permission"] {
+        match overlay {
+            "settings" => cx.dispatch_action(crate::commands::ShowSettings),
+            "palette" => cx.dispatch_action(crate::commands::SearchNodes),
+            "permission" => workspace.update(cx, |this, cx| {
+                this.permissions.push_back(Default::default());
+                cx.notify();
+            }),
+            _ => unreachable!(),
+        }
+        cx.run_until_parked();
+        let before = workspace.read_with(cx, |this, cx| this.canvas.read(cx).viewport);
+        for (position, command) in [
+            (point(px(720.), px(600.)), false),
+            (point(px(720.), px(600.)), true),
+            (point(px(25.), px(200.)), false),
+            (point(px(25.), px(200.)), true),
+        ] {
+            cx.simulate_event(gpui::ScrollWheelEvent {
+                position,
+                delta: gpui::ScrollDelta::Lines(point(0., -5.)),
+                modifiers: Modifiers {
+                    platform: command,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            cx.run_until_parked();
+            let after = workspace.read_with(cx, |this, cx| this.canvas.read(cx).viewport);
+            assert_eq!(
+                after.pan, before.pan,
+                "{overlay} wheel panned underlying Graph"
+            );
+            assert_eq!(
+                after.zoom, before.zoom,
+                "{overlay} wheel zoomed underlying Graph"
+            );
+        }
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.modal = None;
+                this.palette = None;
+                this.permissions.clear();
+                this.focus.focus(window);
+                cx.notify();
+            })
+        });
+    }
+}
+
+#[gpui::test]
+fn modal_palette_and_permission_clicks_preserve_background_selection_and_preview(
+    cx: &mut TestAppContext,
+) {
+    use thoughttree_core::events::{PermissionRequestEvent, PermissionRequestOption};
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1440.), px(940.)));
+    for overlay in ["settings", "palette", "permission"] {
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.editor.selection.insert("answer".into());
+                this.preview("answer".into(), false, window, cx);
+            })
+        });
+        match overlay {
+            "settings" => cx.dispatch_action(crate::commands::ShowSettings),
+            "palette" => cx.dispatch_action(crate::commands::SearchNodes),
+            "permission" => workspace.update(cx, |this, cx| {
+                this.permissions.push_back(PermissionRequestEvent::new(
+                    "request".into(),
+                    "answer".into(),
+                    "read".into(),
+                    "Read file".into(),
+                    "Read fixture?".into(),
+                    vec![PermissionRequestOption {
+                        id: "allow_once".into(),
+                        label: "Allow once".into(),
+                    }],
+                ));
+                cx.notify();
+            }),
+            _ => unreachable!(),
+        }
+        cx.run_until_parked();
+        let target = if overlay == "permission" {
+            cx.debug_bounds("permission-allow_once").unwrap().center()
+        } else {
+            point(px(25.), px(200.))
+        };
+        cx.simulate_click(target, Modifiers::default());
+        let state = read_state(&workspace, cx);
+        assert_eq!(
+            state.preview_id.as_deref(),
+            Some("answer"),
+            "{overlay} click closed preview"
+        );
+        assert_eq!(
+            state
+                .editor
+                .selection
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["answer"],
+            "{overlay} click changed selection"
+        );
+        workspace.read_with(cx, |this, _| {
+            assert!(this.modal.is_none());
+            assert!(this.palette.is_none());
+            assert!(this.permissions.is_empty());
+        });
+    }
+}
+
+#[gpui::test]
+fn settings_body_keeps_scrolling_inside_the_mouse_blocking_overlay(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1440.), px(600.)));
+    cx.dispatch_action(crate::commands::ShowSettings);
+    cx.run_until_parked();
+    let body = cx.debug_bounds("dialog-scroll").unwrap();
+    let first = cx.debug_bounds("settings-vault").unwrap();
+    let close = cx.debug_bounds("dialog-close").unwrap();
+    let graph = workspace.read_with(cx, |this, cx| this.canvas.read(cx).viewport);
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: body.center(),
+        delta: gpui::ScrollDelta::Lines(point(0., -5.)),
+        ..Default::default()
+    });
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("settings-vault").unwrap().top() < first.top());
+    assert_eq!(cx.debug_bounds("dialog-close").unwrap(), close);
+    workspace.read_with(cx, |this, cx| {
+        assert_eq!(this.canvas.read(cx).viewport.pan, graph.pan);
+        assert_eq!(this.canvas.read(cx).viewport.zoom, graph.zoom);
+    });
+}
+
+#[gpui::test]
+fn full_window_overlays_cover_toolbar_buttons(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1440.), px(940.)));
+    for overlay in ["settings", "palette", "permission"] {
+        match overlay {
+            "settings" => cx.dispatch_action(crate::commands::ShowSettings),
+            "palette" => cx.dispatch_action(crate::commands::SearchNodes),
+            "permission" => workspace.update(cx, |this, cx| {
+                this.permissions.push_back(Default::default());
+                cx.notify();
+            }),
+            _ => unreachable!(),
+        }
+        cx.run_until_parked();
+        let button = cx.debug_bounds("settings").unwrap().center();
+        cx.simulate_click(button, Modifiers::default());
+        workspace.read_with(cx, |this, _| {
+            assert!(
+                this.modal.is_none(),
+                "{overlay} let the Settings toolbar button activate"
+            );
+            assert!(this.palette.is_none());
+            assert_eq!(this.permissions.len(), usize::from(overlay == "permission"));
+        });
+        workspace.update(cx, |this, cx| {
+            this.permissions.clear();
+            cx.notify();
+        });
+    }
+}
+
+#[gpui::test]
+fn startup_and_settings_dialogs_remain_centered_within_the_full_window(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1440.), px(940.)));
+    for modal in [
+        crate::dialogs::Modal::Setup,
+        crate::dialogs::Modal::Projects,
+        crate::dialogs::Modal::Settings,
+    ] {
+        cx.update(|window, cx| workspace.update(cx, |this, cx| this.open_modal(modal, window, cx)));
+        cx.run_until_parked();
+        let overlay = cx.debug_bounds("desktop-overlay").unwrap();
+        let dialog = cx.debug_bounds("desktop-dialog").unwrap();
+        assert_eq!(overlay.origin, point(px(0.), px(0.)));
+        assert_eq!(overlay.size, size(px(1440.), px(940.)));
+        assert!((dialog.center().x - overlay.center().x).abs() <= px(1.));
+        assert!((dialog.center().y - overlay.center().y).abs() <= px(1.));
+        assert!(dialog.size.height <= px(940. * 0.9 + 1.));
+        assert!(dialog.top() >= overlay.top() && dialog.bottom() <= overlay.bottom());
+    }
+}

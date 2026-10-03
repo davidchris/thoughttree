@@ -866,6 +866,7 @@ impl Render for Workspace {
             .key_context("ThoughtTree")
             .track_focus(&self.focus)
             .size_full()
+            .relative()
             .flex()
             .flex_col()
             .bg(theme::bg())
@@ -904,17 +905,17 @@ impl Render for Workspace {
                     .child(div().flex_1().min_w_0().child(self.canvas.clone()))
                     .when(self.preview_id.is_some(), |d| {
                         d.child(self.panel(window, cx))
-                    })
-                    .when(self.modal.is_some(), |d| {
-                        d.children(self.render_modal(window, cx))
-                    })
-                    .when(self.palette.is_some(), |d| {
-                        d.child(self.render_palette(window, cx))
-                    })
-                    .when(!self.permissions.is_empty(), |d| {
-                        d.child(self.render_permission(cx))
                     }),
             )
+            .when(self.modal.is_some(), |d| {
+                d.children(self.render_modal(window, cx))
+            })
+            .when(self.palette.is_some(), |d| {
+                d.child(self.render_palette(window, cx))
+            })
+            .when(!self.permissions.is_empty(), |d| {
+                d.child(self.render_permission(cx))
+            })
             .children(Root::render_dialog_layer(window, cx))
     }
 }
