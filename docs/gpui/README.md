@@ -101,7 +101,7 @@ SVGs cannot load external resources or execute scripts. Bounded embedded raster 
 
 ## Linux baseline
 
-The selected GPUI version supports Linux, but this frontend's Linux build and desktop behavior are not yet verified.
+Linux CI checks the native frontend with Clippy. Linux desktop execution and packaging remain unverified.
 A Vulkan-capable graphics driver and a graphical X11 or Wayland session are required.
 The initial Debian or Ubuntu dependency baseline is:
 
@@ -119,15 +119,18 @@ On Linux, `scripts/build-gpui.sh` builds the executable and copies an existing m
 
 Local macOS verification on 2026-10-03 passed:
 
-- Full Rust workspace: 340 tests passed, with one existing ignored core test.
-- Native GPUI: 105 tests passed, included in the workspace total.
+- Full Rust workspace: 346 tests passed, with one existing ignored core test.
+- Native GPUI: 111 tests passed, included in the workspace total.
 - Existing TypeScript frontend: 345 tests passed across 28 files.
 - Workspace formatting and Clippy with warnings denied.
 - TypeScript type checking, ESLint with no warnings, and the core/Tauri dependency boundary check.
-- Native executable build and local macOS debug bundle creation.
+- Locked offline native executable build and local macOS debug bundle creation.
+- Strict bundle signature verification and property-list validation.
 
-The remaining eight acceptance rows require running-app screenshots or real OS picker/drop interactions.
-The [capture record](screenshots/README.md) explains the desktop access failure that prevented those checks.
+At [commit 6ff1b32](https://github.com/davidchris/thoughttree/commit/6ff1b320b393f149b2658d29d0ebcb1366b2ce12), Linux CI, GPUI macOS CI, frontend checks, and CodeQL passed.
+
+The [capture record](screenshots/README.md) contains ten paired states from the running applications.
+The [matrix](parity.md) verifies 121 of 123 requirements. Real OS file and image drops remain unverified.
 
 Run focused native checks first:
 
