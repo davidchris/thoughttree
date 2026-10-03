@@ -67,6 +67,8 @@ Run the desktop app:
 cargo run --locked -p thoughttree-gpui
 ```
 
+Keep `--locked` for builds. GPUI's archive dependency requires `libc` 0.2.189 on Linux; `Cargo.lock` records this compatible version.
+
 To open a Project at launch, pass its path inside your configured Vault:
 
 ```bash
