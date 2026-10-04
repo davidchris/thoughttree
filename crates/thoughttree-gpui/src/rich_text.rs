@@ -8,13 +8,17 @@ use std::{collections::HashMap, future::Future, ops::Range, sync::Arc};
 use base64::Engine;
 use futures::AsyncReadExt;
 use gpui::{
-    div, image_cache, prelude::*, App, Asset, ClipboardItem, Context, Entity, FocusHandle, Image,
-    ImageCache, ImageCacheError, ImageFormat, Render, RenderImage, Resource, Task, Window,
+    div, image_cache, prelude::*, px, App, Asset, ClipboardItem, Context, Entity, FocusHandle,
+    Image, ImageCache, ImageCacheError, ImageFormat, Pixels, Point, Render, RenderImage, Resource,
+    Task, Window,
 };
-use gpui_component::{text::TextView, ActiveTheme};
+use gpui_component::{
+    text::{TextView, TextViewState},
+    ActiveTheme,
+};
 use markdown::{mdast::Node, ParseOptions};
 
-use crate::math::{DisplayMath, InlineMath};
+use crate::math::{DisplayMath, DisplayRows, InlineMath};
 
 const GENERATED_SCHEME: &str = "thoughttree-render://";
 const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
@@ -24,8 +28,11 @@ const MAX_DIAGRAM_BYTES: usize = 64 * 1024;
 /// A selectable rich answer. Keep this entity alive across parent renders.
 pub struct RichText {
     source: String,
-    markdown: String,
+    view: Entity<TextViewState>,
     images: Entity<RichImageCache>,
+    display_rows: DisplayRows,
+    /// Where the last mouse drag started and ended.
+    drag: Option<(Point<Pixels>, Point<Pixels>)>,
     generation: u64,
     preparing: bool,
     task: Option<Task<()>>,
@@ -39,8 +46,10 @@ impl RichText {
         App::observe_release(cx, &images, |cache, cx| cache.replace(HashMap::new(), cx)).detach();
         let mut view = Self {
             source: String::new(),
-            markdown: String::new(),
+            view: cx.new(|cx| TextViewState::markdown("", cx).selectable(true)),
             images,
+            display_rows: DisplayRows::default(),
+            drag: None,
             generation: 0,
             preparing: false,
             task: None,
@@ -61,9 +70,9 @@ impl RichText {
         self.selected_all = false;
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.preparing = true;
         // Never show a previous node's answer while its replacement is prepared.
-        self.markdown.clear();
+        self.preparing = true;
+        self.drag = None;
         self.task = Some(cx.spawn(async move |view, cx| {
             let prepared = cx
                 .background_spawn(async move { prepare_document(&source) })
@@ -74,7 +83,8 @@ impl RichText {
                 }
                 view.images
                     .update(cx, |cache, cx| cache.replace(prepared.images, cx));
-                view.markdown = prepared.markdown;
+                view.view
+                    .update(cx, |text, cx| text.set_text(&prepared.markdown, cx));
                 view.preparing = false;
                 cx.notify();
             });
@@ -100,12 +110,55 @@ impl RichText {
                 cx.notify();
                 true
             }
-            "c" if self.selected_all => {
-                cx.write_to_clipboard(ClipboardItem::new_string(self.source.clone()));
+            "c" => {
+                let text = if self.selected_all {
+                    self.source.clone()
+                } else {
+                    self.selected_text(cx)
+                };
+                if text.is_empty() {
+                    return false;
+                }
+                cx.write_to_clipboard(ClipboardItem::new_string(text));
                 true
             }
             _ => false,
         }
+    }
+
+    /// TextView leaves a display formula out of the selection when the drag
+    /// starts or ends on it. Restore its TeX at that end of the copied text.
+    /// Remove once https://github.com/longbridge/gpui-kit/issues/3368 is fixed.
+    fn selected_text(&self, cx: &App) -> String {
+        // Match TextView's own Copy, which trims the selection.
+        let text = self.view.read(cx).selected_text().trim().to_owned();
+        let Some((down, up)) = self
+            .drag
+            .filter(|(down, up)| (down.x - up.x).abs() + (down.y - up.y).abs() > px(2.))
+        else {
+            return text;
+        };
+        let (start, end) = if (down.y, down.x) <= (up.y, up.x) {
+            (down, up)
+        } else {
+            (up, down)
+        };
+        let missing = |point| {
+            self.display_rows
+                .source_at(point)
+                .filter(|source| !text.contains(source.as_ref()))
+        };
+        let (first, last) = (missing(start), missing(end));
+        let last = last.filter(|last| Some(last) != first.as_ref());
+        if first.is_none() && last.is_none() {
+            return text;
+        }
+        [first.as_deref(), Some(text.as_str()), last.as_deref()]
+            .into_iter()
+            .flatten()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n")
     }
 }
 
@@ -118,20 +171,29 @@ impl Render for RichText {
                 .child("Preparing rich content…")
                 .into_any_element();
         }
-        let text = TextView::markdown("answer", self.markdown.clone())
+        // Display formulas record their rows again as this frame paints.
+        self.display_rows.clear();
+        let text = TextView::new(&self.view)
             .plugin(InlineMath)
-            .plugin(DisplayMath)
-            .selectable(true);
+            .plugin(DisplayMath(self.display_rows.clone()));
         div()
             .id("rich-answer")
             .debug_selector(|| "rich-answer".into())
             .w_full()
             .track_focus(&self.focus)
             .when(self.selected_all, |d| d.bg(cx.theme().selection))
-            .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
-                this.selected_all = false;
-                this.focus.focus(window, cx);
-                cx.notify();
+            .capture_any_mouse_down(cx.listener(
+                |this, event: &gpui::MouseDownEvent, window, cx| {
+                    this.selected_all = false;
+                    this.drag = Some((event.position, event.position));
+                    this.focus.focus(window, cx);
+                    cx.notify();
+                },
+            ))
+            .capture_any_mouse_up(cx.listener(|this, event: &gpui::MouseUpEvent, _, _| {
+                if let Some((_, end)) = &mut this.drag {
+                    *end = event.position;
+                }
             }))
             .child(image_cache(self.images.clone()).w_full().child(text))
             .into_any_element()

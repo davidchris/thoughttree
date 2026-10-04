@@ -6,7 +6,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use gpui::{div, img, prelude::*, AnyElement, App, Hsla, Image, ImageFormat, Pixels, Rgba, Window};
+use gpui::{
+    div, img, prelude::*, AnyElement, App, Bounds, Hsla, Image, ImageFormat, Pixels, Point, Rgba,
+    SharedString, Window,
+};
 use gpui_component::{
     text::{
         markdown_ast::Node, InlineElement, InlineRenderContext, MarkdownNode, MarkdownParseContext,
@@ -32,7 +35,30 @@ const LAYOUT_INK: &str = "rgb(0,0,0)";
 pub(crate) struct InlineMath;
 
 /// `$$…$$` on its own, centered like KaTeX display math.
-pub(crate) struct DisplayMath;
+pub(crate) struct DisplayMath(pub(crate) DisplayRows);
+
+/// The rows display formulas painted, with the TeX each one copies as.
+#[derive(Clone, Default)]
+pub(crate) struct DisplayRows(Arc<Mutex<Vec<Row>>>);
+
+type Row = (Bounds<Pixels>, SharedString);
+
+impl DisplayRows {
+    fn rows(&self) -> std::sync::MutexGuard<'_, Vec<Row>> {
+        self.0.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub(crate) fn clear(&self) {
+        self.rows().clear();
+    }
+
+    pub(crate) fn source_at(&self, point: Point<Pixels>) -> Option<SharedString> {
+        self.rows()
+            .iter()
+            .find(|(bounds, _)| bounds.contains(&point))
+            .map(|(_, source)| source.clone())
+    }
+}
 
 impl MarkdownPlugin for InlineMath {
     fn name(&self) -> &str {
@@ -112,8 +138,16 @@ impl MarkdownPlugin for DisplayMath {
                 let style = window.text_style();
                 let em = style.font_size.to_pixels(window.rem_size()) * KATEX_SCALE;
                 let (image, width, height) = formula.image(em, style.color);
+                let (rows, source) = (
+                    self.0.clone(),
+                    SharedString::from(node.as_text().to_owned()),
+                );
                 // Wide formulas scroll instead of shrinking, as KaTeX displays do.
                 div()
+                    .on_children_prepainted(move |bounds, _, _| {
+                        rows.rows()
+                            .extend(bounds.first().map(|row| (*row, source.clone())));
+                    })
                     .id(id)
                     .w_full()
                     .my(em * 0.5)
@@ -363,8 +397,40 @@ mod tests {
         let display_center = display.center().x;
         assert!((display_center - answer.center().x).abs() < gpui::px(2.));
 
-        let start = answer.origin + gpui::point(gpui::px(1.), inline.center().y - answer.top());
-        let end = answer.bottom_right() - gpui::point(gpui::px(1.), gpui::px(1.));
+        let tex = "$$\n\\frac{1}{n}\\sum_{i=1}^{n} x_i = \\bar{x}\n$$";
+        let line_start =
+            answer.origin + gpui::point(gpui::px(1.), inline.center().y - answer.top());
+        let copied = drag_copy(
+            cx,
+            line_start,
+            answer.bottom_right() - gpui::point(gpui::px(1.), gpui::px(1.)),
+        );
+        assert!(
+            copied.contains("Inline math: $E=mc^2$. Display math:"),
+            "{copied:?}"
+        );
+        assert!(copied.contains(tex), "{copied:?}");
+        assert!(copied.contains("After."), "{copied:?}");
+        // TextView drops a display block at a selection endpoint; RichText restores it.
+        let copied = drag_copy(cx, line_start, display.center());
+        assert_eq!(
+            copied,
+            format!("Inline math: $E=mc^2$. Display math:\n\n{tex}")
+        );
+        let copied = drag_copy(cx, display.center(), line_start);
+        assert_eq!(
+            copied,
+            format!("Inline math: $E=mc^2$. Display math:\n\n{tex}")
+        );
+        let copied = drag_copy(cx, display.origin, display.bottom_right());
+        assert_eq!(copied, tex);
+    }
+
+    fn drag_copy(
+        cx: &mut gpui::VisualTestContext,
+        start: gpui::Point<gpui::Pixels>,
+        end: gpui::Point<gpui::Pixels>,
+    ) -> String {
         cx.simulate_mouse_down(start, gpui::MouseButton::Left, gpui::Modifiers::default());
         cx.simulate_mouse_move(
             end,
@@ -373,19 +439,9 @@ mod tests {
         );
         cx.simulate_mouse_up(end, gpui::MouseButton::Left, gpui::Modifiers::default());
         cx.simulate_keystrokes("cmd-c");
-        let copied = cx
-            .read_from_clipboard()
+        cx.read_from_clipboard()
             .and_then(|item| item.text())
-            .expect("selected text");
-        assert!(
-            copied.contains("Inline math: $E=mc^2$. Display math:"),
-            "{copied:?}"
-        );
-        assert!(
-            copied.contains("$$\n\\frac{1}{n}\\sum_{i=1}^{n} x_i = \\bar{x}\n$$"),
-            "{copied:?}"
-        );
-        assert!(copied.contains("After."), "{copied:?}");
+            .expect("selected text")
     }
 
     #[gpui::test]
