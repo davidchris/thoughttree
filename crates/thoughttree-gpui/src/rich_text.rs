@@ -1,4 +1,4 @@
-//! Native Markdown with in-process Mermaid and TeX rendering.
+//! Native Markdown with in-process Mermaid rendering and native TeX formulas.
 //!
 //! Generated figures use an entity-owned image cache. No document text becomes
 //! executable HTML, an operating-system file path, or a temporary image file.
@@ -14,11 +14,12 @@ use gpui::{
 use gpui_component::{text::TextView, ActiveTheme};
 use markdown::{mdast::Node, ParseOptions};
 
+use crate::math::{DisplayMath, InlineMath};
+
 const GENERATED_SCHEME: &str = "thoughttree-render://";
 const MAX_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_IMAGE_SIDE: u32 = 8000;
 const MAX_DIAGRAM_BYTES: usize = 64 * 1024;
-const MAX_MATH_BYTES: usize = 8 * 1024;
 
 /// A selectable rich answer. Keep this entity alive across parent renders.
 pub struct RichText {
@@ -109,7 +110,7 @@ impl RichText {
 }
 
 impl Render for RichText {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.preparing {
             return div()
                 .py_2()
@@ -117,7 +118,10 @@ impl Render for RichText {
                 .child("Preparing rich content…")
                 .into_any_element();
         }
-        let text = TextView::markdown("answer", self.markdown.clone(), window, cx).selectable(true);
+        let text = TextView::markdown("answer", self.markdown.clone())
+            .plugin(InlineMath)
+            .plugin(DisplayMath)
+            .selectable(true);
         div()
             .id("rich-answer")
             .debug_selector(|| "rich-answer".into())
@@ -126,7 +130,7 @@ impl Render for RichText {
             .when(self.selected_all, |d| d.bg(cx.theme().selection))
             .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
                 this.selected_all = false;
-                this.focus.focus(window);
+                this.focus.focus(window, cx);
                 cx.notify();
             }))
             .child(image_cache(self.images.clone()).w_full().child(text))
@@ -195,41 +199,13 @@ impl Asset for NativeImageDecoder {
         cx: &mut App,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let renderer = cx.svg_renderer();
+        // GPUI rasterizes SVGs at twice their logical size in straight BGRA.
         async move {
-            let decoded = source
+            source
                 .to_image_data(renderer)
-                .map_err(|error| error.to_string())?;
-            if source.format() == ImageFormat::Svg {
-                correct_svg_pixels(&decoded)
-            } else {
-                Ok(decoded)
-            }
+                .map_err(|error| error.to_string())
         }
     }
-}
-
-// GPUI 0.2.2's SVG decoder retains resvg's premultiplied RGBA. RenderImage,
-// like GPUI's raster decoders, needs straight BGRA: otherwise teal becomes
-// brown and antialiased formula strokes are multiplied by their alpha twice.
-fn correct_svg_pixels(decoded: &RenderImage) -> Result<Arc<RenderImage>, String> {
-    let size = decoded.size(0);
-    let mut bytes = decoded
-        .as_bytes(0)
-        .ok_or_else(|| "SVG renderer returned no image.".to_owned())?
-        .to_vec();
-    for pixel in bytes.as_chunks_mut::<4>().0 {
-        let alpha = u32::from(pixel[3]);
-        for channel in &mut pixel[..3] {
-            *channel = (u32::from(*channel) * 255 + alpha / 2)
-                .checked_div(alpha)
-                .unwrap_or_default()
-                .min(255) as u8;
-        }
-        pixel.swap(0, 2);
-    }
-    let buffer = image::RgbaImage::from_raw(size.width.0 as u32, size.height.0 as u32, bytes)
-        .ok_or_else(|| "SVG renderer returned invalid image dimensions.".to_owned())?;
-    Ok(Arc::new(RenderImage::new([image::Frame::new(buffer)])))
 }
 
 /// A bounded remote image loader. SVGs cannot refer to local or remote files.
@@ -325,18 +301,6 @@ fn prepare_node(node: &Node, document: &mut PreparedDocument, replacements: &mut
             "Mermaid",
             &code.value,
             render_mermaid(&code.value),
-            document,
-        )),
-        Node::Math(math) => Some(rendered_figure(
-            "Math",
-            &math.value,
-            render_math(&math.value),
-            document,
-        )),
-        Node::InlineMath(math) => Some(rendered_figure(
-            "Math",
-            &math.value,
-            render_math(&math.value),
             document,
         )),
         Node::Link(link) if !link_url(&link.url) => Some(escape_text(&node.to_string())),
@@ -465,21 +429,8 @@ fn has_mermaid_header(source: &str) -> bool {
     false
 }
 
-fn render_math(source: &str) -> Result<String, String> {
-    if source.len() > MAX_MATH_BYTES {
-        return Err("The formula exceeds the 8 KiB render limit.".to_owned());
-    }
-    mathjax_svg_rs::render_tex(source, &mathjax_svg_rs::Options::default()).map(|svg| {
-        svg.replace("currentColor", "#e6f4ee").replacen(
-            "<svg ",
-            "<svg color=\"#e6f4ee\" fill=\"#e6f4ee\" font-size=\"18px\" ",
-            1,
-        )
-    })
-}
-
 /// SVG rasterization must not resolve arbitrary image references on the host.
-fn validate_svg(svg: &str) -> Result<(), String> {
+pub(crate) fn validate_svg(svg: &str) -> Result<(), String> {
     let document = roxmltree::Document::parse(svg).map_err(|e| e.to_string())?;
     let root = document.root_element();
     if root.tag_name().name() != "svg" {
@@ -796,16 +747,12 @@ mod tests {
     }
 
     #[gpui::test]
-    fn diagrams_and_math_become_native_image_assets_and_keep_document_structure(
+    fn diagrams_become_crisp_native_images_and_math_stays_tex_for_the_view(
         cx: &mut gpui::TestAppContext,
     ) {
         let source = r#"# Native
 
 Before $x^2$ after. Inline LaTeX \(E=mc^2\).
-
-$$
-\sum_{n=1}^{N} n
-$$
 
 \[
 \int_a^b x \, dx
@@ -824,67 +771,54 @@ flowchart LR
 let text = "$literal$";
 ```"#;
         let result = prepare_document(source);
-        assert_eq!(result.images.len(), 5);
+        assert_eq!(result.images.len(), 1);
         assert!(result
             .markdown
-            .contains("Before ![x^2](thoughttree-render://"));
+            .contains("Before $x^2$ after. Inline LaTeX $E=mc^2$."));
+        assert!(result.markdown.contains("$$\n\\int_a^b x \\, dx\n$$"));
         assert!(result.markdown.contains("| A | B |"));
         assert!(result
             .markdown
             .contains("```rust\nlet text = \"$literal$\";\n```"));
-        for image in result.images.values() {
-            let svg = std::str::from_utf8(&image.bytes).unwrap();
-            validate_svg(svg).unwrap();
-            // Exercise the exact SVG decoder used by native GPUI image elements.
-            let raster = cx.update(|cx| {
-                let decoded = image.to_image_data(cx.svg_renderer()).unwrap();
-                correct_svg_pixels(&decoded).unwrap()
-            });
-            assert!(raster.size(0).width.0 > 10);
-            assert!(raster.size(0).height.0 > 10);
-            assert!(raster
-                .as_bytes(0)
-                .unwrap()
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .any(|pixel| pixel[3] > 0));
-        }
-    }
-
-    #[gpui::test]
-    fn svg_pixels_keep_the_theme_color_and_light_antialiased_math(cx: &mut gpui::TestAppContext) {
-        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"2\" height=\"1\"><path fill=\"#113b43\" d=\"M0 0H1V1H0Z\"/><path fill=\"#e6f4ee\" opacity=\"0.5\" d=\"M1 0H2V1H1Z\"/></svg>";
-        let image = image_from_bytes(svg.as_bytes().to_vec()).unwrap();
-        let raster = cx.update(|cx| {
-            let decoded = image.to_image_data(cx.svg_renderer()).unwrap();
-            correct_svg_pixels(&decoded).unwrap()
-        });
-        let pixels = raster.as_bytes(0).unwrap().as_chunks::<4>().0;
-        assert_eq!(pixels[0], [0x43, 0x3b, 0x11, 255]);
-        // Preserve the bright foreground even where glyph edges are translucent.
-        for (actual, expected) in pixels[1][..3].iter().zip([0xee_u8, 0xf4, 0xe6]) {
-            assert!(actual.abs_diff(expected) <= 1);
-        }
-        assert!(pixels[1][3].abs_diff(128) <= 1);
-
-        let math = image_from_bytes(render_math("E=mc^2").unwrap().into_bytes()).unwrap();
-        let raster = cx.update(|cx| {
-            let decoded = math.to_image_data(cx.svg_renderer()).unwrap();
-            correct_svg_pixels(&decoded).unwrap()
-        });
-        let strokes: Vec<_> = raster
+        let image = result.images.values().next().unwrap();
+        let svg = std::str::from_utf8(&image.bytes).unwrap();
+        validate_svg(svg).unwrap();
+        let logical_width = roxmltree::Document::parse(svg)
+            .unwrap()
+            .root_element()
+            .attribute("width")
+            .and_then(svg_pixels)
+            .unwrap();
+        // Exercise the exact SVG decoder used by native GPUI image elements.
+        let raster = cx
+            .update(|cx| futures::executor::block_on(NativeImageDecoder::load(image.clone(), cx)))
+            .unwrap();
+        // Diagrams rasterize at twice their logical size, so Retina stays sharp.
+        assert_eq!(raster.size(0).width.0, (logical_width * 2.0) as i32);
+        assert!(raster
             .as_bytes(0)
             .unwrap()
             .as_chunks::<4>()
             .0
             .iter()
-            .filter(|pixel| pixel[3] > 100)
-            .collect();
-        assert!(!strokes.is_empty());
-        assert!(strokes
-            .iter()
-            .all(|pixel| pixel[..3].iter().all(|channel| *channel > 220)));
+            .any(|pixel| pixel[3] > 0));
+    }
+
+    #[gpui::test]
+    fn svg_pixels_keep_the_theme_color_and_translucent_edges(cx: &mut gpui::TestAppContext) {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"2\" height=\"1\"><path fill=\"#113b43\" d=\"M0 0H1V1H0Z\"/><path fill=\"#e6f4ee\" opacity=\"0.5\" d=\"M1 0H2V1H1Z\"/></svg>";
+        let image = image_from_bytes(svg.as_bytes().to_vec()).unwrap();
+        let raster = cx
+            .update(|cx| futures::executor::block_on(NativeImageDecoder::load(image, cx)))
+            .unwrap();
+        assert_eq!((raster.size(0).width.0, raster.size(0).height.0), (4, 2));
+        let pixels = raster.as_bytes(0).unwrap().as_chunks::<4>().0;
+        assert_eq!(pixels[0], [0x43, 0x3b, 0x11, 255]);
+        // Straight BGRA keeps the bright foreground where edges are translucent.
+        for (actual, expected) in pixels[3][..3].iter().zip([0xee_u8, 0xf4, 0xe6]) {
+            assert!(actual.abs_diff(expected) <= 1);
+        }
+        assert!(pixels[3][3].abs_diff(128) <= 1);
     }
 
     #[test]
@@ -894,15 +828,6 @@ let text = "$literal$";
         assert!(result.images.is_empty());
         assert!(result.markdown.contains("**Mermaid error:**"));
         assert!(result.markdown.contains("not-a-diagram"));
-    }
-
-    #[test]
-    fn invalid_math_keeps_readable_error_and_exact_source() {
-        let source = r"\frac{1}{";
-        let result = prepare_document(&format!("$$\n{source}\n$$"));
-        assert!(result.images.is_empty(), "{}", render_math(source).unwrap());
-        assert!(result.markdown.contains("**Math error:**"));
-        assert!(result.markdown.contains(source));
     }
 
     #[gpui::test]

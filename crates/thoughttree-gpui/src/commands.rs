@@ -1,5 +1,8 @@
 use gpui::{prelude::*, *};
-use gpui_component::{input::Input, Icon, IconName, WindowExt};
+use gpui_component::{
+    input::{AnyInputState, Input},
+    Icon, IconName, WindowExt,
+};
 use thoughttree_gpui_model::{search_nodes, GraphProvider, HighlightedText, LayoutOptions, Role};
 
 use crate::{
@@ -33,6 +36,7 @@ pub(crate) fn init_menus(cx: &mut App) {
     cx.set_menus(vec![
         Menu {
             name: "ThoughtTree".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("Settings…", ShowSettings),
                 MenuItem::os_submenu("Services", SystemMenuType::Services),
@@ -42,6 +46,7 @@ pub(crate) fn init_menus(cx: &mut App) {
         },
         Menu {
             name: "File".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("New Project…", NewProject),
                 MenuItem::action("Open Project…", OpenProject),
@@ -58,13 +63,14 @@ pub(crate) fn init_menus(cx: &mut App) {
         },
         Menu {
             name: "View".into(),
+            disabled: false,
             items: vec![
                 MenuItem::action("Search Nodes…", SearchNodes),
                 MenuItem::action("Tidy Graph", TidyGraph),
             ],
         },
     ]);
-    cx.on_window_closed(|cx| {
+    cx.on_window_closed(|cx, _| {
         if cx.windows().is_empty() {
             cx.quit();
         }
@@ -81,6 +87,20 @@ fn saved_status(at: f64) -> String {
             )
         })
         .unwrap_or_else(|| "Saved".into())
+}
+
+/// An IME composition must finish inside its input before app shortcuts run.
+fn is_composing(input: &AnyInputState, window: &mut Window, cx: &mut App) -> bool {
+    if let Some(input) = input.as_input() {
+        return input.update(cx, |input, cx| {
+            input.marked_text_range(window, cx).is_some()
+        });
+    }
+    input.as_textarea().is_some_and(|input| {
+        input.update(cx, |input, cx| {
+            input.marked_text_range(window, cx).is_some()
+        })
+    })
 }
 
 impl Workspace {
@@ -130,6 +150,7 @@ impl Workspace {
                     &KeyDownEvent {
                         keystroke: event.keystroke.clone(),
                         is_held: false,
+                        prefer_character_input: false,
                     },
                     window,
                     cx,
@@ -346,10 +367,7 @@ impl Workspace {
         let modifiers = event.keystroke.modifiers;
         let command = modifiers.platform || modifiers.control;
         let composing = window.focused_input(cx).is_some_and(|input| {
-            input.update(cx, |input, cx| {
-                input.focus_handle(cx).is_focused(window)
-                    && input.marked_text_range(window, cx).is_some()
-            })
+            input.focus_handle(cx).is_focused(window) && is_composing(&input, window, cx)
         });
         if composing {
             return;
@@ -360,7 +378,7 @@ impl Workspace {
                 && !matches!(self.modal, Some(Modal::Setup | Modal::ChangingVault))
             {
                 self.modal = None;
-                self.focus.focus(window);
+                self.focus.focus(window, cx);
                 cx.stop_propagation();
                 cx.notify();
             }
@@ -382,7 +400,7 @@ impl Workspace {
         // unmounted. Inspect native focus before suppressing graph shortcuts.
         let input_focused = window
             .focused_input(cx)
-            .is_some_and(|input| input.read(cx).focus_handle(cx).is_focused(window));
+            .is_some_and(|input| input.focus_handle(cx).is_focused(window));
         if self.mention_open() && !command && self.mention_key(&key, window, cx) {
             cx.stop_propagation();
             return;
@@ -511,7 +529,7 @@ impl Workspace {
             self.preview_id = None;
             self.editing = false;
             self.dismiss_mentions();
-            self.focus.focus(window);
+            self.focus.focus(window, cx);
             cx.notify();
         } else {
             self.preview(id, false, window, cx);
@@ -527,7 +545,7 @@ impl Workspace {
             return false;
         }
         self.dismiss_mentions();
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.refresh(cx);
         true
     }
@@ -593,7 +611,9 @@ impl Workspace {
             .palette
             .take()
             .and_then(|palette| palette.previous_focus);
-        previous.unwrap_or_else(|| self.focus.clone()).focus(window);
+        previous
+            .unwrap_or_else(|| self.focus.clone())
+            .focus(window, cx);
         cx.notify();
     }
 
@@ -657,7 +677,7 @@ impl Workspace {
         self.editor.selection.clear();
         self.editor.selection.insert(id.clone());
         self.canvas.update(cx, |canvas, cx| canvas.jump(&id, cx));
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         if preview {
             self.preview(id, false, window, cx);
         }

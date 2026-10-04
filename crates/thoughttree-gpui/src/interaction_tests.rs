@@ -1826,7 +1826,7 @@ fn modal_palette_and_permission_scrolls_do_not_move_or_zoom_the_graph(cx: &mut T
                 this.modal = None;
                 this.palette = None;
                 this.permissions.clear();
-                this.focus.focus(window);
+                this.focus.focus(window, cx);
                 cx.notify();
             })
         });

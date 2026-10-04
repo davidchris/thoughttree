@@ -91,6 +91,8 @@ fn continuous_unsaved_edits_and_streaming_receive_recovery_checkpoints(cx: &mut 
 #[gpui::test]
 fn new_project_writes_empty_file_and_clears_transient_state(cx: &mut TestAppContext) {
     let (directory, workspace, cx, _) = workspace(cx);
+    // Config writes run on a real thread so a held cross-process lock cannot block input.
+    cx.executor().allow_parking();
     edit_question(&workspace, "Snapshot before New", cx);
     workspace.update(cx, |this, _| {
         this.editor.selection.insert("question".into());
@@ -133,6 +135,8 @@ fn recovery_refuses_active_turns_and_snapshot_failure_then_restores_preferences(
     cx: &mut TestAppContext,
 ) {
     let (directory, workspace, cx, _) = workspace(cx);
+    // Config writes run on a real thread so a held cross-process lock cannot block input.
+    cx.executor().allow_parking();
     edit_question(&workspace, "Original saved Project", cx);
     cx.update(|window, cx| {
         workspace.update(cx, |this, cx| this.save(window, cx));
@@ -228,6 +232,8 @@ fn unavailable_vault_errors_clear_after_a_successful_save_without_clearing_other
     cx: &mut TestAppContext,
 ) {
     let (directory, workspace, cx, _) = workspace(cx);
+    // Config writes run on a real thread so a held cross-process lock cannot block input.
+    cx.executor().allow_parking();
     edit_question(&workspace, "Initial saved content", cx);
     cx.update(|window, cx| {
         workspace.update(cx, |this, cx| this.save(window, cx));
@@ -377,6 +383,8 @@ fn queued_saves_keep_the_latest_edit_and_conflict_copy_preserves_both_versions(
     cx: &mut TestAppContext,
 ) {
     let (directory, workspace, cx, _) = workspace(cx);
+    // Config writes run on a real thread so a held cross-process lock cannot block input.
+    cx.executor().allow_parking();
     edit_question(&workspace, "Initial", cx);
     cx.update(|window, cx| {
         workspace.update(cx, |this, cx| this.save(window, cx));
@@ -434,6 +442,8 @@ fn queued_saves_keep_the_latest_edit_and_conflict_copy_preserves_both_versions(
 #[gpui::test]
 fn open_snapshots_dirty_work_and_recovery_restores_an_unsaved_project(cx: &mut TestAppContext) {
     let (directory, workspace, cx, _) = workspace(cx);
+    // Config writes run on a real thread so a held cross-process lock cannot block input.
+    cx.executor().allow_parking();
     edit_question(&workspace, "Recover this unsaved work", cx);
     let destination = directory.path().join("vault/empty.thoughttree");
     fs::write(&destination, Project::default().to_json().unwrap()).unwrap();

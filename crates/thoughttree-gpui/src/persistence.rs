@@ -194,7 +194,7 @@ impl Workspace {
         self.file_preview_errors.clear();
         self.file_preview = None;
         self.saved_at = None;
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.refresh(cx);
         self.refresh_files(cx);
         self.schedule_summaries(cx);

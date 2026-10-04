@@ -6,6 +6,7 @@ mod commands;
 mod dialogs;
 mod files;
 mod http_client;
+mod math;
 mod panel;
 mod persistence;
 mod rich_text;
@@ -31,8 +32,8 @@ fn main() {
         std::process::exit(1);
     });
     let project = std::env::args().nth(1).map(std::path::PathBuf::from);
-    Application::new()
-        .with_assets(gpui_component_assets::Assets)
+    gpui_platform::application()
+        .with_assets(gpui_kit_assets::Assets)
         .with_http_client(std::sync::Arc::new(http_client::NativeHttpClient::new()))
         .run(move |cx| {
             gpui_component::init(cx);

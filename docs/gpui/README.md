@@ -1,6 +1,6 @@
 # Native GPUI desktop frontend
 
-The `thoughttree-gpui` executable uses GPUI 0.2.2 and native GPUI components.
+The `thoughttree-gpui` executable uses GPUI (`gpui-pre` 0.3.7) and gpui-component 0.7 native components.
 It shares the Rust provider, Vault, attachment, and recovery services with the desktop backend.
 The existing Tauri application remains available.
 
@@ -82,17 +82,19 @@ Do not present fixture responses as live provider verification.
 
 Markdown, tables, code, links, and selection use native GPUI text elements.
 Mermaid uses the Rust `mermaid-rs-renderer` parser and SVG renderer.
-TeX uses the bundled MathJax engine in `mathjax-svg-rs`, which produces SVG in process.
-GPUI displays those SVGs through its native image renderer.
+TeX uses RaTeX, a Rust port of KaTeX. It parses and lays out each formula with the Markdown parse, off the UI thread.
+Inline formulas flow inside the text line and align with its baseline. Display formulas are centered and scroll horizontally when they are wider than the panel.
+Formulas are vector outlines sized to the surrounding font and color. GPUI rasterizes them, and Mermaid SVGs, at twice their logical size.
 The interface does not use a browser or WebView.
 
 Copy returns the exact source Markdown. In a focused rich answer, Cmd/Ctrl+A selects the whole answer. Cmd/Ctrl+C copies its source.
 Mouse selections copy selected text through the native text component.
 This replaces the browser's selection-length heuristic with an explicit whole-answer selection.
 Wide code lines wrap inside the panel. Copy preserves their original whitespace and line breaks.
-Formulas and diagrams use native image blocks with their source retained in the answer.
+Selections that include a formula copy its TeX source with its delimiters, for example `$E=mc^2$` or a `$$` block.
+Diagrams use native image blocks with their source retained in the answer.
 
-Malformed or unsupported diagrams and formulas show a rendering error with the exact source.
+Malformed or unsupported diagrams and display formulas show a rendering error with the exact source. An invalid inline formula shows its TeX source as text.
 This fallback keeps source content available. It does not count as successful diagram or math rendering.
 Native tests render 23 Mermaid diagram families, including flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, and charts.
 The Rust renderer has its own parser and layout engine. These representative tests do not establish exhaustive Mermaid syntax compatibility.

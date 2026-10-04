@@ -6,8 +6,8 @@ use std::{
 
 use gpui::{prelude::*, *};
 use gpui_component::{
-    input::{InputEvent, InputState},
-    Root, RopeExt,
+    input::{InputEvent, InputState, TextareaState},
+    RopeExt,
 };
 use thoughttree_desktop::{
     AgentProvider, Desktop, DesktopEvent, Message, MessageFile, MessageImage, ModelInfo,
@@ -38,7 +38,7 @@ pub struct Workspace {
     pub(crate) providers: Vec<ProviderStatus>,
     pub(crate) modal: Option<Modal>,
     pub(crate) dialogs: DialogState,
-    pub(crate) input: Entity<InputState>,
+    pub(crate) input: Entity<TextareaState>,
     pub(crate) focus: FocusHandle,
     pub(crate) canvas: Entity<GraphCanvas>,
     pub(crate) rich: Entity<RichText>,
@@ -99,8 +99,7 @@ impl Workspace {
     ) -> Self {
         let canvas = cx.new(|_| GraphCanvas::new());
         let input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .multi_line(true)
+            TextareaState::new(window, cx)
                 .auto_grow(12, 100)
                 .placeholder("Enter your message… (@ to mention files, paste or drop images)")
         });
@@ -144,7 +143,7 @@ impl Workspace {
             Modal::Setup
         });
         let focus = cx.focus_handle();
-        focus.focus(window);
+        focus.focus(window, cx);
         let mut result = Self {
             desktop,
             editor: Editor::default(),
@@ -294,13 +293,13 @@ impl Workspace {
                 }
                 self.selected_edge = None;
                 self.editor.selection = ids.into_iter().collect();
-                self.focus.focus(window);
+                self.focus.focus(window, cx);
                 self.refresh(cx);
             }
             GraphEvent::SelectEdge(id) => {
                 self.selected_edge = Some(id);
                 self.editor.selection.clear();
-                self.focus.focus(window);
+                self.focus.focus(window, cx);
                 self.refresh(cx);
             }
             GraphEvent::EdgeContext(id) => self.open_modal(Modal::Edge { id }, window, cx),
@@ -916,7 +915,6 @@ impl Render for Workspace {
             .when(!self.permissions.is_empty(), |d| {
                 d.child(self.render_permission(cx))
             })
-            .children(Root::render_dialog_layer(window, cx))
     }
 }
 

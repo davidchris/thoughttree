@@ -206,7 +206,9 @@ impl Workspace {
         let request = self.dialogs.provider_scan;
         let desktop = self.desktop.clone();
         cx.spawn(async move |this, cx| {
-            let providers = smol::unblock(move || desktop.available_providers()).await;
+            let providers = cx
+                .background_spawn(async move { desktop.available_providers() })
+                .await;
             let _ = this.update(cx, |this, cx| {
                 if request == this.dialogs.provider_scan {
                     this.dialogs.providers_loading = false;
@@ -225,7 +227,7 @@ impl Workspace {
         self.notice = None;
         self.palette = None;
         self.dismiss_mentions();
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.dialogs.listing_request = self.dialogs.listing_request.wrapping_add(1);
         self.dialogs.listing_task = None;
         self.dialogs.loading = false;
@@ -533,7 +535,7 @@ impl Workspace {
         self.reset_transient_jobs();
         let generation = self.generation;
         self.modal = Some(Modal::ChangingVault);
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.notice = None;
         cx.spawn_in(window, async move |this, cx| {
             let result = smol::unblock(move || {
@@ -1907,6 +1909,8 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (directory, workspace, cx, _) = workspace(cx);
+        // Config writes run on a real thread so a held cross-process lock cannot block input.
+        cx.executor().allow_parking();
         cx.update(|window, cx| {
             workspace.update(cx, |this, cx| {
                 this.open_modal(Modal::Settings, window, cx);

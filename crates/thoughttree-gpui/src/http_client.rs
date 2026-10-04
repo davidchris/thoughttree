@@ -31,10 +31,6 @@ impl NativeHttpClient {
 }
 
 impl HttpClient for NativeHttpClient {
-    fn type_name(&self) -> &'static str {
-        "ThoughtTree NativeHttpClient"
-    }
-
     fn user_agent(&self) -> Option<&http::HeaderValue> {
         Some(&self.user_agent)
     }

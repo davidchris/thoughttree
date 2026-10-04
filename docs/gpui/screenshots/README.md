@@ -47,7 +47,8 @@ The GPUI graph capture has the original 11 nodes. The Tauri graph capture follow
 | ![Tauri graph](tauri-graph.jpg) | ![Native GPUI graph](gpui-graph.jpg) |
 
 Open `parity-synthesis`. Both previews show the table, Rust code, formulas, diagram, task list, and unchanged citation text.
-The native capture uses the corrected SVG colors. Native formulas use image blocks, and wide code wraps within the panel.
+The native capture uses the corrected SVG colors, and wide code wraps within the panel.
+It predates native formula layout: its formulas are image blocks. Native formulas now flow inline and display math is centered. A new capture is pending.
 
 | Tauri | GPUI |
 | --- | --- |

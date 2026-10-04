@@ -4,7 +4,7 @@ use base64::Engine;
 use gpui::{prelude::*, *};
 use gpui_component::{
     button::{Button, ButtonVariants},
-    input::Input,
+    input::Textarea,
     menu::{DropdownMenu, PopupMenuItem},
     Disableable, Sizable,
 };
@@ -226,7 +226,7 @@ impl Workspace {
         if self.editing {
             content = content
                 .child(self.image_strip(node, cx))
-                .child(Input::new(&self.input).appearance(false).w_full())
+                .child(Textarea::new(&self.input).appearance(false).w_full())
                 .child(
                     Button::new("attach-images")
                         .label("Attach images…")
@@ -278,7 +278,7 @@ impl Workspace {
         self.editing = false;
         self.resizing = false;
         self.dismiss_mentions();
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         cx.notify();
     }
 
@@ -286,7 +286,7 @@ impl Workspace {
         if self.editing {
             self.editing = false;
             self.dismiss_mentions();
-            self.focus.focus(window);
+            self.focus.focus(window, cx);
             cx.notify();
         } else {
             self.preview(id, true, window, cx);
