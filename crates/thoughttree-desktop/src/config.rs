@@ -7,9 +7,10 @@ pub use thoughttree_core::config::Config;
 use thoughttree_core::config::{read, ConfigWriter};
 
 /// The config this session uses. Other frontends may commit to the same file
-/// at any time; their settings arrive on the next write or `reload`. The Vault
-/// is the exception: it changes only through `set_vault` or `adopt_vault`, so
-/// the workspace can run its guarded Vault transition.
+/// at any time. A local write applies only this session's change to the cache;
+/// everything else the other frontend committed arrives through `reload`, the
+/// one place the workspace reconciles it. The Vault arrives only through
+/// `adopt_vault`, so the workspace can run its guarded Vault transition.
 pub(crate) struct ConfigStore {
     directory: PathBuf,
     value: Mutex<Config>,
@@ -28,7 +29,8 @@ impl ConfigStore {
         self.value.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    pub(crate) fn update(&self, change: impl FnOnce(&mut Config)) -> Result<(), String> {
+    /// `change` runs twice: on the file contents and on the cache.
+    pub(crate) fn update(&self, change: impl Fn(&mut Config)) -> Result<(), String> {
         self.update_if(|config| {
             change(config);
             true
@@ -37,18 +39,21 @@ impl ConfigStore {
 
     /// Commits only when `change` returns true. The decision runs under the
     /// file lock, so it is ordered against every other writer.
-    pub(crate) fn update_if(&self, change: impl FnOnce(&mut Config) -> bool) -> Result<(), String> {
-        self.commit(change, false)
+    pub(crate) fn update_if(&self, change: impl Fn(&mut Config) -> bool) -> Result<(), String> {
+        let mut writer = ConfigWriter::lock(&self.directory)?;
+        if !change(&mut writer.config) {
+            return Ok(());
+        }
+        writer.save()?;
+        // Rendering reads the last committed value without waiting for a
+        // different writer, disk access, or fsync. Publish before releasing
+        // the file lock so concurrent updates cannot publish out of order.
+        change(&mut self.value.lock().unwrap_or_else(|e| e.into_inner()));
+        Ok(())
     }
 
     pub(crate) fn set_vault(&self, path: PathBuf) -> Result<(), String> {
-        self.commit(
-            |config| {
-                config.notes_directory = Some(path);
-                true
-            },
-            true,
-        )
+        self.update(|config| config.notes_directory = Some(path.clone()))
     }
 
     /// Adopts the Vault another frontend committed without writing it back,
@@ -60,7 +65,10 @@ impl ConfigStore {
                  Switch back to this window to use it."
                 .into());
         }
-        self.publish(writer.config.clone(), true);
+        self.value
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .notes_directory = Some(expected.to_owned());
         Ok(())
     }
 
@@ -70,32 +78,12 @@ impl ConfigStore {
         // Read under the lock so a concurrent local commit cannot be replaced
         // by an older read.
         let writer = ConfigWriter::lock(&self.directory)?;
-        self.publish(writer.config.clone(), false);
-        Ok(writer.config)
-    }
-
-    fn commit(
-        &self,
-        change: impl FnOnce(&mut Config) -> bool,
-        adopt_vault: bool,
-    ) -> Result<(), String> {
-        let mut writer = ConfigWriter::lock(&self.directory)?;
-        if !change(&mut writer.config) {
-            return Ok(());
-        }
-        writer.save()?;
-        // Rendering reads the last committed value without waiting for a
-        // different writer, disk access, or fsync. Publish before releasing
-        // the file lock so concurrent updates cannot publish out of order.
-        self.publish(writer.config.clone(), adopt_vault);
-        Ok(())
-    }
-
-    fn publish(&self, mut next: Config, adopt_vault: bool) {
         let mut value = self.value.lock().unwrap_or_else(|e| e.into_inner());
-        if !adopt_vault {
-            next.notes_directory = value.notes_directory.take();
-        }
-        *value = next;
+        let vault = value.notes_directory.take();
+        *value = Config {
+            notes_directory: vault,
+            ..writer.config.clone()
+        };
+        Ok(writer.config)
     }
 }

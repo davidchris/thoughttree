@@ -490,14 +490,33 @@ impl Workspace {
         }
     }
 
+    fn close_blocker(&self) -> Option<&'static str> {
+        if self.save_as_jobs > 0 {
+            Some("Wait for Save As to finish before closing")
+        } else if self.pending_edits > 0 {
+            Some("Wait for attachments to finish before closing")
+        } else if self.config_is_busy() {
+            Some("Wait for settings to finish saving before closing")
+        } else {
+            None
+        }
+    }
+
     fn can_replace(&mut self, cx: &mut Context<Self>) -> bool {
         if matches!(self.modal, Some(Modal::ChangingVault)) {
             return false;
         }
-        if self.editor.active_turns.is_empty() {
+        // A replacement would discard the Save As result or the pending edit.
+        let blocker = if !self.editor.active_turns.is_empty() {
+            "Wait for the active Turn before changing Projects"
+        } else if self.save_as_jobs > 0 {
+            "Wait for Save As to finish before changing Projects"
+        } else if self.pending_edits > 0 {
+            "Wait for attachments to finish before changing Projects"
+        } else {
             return true;
-        }
-        self.notice = Some("Wait for the active Turn before changing Projects".into());
+        };
+        self.notice = Some(blocker.into());
         cx.notify();
         false
     }
@@ -593,13 +612,8 @@ impl Workspace {
     /// A native close is deferred until the exact current edits have a durable
     /// snapshot. A new edit during I/O keeps the window open.
     pub(crate) fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.save_as_jobs > 0 {
-            self.notice = Some("Wait for Save As to finish before closing".into());
-            cx.notify();
-            return false;
-        }
-        if self.config_is_busy() {
-            self.notice = Some("Wait for settings to finish saving before closing".into());
+        if let Some(reason) = self.close_blocker() {
+            self.notice = Some(reason.into());
             cx.notify();
             return false;
         }

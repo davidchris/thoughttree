@@ -52,6 +52,33 @@ fn config_round_trip_preserves_tauri_and_unknown_provider_keys() {
 }
 
 #[test]
+fn a_local_write_leaves_external_settings_for_reload_to_reconcile() {
+    let root = tempfile::tempdir().unwrap();
+    let (session, _) = Desktop::open(root.path().to_owned()).unwrap();
+    session.set_default_provider(AgentProvider::Codex).unwrap();
+    let (other, _) = Desktop::open(root.path().to_owned()).unwrap();
+    other
+        .set_default_provider(AgentProvider::ClaudeCode)
+        .unwrap();
+
+    session
+        .set_effort_preference(&AgentProvider::Codex, Some(ReasoningEffort::Low))
+        .unwrap();
+    assert_eq!(session.config().default_provider, AgentProvider::Codex);
+    let (disk, _) = Desktop::open(root.path().to_owned()).unwrap();
+    assert_eq!(disk.config().default_provider, AgentProvider::ClaudeCode);
+    assert_eq!(
+        disk.config().effort_preferences.get(&AgentProvider::Codex),
+        Some(&ReasoningEffort::Low)
+    );
+    assert_eq!(
+        session.reload_config().unwrap().default_provider,
+        AgentProvider::ClaudeCode
+    );
+    assert_eq!(session.config().default_provider, AgentProvider::ClaudeCode);
+}
+
+#[test]
 fn reload_adopts_external_settings_but_the_vault_waits_for_its_transition() {
     let root = tempfile::tempdir().unwrap();
     let (vault, next) = (root.path().join("vault"), root.path().join("next"));

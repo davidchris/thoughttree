@@ -409,6 +409,53 @@ async fn close_waits_for_save_as_and_save_as_keeps_the_project_generation(cx: &m
 }
 
 #[gpui::test]
+async fn project_replacement_waits_for_save_as(cx: &mut TestAppContext) {
+    let (directory, workspace, cx, _) = workspace(cx);
+    cx.executor().allow_parking();
+    let path = directory.path().join("vault/kept.thoughttree");
+    cx.update(|window, cx| {
+        workspace.update(cx, |this, cx| {
+            this.save_to_new_path(path.clone(), cx);
+            this.new_project(window, cx);
+            assert!(this.notice.as_deref().unwrap().contains("Save As"));
+        })
+    });
+    cx.condition(&workspace, |this, _| {
+        this.project_path.is_some() && !this.config_is_busy()
+    })
+    .await;
+    workspace.read_with(cx, |this, _| {
+        assert_eq!(this.title, "kept");
+    });
+}
+
+#[gpui::test]
+fn close_waits_for_attachments_still_being_prepared(cx: &mut TestAppContext) {
+    let (directory, workspace, cx, _) = workspace(cx);
+    let image = directory.path().join("figure.png");
+    image::RgbImage::from_pixel(4, 4, image::Rgb([1, 2, 3]))
+        .save(&image)
+        .unwrap();
+    cx.update(|window, cx| {
+        workspace.update(cx, |this, cx| {
+            this.attach_images_to("question".into(), vec![image.clone()], cx);
+            assert!(!this.request_close(window, cx));
+            assert!(this.notice.as_deref().unwrap().contains("attachments"));
+        })
+    });
+    cx.run_until_parked();
+    workspace.read_with(cx, |this, _| {
+        assert_eq!(this.pending_edits, 0);
+        let thoughttree_gpui_model::NodeKind::User(data) =
+            &this.editor.project.graph.nodes["question"].kind
+        else {
+            panic!("question is a user node");
+        };
+        assert_eq!(data.images.len(), 1);
+    });
+}
+
+#[gpui::test]
 fn queued_saves_keep_the_latest_edit_and_conflict_copy_preserves_both_versions(
     cx: &mut TestAppContext,
 ) {

@@ -141,7 +141,7 @@ impl Desktop {
     pub fn set_default_provider(&self, provider: AgentProvider) -> Result<(), String> {
         self.0
             .config
-            .update(|config| config.default_provider = provider)
+            .update(|config| config.default_provider = provider.clone())
     }
 
     pub fn set_model_preference(
@@ -151,7 +151,7 @@ impl Desktop {
     ) -> Result<(), String> {
         self.0
             .config
-            .update(|config| config.model_preferences.set(provider, model_id))
+            .update(|config| config.model_preferences.set(provider, model_id.clone()))
     }
 
     pub fn set_effort_preference(

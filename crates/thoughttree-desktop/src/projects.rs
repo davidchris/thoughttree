@@ -105,7 +105,7 @@ impl Desktop {
             .into_owned();
         self.0.config.update(|config| {
             config.recent_projects.retain(|existing| existing != &path);
-            config.recent_projects.insert(0, path);
+            config.recent_projects.insert(0, path.clone());
             config.recent_projects.truncate(10);
         })
     }

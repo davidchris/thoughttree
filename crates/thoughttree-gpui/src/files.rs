@@ -87,17 +87,12 @@ impl Workspace {
                 })
                 .collect::<Vec<Result<FileData, String>>>()
         });
-        cx.spawn(async move |this, cx| {
-            let files = job.await;
-            let _ = this.update(cx, |this, cx| {
-                if !request.matches(this) {
-                    return;
-                }
+        self.finish_pending_edit(job, cx, move |this, files, cx| {
+            if request.matches(this) {
                 this.insert_file_nodes(files, position, cx);
                 this.refresh_files(cx);
-            });
-        })
-        .detach();
+            }
+        });
     }
 
     fn insert_file_nodes(
@@ -380,15 +375,11 @@ impl Workspace {
                 })
                 .collect::<Vec<_>>()
         });
-        cx.spawn(async move |this, cx| {
-            let images = job.await;
-            let _ = this.update(cx, |this, cx| {
-                if request.matches(this) {
-                    this.add_images_to_node(id, images, cx);
-                }
-            });
-        })
-        .detach();
+        self.finish_pending_edit(job, cx, move |this, images, cx| {
+            if request.matches(this) {
+                this.add_images_to_node(id, images, cx);
+            }
+        });
     }
 
     pub(crate) fn paste_images(&mut self, cx: &mut Context<Self>) -> bool {
@@ -419,16 +410,31 @@ impl Workspace {
                 .map(|bytes| prepare_image(bytes, Some("Pasted image.png".into())))
                 .collect()
         });
+        self.finish_pending_edit(job, cx, move |this, images, cx| {
+            if request.matches(this) {
+                this.add_images_to_node(id, images, cx);
+            }
+        });
+        true
+    }
+
+    /// Applies `job`'s result as an edit when it finishes. Until then the
+    /// accepted input exists nowhere else, so closing waits for it.
+    fn finish_pending_edit<T: 'static>(
+        &mut self,
+        job: Task<T>,
+        cx: &mut Context<Self>,
+        apply: impl FnOnce(&mut Self, T, &mut Context<Self>) + 'static,
+    ) {
+        self.pending_edits += 1;
         cx.spawn(async move |this, cx| {
-            let images = job.await;
+            let value = job.await;
             let _ = this.update(cx, |this, cx| {
-                if request.matches(this) {
-                    this.add_images_to_node(id, images, cx);
-                }
+                this.pending_edits -= 1;
+                apply(this, value, cx);
             });
         })
         .detach();
-        true
     }
 
     fn add_images_to_node(

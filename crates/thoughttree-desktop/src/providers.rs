@@ -89,7 +89,7 @@ impl Desktop {
                         .provider_path_requests
                         .is_current(&provider, generation);
                     if current {
-                        config.provider_paths.set(&provider, path);
+                        config.provider_paths.set(&provider, path.clone());
                     }
                     current
                 })

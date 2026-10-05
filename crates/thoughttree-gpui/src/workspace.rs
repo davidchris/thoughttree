@@ -70,6 +70,9 @@ pub struct Workspace {
     pub(crate) save_epoch: u64,
     /// Save As writes still running; closing waits for them.
     pub(crate) save_as_jobs: usize,
+    /// Accepted inputs (attachments, dropped files) still being prepared
+    /// before they become edits; closing waits for them.
+    pub(crate) pending_edits: usize,
     pub(crate) save_in_flight: bool,
     pub(crate) save_queued: bool,
     pub(crate) autosave: Option<Task<()>>,
@@ -191,6 +194,7 @@ impl Workspace {
             generation: 0,
             save_epoch: 0,
             save_as_jobs: 0,
+            pending_edits: 0,
             save_in_flight: false,
             save_queued: false,
             autosave: None,
