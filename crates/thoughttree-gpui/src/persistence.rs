@@ -616,10 +616,12 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = job.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                // Release the latch even for a replaced Project, or no later
+                // close request could proceed.
+                this.closing = false;
                 if this.generation != generation {
                     return;
                 }
-                this.closing = false;
                 match result {
                     Ok(_)
                         if this.editor.edit_revision == edit

@@ -194,13 +194,12 @@ impl Workspace {
             None
         };
         let previous_provider = self.provider.clone();
-        let generation = self.generation;
         let desktop = self.desktop.clone();
         self.dialogs.config_writing = true;
         cx.spawn(async move |this, cx| {
             let result = smol::unblock(move || change.save(&desktop)).await;
             let _ = this.update(cx, |this, cx| {
-                this.complete_config_write(result, provider, previous_provider, generation, cx)
+                this.complete_config_write(result, provider, previous_provider, cx)
             });
         })
         .detach();
@@ -212,12 +211,13 @@ impl Workspace {
         result: Result<(), String>,
         provider: Option<AgentProvider>,
         previous: AgentProvider,
-        generation: u64,
         cx: &mut Context<Self>,
     ) {
         self.dialogs.config_writing = false;
         match result {
-            Ok(()) if self.generation == generation && self.provider == previous => {
+            // The default applies unless the user picked another provider
+            // meanwhile. Project replacement does not choose a provider.
+            Ok(()) if self.provider == previous => {
                 if let Some(provider) = provider {
                     self.provider = provider;
                     self.selected_model = None;
@@ -1625,7 +1625,7 @@ mod tests {
     use thoughttree_desktop::{AgentProvider, DesktopEvent, ReasoningEffort};
     use thoughttree_gpui_model::{Position, Project};
 
-    use super::{Modal, Scope};
+    use super::{ConfigWrite, Modal, Scope};
     use crate::interaction_tests::workspace;
 
     fn click(cx: &mut VisualTestContext, selector: &'static str) {
@@ -2189,5 +2189,45 @@ mod tests {
                 AgentProvider::ClaudeCode
             );
         });
+    }
+
+    #[gpui::test]
+    async fn a_delayed_default_provider_write_applies_after_project_replacement(
+        cx: &mut TestAppContext,
+    ) {
+        let (directory, workspace, cx, _) = workspace(cx);
+        cx.executor().allow_parking();
+        let (release, holder) = hold_config_lock(directory.path());
+        workspace.update(cx, |this, cx| {
+            this.provider = AgentProvider::Codex;
+            this.enqueue_config(ConfigWrite::Provider(AgentProvider::ClaudeCode), cx);
+            // Opening another Project while the write waits for the lock.
+            this.generation = this.generation.wrapping_add(1);
+        });
+        let _ = release.send(());
+        holder.join().unwrap();
+        cx.condition(&workspace, |this, _| !this.config_is_busy())
+            .await;
+        workspace.read_with(cx, |this, _| {
+            assert_eq!(this.provider, AgentProvider::ClaudeCode);
+        });
+    }
+
+    #[gpui::test]
+    fn close_stays_possible_after_a_project_change_during_the_close_snapshot(
+        cx: &mut TestAppContext,
+    ) {
+        let (_directory, workspace, cx, _) = workspace(cx);
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.editor.touch();
+                assert!(!this.request_close(window, cx));
+                assert!(this.closing);
+                // A Save As or Project replacement finishing meanwhile.
+                this.generation = this.generation.wrapping_add(1);
+            })
+        });
+        cx.run_until_parked();
+        workspace.read_with(cx, |this, _| assert!(!this.closing));
     }
 }
