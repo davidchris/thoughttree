@@ -475,7 +475,9 @@ pub(crate) async fn get_notes_directory(app: AppHandle) -> Result<Option<String>
 
 #[tauri::command]
 pub(crate) async fn set_notes_directory(app: AppHandle, path: String) -> Result<(), String> {
-    config::set_notes_directory(&app, &path)?;
+    config::update(&app, |config| {
+        config.notes_directory = Some(PathBuf::from(&path))
+    })?;
     tracing::info!("Notes directory set to: {}", path);
     Ok(())
 }
@@ -628,21 +630,21 @@ pub(crate) async fn get_recent_projects(app: AppHandle) -> Result<Vec<String>, S
 
 #[tauri::command]
 pub(crate) async fn add_recent_project(app: AppHandle, path: String) -> Result<(), String> {
-    let mut recent_projects = config::get_recent_projects(&app)?;
-
-    recent_projects.retain(|project_path| project_path != &path);
-    recent_projects.insert(0, path);
-    recent_projects.truncate(10);
-
-    config::set_recent_projects(&app, &recent_projects)
+    config::update(&app, |config| {
+        let recent_projects = &mut config.recent_projects;
+        recent_projects.retain(|project_path| project_path != &path);
+        recent_projects.insert(0, path);
+        recent_projects.truncate(10);
+    })
 }
 
 #[tauri::command]
 pub(crate) async fn remove_recent_project(app: AppHandle, path: String) -> Result<(), String> {
-    let mut recent_projects = config::get_recent_projects(&app)?;
-    recent_projects.retain(|project_path| project_path != &path);
-
-    config::set_recent_projects(&app, &recent_projects)
+    config::update(&app, |config| {
+        config
+            .recent_projects
+            .retain(|project_path| project_path != &path)
+    })
 }
 
 #[tauri::command]

@@ -160,7 +160,7 @@ pub(crate) async fn set_default_provider(
     app: AppHandle,
     provider: AgentProvider,
 ) -> Result<(), String> {
-    config::set_default_provider(&app, &provider)?;
+    config::update(&app, |config| config.default_provider = provider.clone())?;
     tracing::info!("Default provider set to: {:?}", provider);
     Ok(())
 }
@@ -176,9 +176,9 @@ pub(crate) async fn set_model_preference(
     provider: AgentProvider,
     model_id: Option<String>,
 ) -> Result<(), String> {
-    let mut preferences = config::get_model_preferences(&app)?;
-    preferences.set(&provider, model_id.clone());
-    config::set_model_preferences(&app, &preferences)?;
+    config::update(&app, |config| {
+        config.model_preferences.set(&provider, model_id.clone())
+    })?;
 
     tracing::info!("Model preference for {:?} set to: {:?}", provider, model_id);
     Ok(())
@@ -195,9 +195,9 @@ pub(crate) async fn set_effort_preference(
     provider: AgentProvider,
     effort: Option<ReasoningEffort>,
 ) -> Result<(), String> {
-    let mut preferences = config::get_effort_preferences(&app)?;
-    preferences.set(&provider, effort);
-    config::set_effort_preferences(&app, &preferences)?;
+    config::update(&app, |config| {
+        config.effort_preferences.set(&provider, effort)
+    })?;
 
     tracing::info!("Effort preference for {:?} set to: {:?}", provider, effort);
     Ok(())
@@ -218,9 +218,9 @@ pub(crate) async fn set_provider_path(
         validate_executable(&PathBuf::from(candidate_path), &provider).await?;
     }
 
-    let mut paths = config::get_provider_paths(&app)?;
-    paths.set(&provider, path.clone());
-    config::set_provider_paths(&app, &paths)?;
+    config::update(&app, |config| {
+        config.provider_paths.set(&provider, path.clone())
+    })?;
 
     tracing::info!("Provider path for {:?} set to: {:?}", provider, path);
     Ok(())
