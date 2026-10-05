@@ -65,6 +65,11 @@ pub struct Workspace {
     pub(crate) mention_state: crate::files::MentionState,
     updating_input: bool,
     pub(crate) generation: u64,
+    /// Which file the open graph saves to. Save As changes it without
+    /// replacing the graph, so only callbacks saving the former path go stale.
+    pub(crate) save_epoch: u64,
+    /// Save As writes still running; closing waits for them.
+    pub(crate) save_as_jobs: usize,
     pub(crate) save_in_flight: bool,
     pub(crate) save_queued: bool,
     pub(crate) autosave: Option<Task<()>>,
@@ -184,6 +189,8 @@ impl Workspace {
             mention_state: Default::default(),
             updating_input: false,
             generation: 0,
+            save_epoch: 0,
+            save_as_jobs: 0,
             save_in_flight: false,
             save_queued: false,
             autosave: None,

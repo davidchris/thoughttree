@@ -379,6 +379,33 @@ async fn cancelled_pickers_preserve_unsaved_work_and_save_as_adopts_only_written
 }
 
 #[gpui::test]
+async fn close_waits_for_save_as_and_save_as_keeps_the_project_generation(cx: &mut TestAppContext) {
+    let (directory, workspace, cx, _) = workspace(cx);
+    cx.executor().allow_parking();
+    let path = directory.path().join("vault/named.thoughttree");
+    let generation = workspace.read_with(cx, |this, _| this.generation);
+    cx.update(|window, cx| {
+        workspace.update(cx, |this, cx| {
+            this.save_to_new_path(path.clone(), cx);
+            assert!(!this.request_close(window, cx));
+        })
+    });
+    cx.condition(&workspace, |this, _| {
+        this.project_path.is_some() && !this.config_is_busy()
+    })
+    .await;
+    workspace.read_with(cx, |this, _| {
+        // Same graph under a new name: attachment, file and summary jobs
+        // scoped to this Project generation stay valid.
+        assert_eq!(this.generation, generation);
+        assert!(!this.editor.is_dirty());
+    });
+    cx.update(|window, cx| {
+        workspace.update(cx, |this, cx| assert!(this.request_close(window, cx)))
+    });
+}
+
+#[gpui::test]
 fn queued_saves_keep_the_latest_edit_and_conflict_copy_preserves_both_versions(
     cx: &mut TestAppContext,
 ) {

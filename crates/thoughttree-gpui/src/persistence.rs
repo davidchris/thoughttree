@@ -75,6 +75,7 @@ impl Workspace {
         let base = self.revision.clone();
         let edit = self.editor.edit_revision;
         let generation = self.generation;
+        let epoch = self.save_epoch;
         self.save_in_flight = true;
         self.save_queued = false;
         let job = cx.background_executor().spawn(async move {
@@ -94,7 +95,7 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             let result = job.await;
             let _ = this.update(cx, |this, cx| {
-                this.complete_save(generation, edit, result, cx)
+                this.complete_save(generation, epoch, edit, result, cx)
             });
         })
         .detach();
@@ -103,13 +104,14 @@ impl Workspace {
     fn complete_save(
         &mut self,
         generation: u64,
+        epoch: u64,
         edit: u64,
         result: Result<Option<Revision>, VaultError>,
         cx: &mut Context<Self>,
     ) {
-        // Check before changing *any* bookkeeping. A new Project may
+        // Check before changing *any* bookkeeping. A new Project or path may
         // already have its own save in flight with the same field.
-        if generation != self.generation {
+        if generation != self.generation || epoch != self.save_epoch {
             return;
         }
         self.save_in_flight = false;
@@ -315,7 +317,7 @@ impl Workspace {
         .detach();
     }
 
-    fn save_to_new_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(crate) fn save_to_new_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if self.project_path.as_ref() == Some(&path) {
             self.save_current(cx);
             return;
@@ -330,6 +332,7 @@ impl Workspace {
         };
         let ticket = self.transition();
         let desktop = self.desktop.clone();
+        self.save_as_jobs += 1;
         let job = cx.background_executor().spawn(async move {
             let path = desktop.project_path(&path).map_err(|e| e.to_string())?;
             let revision = desktop.save_project(&path, &data, None).map_err(|error| match error {
@@ -351,15 +354,17 @@ impl Workspace {
         result: Result<(PathBuf, Revision), String>,
         cx: &mut Context<Self>,
     ) {
+        self.save_as_jobs -= 1;
         if !ticket.matches_project(self.generation, self.transition_request) {
+            cx.notify();
             return;
         }
         match result {
             Ok((path, revision)) => {
                 self.clear_persistence_error();
-                // The graph is the same even if streaming advanced.
-                // Invalidate callbacks still saving its former path.
-                self.generation = self.generation.wrapping_add(1);
+                // The graph is the same even if streaming advanced. Only
+                // callbacks still saving its former path are stale.
+                self.save_epoch = self.save_epoch.wrapping_add(1);
                 self.save_in_flight = false;
                 self.save_queued = false;
                 self.autosave = None;
@@ -583,6 +588,11 @@ impl Workspace {
     /// A native close is deferred until the exact current edits have a durable
     /// snapshot. A new edit during I/O keeps the window open.
     pub(crate) fn request_close(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.save_as_jobs > 0 {
+            self.notice = Some("Wait for Save As to finish before closing".into());
+            cx.notify();
+            return false;
+        }
         if self.config_is_busy() {
             self.notice = Some("Wait for settings to finish saving before closing".into());
             cx.notify();
