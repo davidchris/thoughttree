@@ -114,7 +114,8 @@ impl Desktop {
     }
 
     /// Adopts settings another frontend committed and returns the file
-    /// contents. A different Vault is adopted only by `set_notes_directory`.
+    /// contents. A different Vault is adopted only by `set_notes_directory`
+    /// or `adopt_notes_directory`.
     pub fn reload_config(&self) -> Result<Config, String> {
         self.0.config.reload()
     }
@@ -124,6 +125,11 @@ impl Desktop {
             return Err("Select an existing absolute path for the notes directory".into());
         }
         self.0.config.set_vault(path)
+    }
+
+    /// Adopts the Vault another frontend committed, if it is still current.
+    pub fn adopt_notes_directory(&self, path: &std::path::Path) -> Result<(), String> {
+        self.0.config.adopt_vault(path)
     }
 
     pub fn notes_directory(&self) -> Result<PathBuf, String> {

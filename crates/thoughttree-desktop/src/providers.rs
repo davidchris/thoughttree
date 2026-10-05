@@ -27,6 +27,7 @@ impl Desktop {
     pub fn discover_models(&self, provider: AgentProvider) -> Result<(), String> {
         let root = self.notes_directory()?;
         let paths = self.config().provider_paths;
+        let provider_path = paths.get(&provider).cloned();
         let sink = self.0.sink.clone();
         self.runtime().spawn(async move {
             let active_provider = provider.clone();
@@ -34,7 +35,11 @@ impl Desktop {
                 run_model_discovery_session(root, active_provider, paths).await
             })
             .await;
-            sink.emit(DesktopEvent::ModelsDiscovered { provider, result });
+            sink.emit(DesktopEvent::ModelsDiscovered {
+                provider,
+                provider_path,
+                result,
+            });
         });
         Ok(())
     }

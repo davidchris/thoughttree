@@ -19,6 +19,8 @@ pub enum DesktopEvent {
     },
     ModelsDiscovered {
         provider: AgentProvider,
+        /// The configured executable the discovery ran against.
+        provider_path: Option<String>,
         result: Result<Vec<ModelInfo>, String>,
     },
     ProviderPathValidated {

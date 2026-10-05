@@ -1,12 +1,15 @@
-use std::{path::PathBuf, sync::Mutex};
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 pub use thoughttree_core::config::Config;
 use thoughttree_core::config::{read, ConfigWriter};
 
 /// The config this session uses. Other frontends may commit to the same file
 /// at any time; their settings arrive on the next write or `reload`. The Vault
-/// is the exception: it changes only through `set_vault`, so the workspace can
-/// run its guarded Vault transition.
+/// is the exception: it changes only through `set_vault` or `adopt_vault`, so
+/// the workspace can run its guarded Vault transition.
 pub(crate) struct ConfigStore {
     directory: PathBuf,
     value: Mutex<Config>,
@@ -46,6 +49,19 @@ impl ConfigStore {
             },
             true,
         )
+    }
+
+    /// Adopts the Vault another frontend committed without writing it back,
+    /// so a newer choice made meanwhile is never reverted.
+    pub(crate) fn adopt_vault(&self, expected: &Path) -> Result<(), String> {
+        let writer = ConfigWriter::lock(&self.directory)?;
+        if writer.config.notes_directory.as_deref() != Some(expected) {
+            return Err("The notes directory changed again in the other app. \
+                 Switch back to this window to use it."
+                .into());
+        }
+        self.publish(writer.config.clone(), true);
+        Ok(())
     }
 
     /// Adopts what other frontends committed and returns the file contents,

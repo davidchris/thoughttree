@@ -59,6 +59,15 @@ pub(crate) struct DialogState {
     providers_loading: bool,
 }
 
+/// Who committed the Vault a transition moves to.
+#[derive(Clone, Copy)]
+enum VaultSource {
+    /// This window chose it and writes it.
+    Chosen,
+    /// The other frontend already committed it.
+    Adopted,
+}
+
 pub(crate) enum ConfigWrite {
     Provider(AgentProvider),
     Model(AgentProvider, Option<String>),
@@ -259,9 +268,6 @@ impl Workspace {
                 return;
             }
         };
-        if config.provider_paths != previous.provider_paths {
-            self.refresh_provider_statuses(cx);
-        }
         if config.default_provider != previous.default_provider
             && self.provider == previous.default_provider
         {
@@ -269,12 +275,20 @@ impl Workspace {
             self.selected_model = None;
             self.ensure_models(cx);
         }
+        if config.provider_paths != previous.provider_paths {
+            self.refresh_provider_statuses(cx);
+            for provider in AgentProvider::ALL {
+                if config.provider_paths.get(provider) != previous.provider_paths.get(provider) {
+                    self.invalidate_models(provider, cx);
+                }
+            }
+        }
         // A Turn or save in progress keeps the current Vault; the next
         // activation retries.
         let idle = self.editor.active_turns.is_empty() && !self.save_in_flight;
         match config.notes_directory {
             Some(vault) if idle && previous.notes_directory.as_ref() != Some(&vault) => {
-                self.change_notes_directory(vault, window, cx)
+                self.transition_vault(vault, VaultSource::Adopted, window, cx)
             }
             _ => cx.notify(),
         }
@@ -582,6 +596,16 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.transition_vault(path, VaultSource::Chosen, window, cx);
+    }
+
+    fn transition_vault(
+        &mut self,
+        path: PathBuf,
+        source: VaultSource,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if matches!(self.modal, Some(Modal::ChangingVault)) {
             return;
         }
@@ -627,7 +651,10 @@ impl Workspace {
                         .snapshot_project(source_path.as_deref(), &content)
                         .map_err(|e| e.to_string())?;
                 }
-                desktop.set_notes_directory(path)?;
+                match source {
+                    VaultSource::Chosen => desktop.set_notes_directory(path)?,
+                    VaultSource::Adopted => desktop.adopt_notes_directory(&path)?,
+                }
                 Ok(source_path
                     .as_ref()
                     .is_some_and(|path| desktop.project_path(path).is_err()))

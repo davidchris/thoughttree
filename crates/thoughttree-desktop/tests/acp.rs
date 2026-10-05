@@ -100,10 +100,19 @@ fn request(node: &str, text: &str) -> PromptRequest {
 fn subprocess_discovers_models_and_validates_the_explicit_executable() {
     let h = Harness::new();
     h.desktop.discover_models(AgentProvider::Codex).unwrap();
-    let DesktopEvent::ModelsDiscovered { provider, result } = h.next() else {
+    let DesktopEvent::ModelsDiscovered {
+        provider,
+        provider_path,
+        result,
+    } = h.next()
+    else {
         panic!("Expected models")
     };
     assert_eq!(provider, AgentProvider::Codex);
+    assert_eq!(
+        provider_path,
+        Some(fixture().to_string_lossy().into_owned())
+    );
     let ids: Vec<_> = result
         .unwrap()
         .into_iter()

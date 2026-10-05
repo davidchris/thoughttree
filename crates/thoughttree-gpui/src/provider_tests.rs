@@ -29,6 +29,16 @@ fn next_event(events: &async_channel::Receiver<DesktopEvent>) -> DesktopEvent {
     })
 }
 
+fn configured_path(
+    workspace: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    provider: AgentProvider,
+) -> Option<String> {
+    workspace.read_with(cx, |this, _| {
+        this.desktop.config().provider_paths.get(&provider).cloned()
+    })
+}
+
 fn replace_desktop(
     directory: &Path,
     workspace: &Entity<Workspace>,
@@ -196,6 +206,7 @@ fn model_catalog_loading_is_per_provider_and_completed_empty_catalogs_are_cached
     events
         .try_send(DesktopEvent::ModelsDiscovered {
             provider: AgentProvider::Codex,
+            provider_path: configured_path(&workspace, cx, AgentProvider::Codex),
             result: Ok(vec![ModelInfo {
                 model_id: "fixture-model".into(),
                 display_name: "Deterministic fixture".into(),
@@ -228,6 +239,7 @@ fn model_catalog_loading_is_per_provider_and_completed_empty_catalogs_are_cached
     events
         .try_send(DesktopEvent::ModelsDiscovered {
             provider: AgentProvider::ClaudeCode,
+            provider_path: configured_path(&workspace, cx, AgentProvider::ClaudeCode),
             result: Ok(vec![]),
         })
         .unwrap();
@@ -334,4 +346,47 @@ fn native_generation_resolves_explicit_project_and_global_preferences_independen
         );
         assert!(!text.contains("retired-model-must-not-be-used"));
     }
+}
+
+#[gpui::test]
+fn a_changed_executable_discards_its_old_and_in_flight_model_lists(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, events) = workspace(cx);
+    let fixture = configured_path(&workspace, cx, AgentProvider::Codex);
+    let models = |id: &str| {
+        Ok(vec![ModelInfo {
+            model_id: id.into(),
+            display_name: id.into(),
+        }])
+    };
+    workspace.update(cx, |this, cx| {
+        this.provider = AgentProvider::Codex;
+        this.models.insert("codex".into(), models("old").unwrap());
+        this.invalidate_models(&AgentProvider::Codex, cx);
+        assert!(!this.models.contains_key("codex"));
+        assert!(this.discovering_models.contains("codex"));
+    });
+    // A discovery that ran against another executable cannot repopulate.
+    events
+        .try_send(DesktopEvent::ModelsDiscovered {
+            provider: AgentProvider::Codex,
+            provider_path: Some("/replaced/codex-acp".into()),
+            result: models("stale"),
+        })
+        .unwrap();
+    cx.run_until_parked();
+    workspace.read_with(cx, |this, _| {
+        assert!(!this.models.contains_key("codex"));
+        assert!(this.discovering_models.contains("codex"));
+    });
+    events
+        .try_send(DesktopEvent::ModelsDiscovered {
+            provider: AgentProvider::Codex,
+            provider_path: fixture,
+            result: models("current"),
+        })
+        .unwrap();
+    cx.run_until_parked();
+    workspace.read_with(cx, |this, _| {
+        assert_eq!(this.models["codex"][0].model_id, "current");
+    });
 }

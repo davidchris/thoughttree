@@ -688,18 +688,17 @@ impl Workspace {
             DesktopEvent::SummaryFinished { node_id, result } => {
                 self.complete_summary(node_id, result, cx)
             }
-            DesktopEvent::ModelsDiscovered { provider, result } => {
-                self.discovering_models.remove(provider.descriptor().id);
-                match result {
-                    Ok(models) => {
-                        self.models.insert(provider.descriptor().id.into(), models);
-                    }
-                    Err(error) => self.notice = Some(error),
-                }
-            }
+            DesktopEvent::ModelsDiscovered {
+                provider,
+                provider_path,
+                result,
+            } => self.models_discovered(provider, provider_path, result, cx),
             DesktopEvent::ProviderPathValidated { provider, result } => {
                 self.provider_path_saved(&provider);
                 self.refresh_provider_statuses(cx);
+                if result.is_ok() {
+                    self.invalidate_models(&provider, cx);
+                }
                 self.notice = Some(match result {
                     Ok(path) => format!("Provider found: {path}"),
                     Err(error) => error,
@@ -739,6 +738,38 @@ impl Workspace {
         if changed {
             self.checkpoint_stream(cx);
             self.refresh(cx);
+        }
+    }
+
+    fn models_discovered(
+        &mut self,
+        provider: AgentProvider,
+        provider_path: Option<String>,
+        result: Result<Vec<ModelInfo>, String>,
+        cx: &mut Context<Self>,
+    ) {
+        let id = provider.descriptor().id;
+        self.discovering_models.remove(id);
+        // Discovery that ran against a replaced executable is stale.
+        if self.desktop.config().provider_paths.get(&provider) != provider_path.as_ref() {
+            if provider == self.provider {
+                self.ensure_models(cx);
+            }
+            return;
+        }
+        match result {
+            Ok(models) => {
+                self.models.insert(id.into(), models);
+            }
+            Err(error) => self.notice = Some(error),
+        }
+    }
+
+    /// A different executable may offer different models.
+    pub(crate) fn invalidate_models(&mut self, provider: &AgentProvider, cx: &mut Context<Self>) {
+        self.models.remove(provider.descriptor().id);
+        if *provider == self.provider {
+            self.ensure_models(cx);
         }
     }
 

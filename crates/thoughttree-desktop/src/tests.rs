@@ -79,8 +79,18 @@ fn reload_adopts_external_settings_but_the_vault_waits_for_its_transition() {
         session.reload_config().unwrap().notes_directory.as_deref(),
         Some(next.as_path())
     );
-    session.set_notes_directory(next.clone()).unwrap();
-    assert_eq!(session.notes_directory().unwrap(), next);
+    // Adoption never writes: a Vault chosen meanwhile is not reverted.
+    let newest = root.path().join("newest");
+    fs::create_dir(&newest).unwrap();
+    other.set_notes_directory(newest.clone()).unwrap();
+    assert!(session.adopt_notes_directory(&next).is_err());
+    assert_eq!(session.notes_directory().unwrap(), vault);
+    session.adopt_notes_directory(&newest).unwrap();
+    assert_eq!(session.notes_directory().unwrap(), newest);
+    assert_eq!(
+        session.reload_config().unwrap().notes_directory.as_deref(),
+        Some(newest.as_path())
+    );
 }
 
 #[test]
