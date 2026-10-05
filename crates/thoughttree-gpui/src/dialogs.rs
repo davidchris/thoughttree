@@ -1,11 +1,13 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
 };
 
 use gpui::{prelude::*, *};
 use gpui_component::input::{Input, InputEvent, InputState};
-use thoughttree_desktop::{AgentProvider, Desktop, ProjectEntry, ReasoningEffort, RecoveryEntry};
+use thoughttree_desktop::{
+    AgentProvider, Config, Desktop, ProjectEntry, ReasoningEffort, RecoveryEntry,
+};
 use thoughttree_gpui_model::{self as model, Position, Role};
 
 use crate::{theme, workspace::Workspace};
@@ -50,6 +52,8 @@ pub(crate) struct DialogState {
     loading: bool,
     config_queue: VecDeque<ConfigWrite>,
     config_writing: bool,
+    /// Providers whose executable path is still being validated and saved.
+    provider_paths_saving: BTreeSet<&'static str>,
     config_error: Option<String>,
     provider_scan: u64,
     providers_loading: bool,
@@ -126,6 +130,7 @@ impl DialogState {
             loading: false,
             config_queue: VecDeque::new(),
             config_writing: false,
+            provider_paths_saving: BTreeSet::new(),
             config_error: None,
             provider_scan: 0,
             providers_loading: false,
@@ -135,7 +140,24 @@ impl DialogState {
 
 impl Workspace {
     pub(crate) fn config_is_busy(&self) -> bool {
-        self.dialogs.config_writing || !self.dialogs.config_queue.is_empty()
+        self.dialogs.config_writing
+            || !self.dialogs.config_queue.is_empty()
+            || !self.dialogs.provider_paths_saving.is_empty()
+    }
+
+    /// Desktop reports only the latest request per provider, so one pending
+    /// entry per provider tracks every in-flight save.
+    fn save_provider_path(&mut self, provider: AgentProvider, path: Option<String>) {
+        self.dialogs
+            .provider_paths_saving
+            .insert(provider.descriptor().id);
+        self.desktop.set_provider_path(provider, path);
+    }
+
+    pub(crate) fn provider_path_saved(&mut self, provider: &AgentProvider) {
+        self.dialogs
+            .provider_paths_saving
+            .remove(provider.descriptor().id);
     }
 
     pub(crate) fn provider_scan_is_busy(&self) -> bool {
@@ -198,6 +220,64 @@ impl Workspace {
         }
         self.write_next_config(cx);
         cx.notify();
+    }
+
+    /// Adopts settings the other frontend committed while this window was in
+    /// the background. A different Vault takes the guarded Vault transition.
+    pub(crate) fn reload_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.config_is_busy() || matches!(self.modal, Some(Modal::ChangingVault)) {
+            return;
+        }
+        let previous = self.desktop.config();
+        let desktop = self.desktop.clone();
+        let generation = self.generation;
+        cx.spawn_in(window, async move |this, cx| {
+            let result = cx
+                .background_spawn(async move { desktop.reload_config() })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.generation == generation {
+                    this.adopt_config(previous, result, window, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn adopt_config(
+        &mut self,
+        previous: Config,
+        result: Result<Config, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let config = match result {
+            Ok(config) => config,
+            Err(error) => {
+                self.notice = Some(error);
+                cx.notify();
+                return;
+            }
+        };
+        if config.provider_paths != previous.provider_paths {
+            self.refresh_provider_statuses(cx);
+        }
+        if config.default_provider != previous.default_provider
+            && self.provider == previous.default_provider
+        {
+            self.provider = config.default_provider;
+            self.selected_model = None;
+            self.ensure_models(cx);
+        }
+        // A Turn or save in progress keeps the current Vault; the next
+        // activation retries.
+        let idle = self.editor.active_turns.is_empty() && !self.save_in_flight;
+        match config.notes_directory {
+            Some(vault) if idle && previous.notes_directory.as_ref() != Some(&vault) => {
+                self.change_notes_directory(vault, window, cx)
+            }
+            _ => cx.notify(),
+        }
     }
 
     pub(crate) fn refresh_provider_statuses(&mut self, cx: &mut Context<Self>) {
@@ -1100,7 +1180,7 @@ impl Workspace {
                                 .read(cx)
                                 .value()
                                 .to_string();
-                            this.desktop.set_provider_path(
+                            this.save_provider_path(
                                 validate.clone(),
                                 (!path.trim().is_empty()).then(|| path.trim().to_owned()),
                             );
@@ -1123,7 +1203,7 @@ impl Workspace {
                         move |this, window, cx| {
                             this.dialogs.path_inputs[reset.descriptor().id]
                                 .update(cx, |input, cx| input.set_value("", window, cx));
-                            this.desktop.set_provider_path(reset.clone(), None);
+                            this.save_provider_path(reset.clone(), None);
                             cx.notify();
                         },
                     )),
@@ -1151,7 +1231,7 @@ impl Workspace {
                         let path = path.to_string_lossy().to_string();
                         this.dialogs.path_inputs[provider.descriptor().id]
                             .update(cx, |input, cx| input.set_value(path.clone(), window, cx));
-                        this.desktop.set_provider_path(provider, Some(path));
+                        this.save_provider_path(provider, Some(path));
                         this.notice = Some("Checking executable…".into());
                         cx.notify();
                     }
@@ -1515,7 +1595,7 @@ fn comparison(title: &'static str, content: &str) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use gpui::{point, px, Modifiers, TestAppContext, VisualTestContext};
-    use thoughttree_desktop::{AgentProvider, ReasoningEffort};
+    use thoughttree_desktop::{AgentProvider, DesktopEvent, ReasoningEffort};
     use thoughttree_gpui_model::{Position, Project};
 
     use super::{Modal, Scope};
@@ -2033,5 +2113,54 @@ mod tests {
             desktop.load_project(&path).unwrap().content,
             external.to_json().unwrap()
         );
+    }
+
+    #[gpui::test]
+    fn close_waits_for_an_in_flight_provider_path_save(cx: &mut TestAppContext) {
+        let (_directory, workspace, cx, events) = workspace(cx);
+        workspace.update(cx, |this, _| {
+            this.save_provider_path(AgentProvider::Codex, None);
+        });
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                assert!(this.config_is_busy());
+                assert!(!this.request_close(window, cx));
+            })
+        });
+        events
+            .try_send(DesktopEvent::ProviderPathValidated {
+                provider: AgentProvider::Codex,
+                result: Ok("Using automatic discovery".into()),
+            })
+            .unwrap();
+        cx.run_until_parked();
+        workspace.read_with(cx, |this, _| assert!(!this.config_is_busy()));
+    }
+
+    #[gpui::test]
+    async fn activation_adopts_settings_and_vault_from_the_other_frontend(cx: &mut TestAppContext) {
+        let (directory, workspace, cx, _) = workspace(cx);
+        cx.executor().allow_parking();
+        let next = directory.path().join("next");
+        std::fs::create_dir(&next).unwrap();
+        let (other, _) =
+            thoughttree_desktop::Desktop::open(directory.path().join("config")).unwrap();
+        other
+            .set_default_provider(AgentProvider::ClaudeCode)
+            .unwrap();
+        other.set_notes_directory(next.clone()).unwrap();
+        cx.update(|window, cx| workspace.update(cx, |this, cx| this.reload_config(window, cx)));
+        cx.condition(&workspace, |this, _| {
+            this.desktop.notes_directory().ok().as_ref() == Some(&next)
+                && !matches!(this.modal, Some(Modal::ChangingVault))
+        })
+        .await;
+        workspace.read_with(cx, |this, _| {
+            assert_eq!(this.provider, AgentProvider::ClaudeCode);
+            assert_eq!(
+                this.desktop.config().default_provider,
+                AgentProvider::ClaudeCode
+            );
+        });
     }
 }

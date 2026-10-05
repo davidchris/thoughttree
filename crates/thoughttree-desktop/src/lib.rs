@@ -113,13 +113,17 @@ impl Desktop {
         self.0.config.get()
     }
 
+    /// Adopts settings another frontend committed and returns the file
+    /// contents. A different Vault is adopted only by `set_notes_directory`.
+    pub fn reload_config(&self) -> Result<Config, String> {
+        self.0.config.reload()
+    }
+
     pub fn set_notes_directory(&self, path: PathBuf) -> Result<(), String> {
         if !path.is_absolute() || !path.is_dir() {
             return Err("Select an existing absolute path for the notes directory".into());
         }
-        self.0
-            .config
-            .update(|config| config.notes_directory = Some(path))
+        self.0.config.set_vault(path)
     }
 
     pub fn notes_directory(&self) -> Result<PathBuf, String> {

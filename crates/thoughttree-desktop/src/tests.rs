@@ -52,6 +52,38 @@ fn config_round_trip_preserves_tauri_and_unknown_provider_keys() {
 }
 
 #[test]
+fn reload_adopts_external_settings_but_the_vault_waits_for_its_transition() {
+    let root = tempfile::tempdir().unwrap();
+    let (vault, next) = (root.path().join("vault"), root.path().join("next"));
+    fs::create_dir(&vault).unwrap();
+    fs::create_dir(&next).unwrap();
+    let config = root.path().join("config");
+    let (session, _) = Desktop::open(config.clone()).unwrap();
+    session.set_notes_directory(vault.clone()).unwrap();
+    let (other, _) = Desktop::open(config).unwrap();
+    other
+        .set_default_provider(AgentProvider::ClaudeCode)
+        .unwrap();
+    other.set_notes_directory(next.clone()).unwrap();
+
+    let disk = session.reload_config().unwrap();
+    assert_eq!(disk.notes_directory.as_deref(), Some(next.as_path()));
+    assert_eq!(session.config().default_provider, AgentProvider::ClaudeCode);
+    assert_eq!(session.notes_directory().unwrap(), vault);
+    // An unrelated local write keeps the other frontend's Vault on disk.
+    session
+        .set_effort_preference(&AgentProvider::Codex, Some(ReasoningEffort::Low))
+        .unwrap();
+    assert_eq!(session.notes_directory().unwrap(), vault);
+    assert_eq!(
+        session.reload_config().unwrap().notes_directory.as_deref(),
+        Some(next.as_path())
+    );
+    session.set_notes_directory(next.clone()).unwrap();
+    assert_eq!(session.notes_directory().unwrap(), next);
+}
+
+#[test]
 fn independent_windows_do_not_overwrite_unrelated_native_preferences() {
     let root = tempfile::tempdir().unwrap();
     let (first, _) = Desktop::open(root.path().to_owned()).unwrap();

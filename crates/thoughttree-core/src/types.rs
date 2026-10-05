@@ -115,7 +115,7 @@ pub struct ModelInfo {
 /// on-disk shape stays a plain JSON object; `Option<T>` values keep legacy
 /// `null` entries, and String keys keep unknown provider keys from newer
 /// app versions.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PerProvider<T>(std::collections::BTreeMap<String, Option<T>>);
 

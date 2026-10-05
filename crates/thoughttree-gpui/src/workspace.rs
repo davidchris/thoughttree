@@ -121,6 +121,7 @@ impl Workspace {
         let file_activation = cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.refresh_files(cx);
+                this.reload_config(window, cx);
             }
         });
         let shortcuts = Self::register_shortcuts(window, cx);
@@ -696,7 +697,8 @@ impl Workspace {
                     Err(error) => self.notice = Some(error),
                 }
             }
-            DesktopEvent::ProviderPathValidated { result, .. } => {
+            DesktopEvent::ProviderPathValidated { provider, result } => {
+                self.provider_path_saved(&provider);
                 self.refresh_provider_statuses(cx);
                 self.notice = Some(match result {
                     Ok(path) => format!("Provider found: {path}"),
