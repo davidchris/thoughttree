@@ -1125,7 +1125,9 @@ let text = "$literal$";
             stream.write_all(&bytes).unwrap();
         });
         let image = cx.update(|cx| {
-            cx.set_http_client(Arc::new(crate::http_client::NativeHttpClient::new()));
+            cx.set_http_client(Arc::new(
+                crate::http_client::NativeHttpClient::for_loopback_fixture(),
+            ));
             futures::executor::block_on(RemoteImage::load(url.clone(), cx)).unwrap()
         });
         server.join().unwrap();

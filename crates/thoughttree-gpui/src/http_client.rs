@@ -1,10 +1,22 @@
 //! Bounded HTTP transport for GPUI image resources.
+//!
+//! Answer text is untrusted, so image requests may only reach public
+//! addresses. Every hop, including redirects and IP literals, resolves through
+//! [`PublicResolver`].
 
-use std::{io::Read, time::Duration};
+use std::{
+    io::{self, Read},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    time::Duration,
+};
 
 use anyhow::{bail, Result};
 use futures::{future::BoxFuture, AsyncReadExt};
 use gpui::http_client::{http, AsyncBody, HttpClient, RedirectPolicy};
+use ureq::unversioned::{
+    resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver},
+    transport::{DefaultConnector, NextTimeout},
+};
 
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REDIRECTS: u32 = 5;
@@ -16,7 +28,13 @@ pub struct NativeHttpClient {
 
 impl NativeHttpClient {
     pub fn new() -> Self {
+        Self::with_resolver(PublicResolver::default())
+    }
+
+    fn with_resolver(resolver: PublicResolver) -> Self {
         let settings = ureq::Agent::config_builder()
+            // A proxy would resolve the destination out of the resolver's view.
+            .proxy(None)
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(30)))
             .timeout_connect(Some(Duration::from_secs(10)))
@@ -24,7 +42,7 @@ impl NativeHttpClient {
             .user_agent("ThoughtTree/0.5 (GPUI)")
             .build();
         Self {
-            agent: ureq::Agent::new_with_config(settings),
+            agent: ureq::Agent::with_parts(settings, DefaultConnector::new(), resolver),
             user_agent: http::HeaderValue::from_static("ThoughtTree/0.5 (GPUI)"),
         }
     }
@@ -77,6 +95,96 @@ impl HttpClient for NativeHttpClient {
     }
 }
 
+/// Resolves like the system resolver, then drops every non-public address.
+#[derive(Debug, Default)]
+struct PublicResolver {
+    inner: DefaultResolver,
+    #[cfg(test)]
+    allow_loopback: bool,
+}
+
+impl PublicResolver {
+    fn allows(&self, ip: IpAddr) -> bool {
+        #[cfg(test)]
+        if self.allow_loopback && ip.is_loopback() {
+            return true;
+        }
+        is_public(ip)
+    }
+}
+
+impl Resolver for PublicResolver {
+    fn resolve(
+        &self,
+        uri: &http::Uri,
+        config: &ureq::config::Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        let mut allowed = self.empty();
+        for address in self.inner.resolve(uri, config, timeout)?.iter() {
+            if self.allows(address.ip()) {
+                allowed.push(*address);
+            }
+        }
+        if allowed.is_empty() {
+            return Err(ureq::Error::Io(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Images from local or private network addresses are blocked.",
+            )));
+        }
+        Ok(allowed)
+    }
+}
+
+fn is_public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_public_v4(ip),
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped().or_else(|| embedded_v4(ip)) {
+            Some(ip) => is_public_v4(ip),
+            None => is_public_v6(ip),
+        },
+    }
+}
+
+fn is_public_v4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    !(ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || ip.is_multicast()
+        || a == 0
+        || a >= 240
+        || (a == 100 && (64..128).contains(&b))
+        || (a == 192 && b == 0 && c == 0)
+        || (a == 198 && (18..20).contains(&b)))
+}
+
+fn is_public_v6(ip: Ipv6Addr) -> bool {
+    let [first, second, ..] = ip.segments();
+    !(ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_multicast()
+        || ip.is_unique_local()
+        || ip.is_unicast_link_local()
+        || (first == 0x2001 && second == 0x0db8))
+}
+
+// NAT64 (64:ff9b::/96) and 6to4 (2002::/16) addresses reach an IPv4 host.
+fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let segments = ip.segments();
+    let octets = ip.octets();
+    match segments {
+        [0x64, 0xff9b, 0, 0, 0, 0, ..] => Some(Ipv4Addr::new(
+            octets[12], octets[13], octets[14], octets[15],
+        )),
+        [0x2002, ..] => Some(Ipv4Addr::new(octets[2], octets[3], octets[4], octets[5])),
+        _ => None,
+    }
+}
+
 fn read_bounded(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.take((limit + 1) as u64).read_to_end(&mut bytes)?;
@@ -84,6 +192,18 @@ fn read_bounded(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
         bail!("The HTTP response exceeds the {} byte limit.", limit);
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+impl NativeHttpClient {
+    /// Tests serve fixtures from 127.0.0.1; every other private range stays
+    /// blocked.
+    pub(crate) fn for_loopback_fixture() -> Self {
+        Self::with_resolver(PublicResolver {
+            allow_loopback: true,
+            ..Default::default()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -121,6 +241,49 @@ mod tests {
     }
 
     #[test]
+    fn only_public_addresses_are_reachable() {
+        for blocked in [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:127.0.0.1",
+            "64:ff9b::a9fe:a9fe",
+            "2002:c0a8:0101::",
+        ] {
+            assert!(!is_public(blocked.parse().unwrap()), "{blocked}");
+        }
+        for public in ["93.184.215.14", "2606:4700::6810:85e5"] {
+            assert!(is_public(public.parse().unwrap()), "{public}");
+        }
+    }
+
+    #[test]
+    fn loopback_image_requests_never_connect() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let error = smol::block_on(NativeHttpClient::new().get(
+            &format!("http://{address}/pixel.png"),
+            ().into(),
+            true,
+        ))
+        .err()
+        .unwrap();
+        assert!(
+            format!("{error:#}").contains("private network"),
+            "{error:#}"
+        );
+        assert!(listener.accept().is_err());
+    }
+
+    #[test]
     fn http_preserves_error_status_and_body_for_the_image_loader() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
@@ -145,7 +308,7 @@ mod tests {
                 .unwrap();
         });
         let (status, body) = smol::block_on(async {
-            let mut response = NativeHttpClient::new()
+            let mut response = NativeHttpClient::for_loopback_fixture()
                 .get(&format!("http://{address}/missing"), ().into(), false)
                 .await
                 .unwrap();

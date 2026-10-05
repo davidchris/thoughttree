@@ -98,7 +98,7 @@ Malformed or unsupported diagrams and display formulas show a rendering error wi
 This fallback keeps source content available. It does not count as successful diagram or math rendering.
 Native tests render 23 Mermaid diagram families, including flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, and charts.
 The Rust renderer has its own parser and layout engine. These representative tests do not establish exhaustive Mermaid syntax compatibility.
-Remote images use a bounded HTTP client. Answer text cannot load arbitrary local files.
+Remote images use a bounded HTTP client that reaches only public addresses, including after redirects. Answer text cannot load arbitrary local files or contact local and private-network services.
 SVGs cannot load external resources or execute scripts. Bounded embedded raster images support C4 person symbols.
 
 ## Linux baseline
