@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
@@ -377,6 +377,21 @@ impl OpenedVaultFile {
         Ok(bytes)
     }
 
+    /// The checks of [`Self::read_image_for_prompt`] without reading the
+    /// pixels: the byte limit from stat and the longest side from the header.
+    pub fn check_image_header(&self) -> Result<(), VaultFileError> {
+        if self.stat.size > limits::IMAGE_MAX_BYTES {
+            return Err(VaultFileError::TooLarge {
+                limit: limits::IMAGE_MAX_BYTES,
+            });
+        }
+        let mut handle = &self.file;
+        handle.seek(SeekFrom::Start(0))?;
+        let dimensions =
+            imagesize::reader_size(BufReader::new(handle)).map_err(image_header_error)?;
+        check_image_side(dimensions)
+    }
+
     /// Up to `limit` bytes from the start of the file, never an error for a
     /// longer file.
     fn read_prefix(&self, limit: u64) -> Result<Vec<u8>, VaultFileError> {
@@ -401,13 +416,25 @@ pub fn validate_image_bytes(bytes: &[u8]) -> Result<(), VaultFileError> {
             limit: limits::IMAGE_MAX_BYTES,
         });
     }
-    let dimensions = imagesize::blob_size(bytes).map_err(image_header_error)?;
+    check_image_side(imagesize::blob_size(bytes).map_err(image_header_error)?)
+}
+
+fn check_image_side(dimensions: imagesize::ImageSize) -> Result<(), VaultFileError> {
     if dimensions.width > limits::IMAGE_MAX_SIDE as usize
         || dimensions.height > limits::IMAGE_MAX_SIDE as usize
     {
         return Err(VaultFileError::TooLarge {
             limit: u64::from(limits::IMAGE_MAX_SIDE),
         });
+    }
+    Ok(())
+}
+
+/// The checks a prompt applies to a Vault file, without building a preview.
+pub fn check_vault_file(root: &Path, relative: &str) -> Result<(), VaultFileError> {
+    let opened = OpenedVaultFile::open(root, relative)?;
+    if is_raster_image(&opened.mime_type()?) {
+        opened.check_image_header()?;
     }
     Ok(())
 }
@@ -730,9 +757,9 @@ mod tests {
 
     use super::limits::{attachment_limits, IMAGE_MAX_BYTES, IMAGE_MAX_SIDE, PREVIEW_TEXT_BYTES};
     use super::{
-        extension_mime, is_raster_image, mime_for_file, relativize_vault_path, resolve_vault_file,
-        stat_vault_file, validate_image_bytes, FilePreview, OpenedVaultFile, PreviewCache,
-        VaultFileError,
+        check_vault_file, extension_mime, is_raster_image, mime_for_file, relativize_vault_path,
+        resolve_vault_file, stat_vault_file, validate_image_bytes, FilePreview, OpenedVaultFile,
+        PreviewCache, VaultFileError,
     };
 
     fn text_excerpt(preview: &FilePreview) -> (&str, bool) {
@@ -1114,6 +1141,38 @@ mod tests {
             matches!(err, VaultFileError::TooLarge { limit } if limit == IMAGE_MAX_BYTES),
             "{err:?}"
         );
+    }
+
+    #[test]
+    fn file_check_applies_prompt_image_limits_without_a_preview() {
+        let vault = tempdir().unwrap();
+        write_png(&vault.path().join("ok.png"), 4, 3);
+        write_png(&vault.path().join("tall.png"), 1, IMAGE_MAX_SIDE + 1);
+        write_png(&vault.path().join("big.png"), 2, 2);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(vault.path().join("big.png"))
+            .unwrap()
+            .set_len(IMAGE_MAX_BYTES + 1)
+            .unwrap();
+        fs::write(vault.path().join("notes.md"), "text").unwrap();
+
+        check_vault_file(vault.path(), "ok.png").unwrap();
+        check_vault_file(vault.path(), "notes.md").unwrap();
+        for (name, limit) in [
+            ("tall.png", u64::from(IMAGE_MAX_SIDE)),
+            ("big.png", IMAGE_MAX_BYTES),
+        ] {
+            let err = check_vault_file(vault.path(), name).unwrap_err();
+            assert!(
+                matches!(err, VaultFileError::TooLarge { limit: l } if l == limit),
+                "{name}: {err:?}"
+            );
+        }
+        assert!(matches!(
+            check_vault_file(vault.path(), "gone.png"),
+            Err(VaultFileError::NotFound)
+        ));
     }
 
     #[test]

@@ -139,6 +139,11 @@ impl Workspace {
         cx.notify();
     }
 
+    /// A save or Save As is writing the open graph.
+    pub(crate) fn saving(&self) -> bool {
+        self.save_in_flight || self.save_as_jobs > 0
+    }
+
     fn set_persistence_error(&mut self, error: String) {
         self.notice = Some(error.clone());
         self.persistence_error = Some(error);

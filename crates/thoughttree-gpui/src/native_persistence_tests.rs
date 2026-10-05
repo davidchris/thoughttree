@@ -388,6 +388,9 @@ async fn close_waits_for_save_as_and_save_as_keeps_the_project_generation(cx: &m
         workspace.update(cx, |this, cx| {
             this.save_to_new_path(path.clone(), cx);
             assert!(!this.request_close(window, cx));
+            // Switching Vaults now would discard the accepted Save As.
+            this.change_notes_directory(directory.path().to_owned(), window, cx);
+            assert!(!matches!(this.modal, Some(Modal::ChangingVault)));
         })
     });
     cx.condition(&workspace, |this, _| {

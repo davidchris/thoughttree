@@ -13,7 +13,7 @@ use thoughttree_core::vault::files::{
     is_raster_image,
     limits::{IMAGE_MAX_BYTES, IMAGE_MAX_SIDE},
 };
-use thoughttree_desktop::VaultFileStatus;
+use thoughttree_desktop::{Desktop, VaultFileStatus};
 use thoughttree_gpui_model::{now_ms, FileData, GraphNode, ImageAttachment, NodeKind, Position};
 
 use crate::workspace::Workspace;
@@ -149,23 +149,18 @@ impl Workspace {
             )
         });
         let desktop = self.desktop.clone();
+        let focused = self.preview_id.clone();
         let job = cx.background_executor().spawn(async move {
+            let mut previews = 0;
             files
                 .into_iter()
                 .map(|(id, path)| {
-                    let status = desktop.stat_vault_file(&path);
-                    let preview = match &status {
-                        Ok(VaultFileStatus::Ok { .. }) => {
-                            Some(desktop.read_vault_file_preview(&path))
-                        }
-                        _ => None,
-                    };
-                    FileInspection {
-                        id,
-                        path,
-                        status,
-                        preview,
-                    }
+                    // Decode at most the previews the canvas keeps, plus the
+                    // open file. Every other file still gets the prompt checks.
+                    let full = previews < FILE_PREVIEW_LIMIT || focused.as_ref() == Some(&id);
+                    let inspection = inspect_file(&desktop, id, path, full);
+                    previews += usize::from(matches!(inspection.preview, Some(Ok(_))));
+                    inspection
                 })
                 .collect::<Vec<_>>()
         });
@@ -207,7 +202,7 @@ impl Workspace {
                 Some(Err(error)) => {
                     self.file_preview_errors.insert(id, error);
                 }
-                Some(Ok(preview)) if self.file_previews.len() < 64 => {
+                Some(Ok(preview)) if self.file_previews.len() < FILE_PREVIEW_LIMIT => {
                     self.file_previews.insert(id, preview);
                 }
                 _ => {}
@@ -562,6 +557,24 @@ fn mention_query(text: &str, cursor: usize) -> Option<String> {
         return None;
     }
     Some(query.trim_start_matches('/').to_owned())
+}
+
+/// Thumbnails kept for the canvas, matching the core preview cache.
+const FILE_PREVIEW_LIMIT: usize = 64;
+
+fn inspect_file(desktop: &Desktop, id: String, path: String, full: bool) -> FileInspection {
+    let status = desktop.stat_vault_file(&path);
+    let preview = match &status {
+        Ok(VaultFileStatus::Ok { .. }) if full => Some(desktop.read_vault_file_preview(&path)),
+        Ok(VaultFileStatus::Ok { .. }) => desktop.check_vault_file(&path).err().map(Err),
+        _ => None,
+    };
+    FileInspection {
+        id,
+        path,
+        status,
+        preview,
+    }
 }
 
 struct FileInspection {

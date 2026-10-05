@@ -52,20 +52,28 @@ impl Desktop {
         self.0
             .preview_cache
             .preview(&self.notes_directory()?, relative)
-            .map_err(|error| match error {
-                VaultFileError::TooLarge { limit } => {
-                    format!("too_large: file exceeds the attachment limit ({limit})")
-                }
-                VaultFileError::NotFound => "missing: file not found".to_string(),
-                VaultFileError::InvalidPath => {
-                    "invalid: path is outside the notes directory".to_string()
-                }
-                VaultFileError::NotAFile => "invalid: path is not a regular file".to_string(),
-                VaultFileError::Io(error) => format!("io: {error}"),
-            })
+            .map_err(preview_error)
+    }
+
+    /// The checks a prompt applies, without decoding or retaining a preview.
+    /// Errors read like those of [`Self::read_vault_file_preview`].
+    pub fn check_vault_file(&self, relative: &str) -> Result<(), String> {
+        files::check_vault_file(&self.notes_directory()?, relative).map_err(preview_error)
     }
 
     pub fn attachment_limits(&self) -> AttachmentLimits {
         files::limits::attachment_limits()
+    }
+}
+
+fn preview_error(error: VaultFileError) -> String {
+    match error {
+        VaultFileError::TooLarge { limit } => {
+            format!("too_large: file exceeds the attachment limit ({limit})")
+        }
+        VaultFileError::NotFound => "missing: file not found".to_string(),
+        VaultFileError::InvalidPath => "invalid: path is outside the notes directory".to_string(),
+        VaultFileError::NotAFile => "invalid: path is not a regular file".to_string(),
+        VaultFileError::Io(error) => format!("io: {error}"),
     }
 }

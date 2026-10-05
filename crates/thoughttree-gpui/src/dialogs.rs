@@ -285,7 +285,7 @@ impl Workspace {
         }
         // A Turn or save in progress keeps the current Vault; the next
         // activation retries.
-        let idle = self.editor.active_turns.is_empty() && !self.save_in_flight;
+        let idle = self.editor.active_turns.is_empty() && !self.saving();
         match config.notes_directory {
             Some(vault) if idle && previous.notes_directory.as_ref() != Some(&vault) => {
                 self.transition_vault(vault, VaultSource::Adopted, window, cx)
@@ -609,7 +609,7 @@ impl Workspace {
         if matches!(self.modal, Some(Modal::ChangingVault)) {
             return;
         }
-        if !self.editor.active_turns.is_empty() || self.save_in_flight || self.config_is_busy() {
+        if !self.editor.active_turns.is_empty() || self.saving() || self.config_is_busy() {
             self.notice =
                 Some("Wait for the active Turn or save before changing the notes directory".into());
             cx.notify();
