@@ -23,9 +23,13 @@ pub enum DesktopEvent {
         provider_path: Option<String>,
         result: Result<Vec<ModelInfo>, String>,
     },
+    /// Every `set_provider_path` request reports exactly once. Only the
+    /// latest request for the provider is `current`; an older one may still
+    /// have been saved if it committed before the newer request began.
     ProviderPathValidated {
         provider: AgentProvider,
         result: Result<String, String>,
+        current: bool,
     },
     PermissionResponseFailed {
         request_id: String,

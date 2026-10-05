@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     path::PathBuf,
 };
 
@@ -52,8 +52,8 @@ pub(crate) struct DialogState {
     loading: bool,
     config_queue: VecDeque<ConfigWrite>,
     config_writing: bool,
-    /// Providers whose executable path is still being validated and saved.
-    provider_paths_saving: BTreeSet<&'static str>,
+    /// Executable-path requests per provider still being validated and saved.
+    provider_paths_saving: BTreeMap<&'static str, usize>,
     /// One config reload runs at a time; activations meanwhile queue one more.
     config_reloading: bool,
     config_reload_again: bool,
@@ -142,7 +142,7 @@ impl DialogState {
             loading: false,
             config_queue: VecDeque::new(),
             config_writing: false,
-            provider_paths_saving: BTreeSet::new(),
+            provider_paths_saving: BTreeMap::new(),
             config_reloading: false,
             config_reload_again: false,
             config_error: None,
@@ -159,19 +159,43 @@ impl Workspace {
             || !self.dialogs.provider_paths_saving.is_empty()
     }
 
-    /// Desktop reports only the latest request per provider, so one pending
-    /// entry per provider tracks every in-flight save.
+    /// Desktop reports every request exactly once, so a count per provider
+    /// tracks every in-flight save.
     fn save_provider_path(&mut self, provider: AgentProvider, path: Option<String>) {
-        self.dialogs
+        *self
+            .dialogs
             .provider_paths_saving
-            .insert(provider.descriptor().id);
+            .entry(provider.descriptor().id)
+            .or_default() += 1;
         self.desktop.set_provider_path(provider, path);
     }
 
-    pub(crate) fn provider_path_saved(&mut self, provider: &AgentProvider) {
-        self.dialogs
-            .provider_paths_saving
-            .remove(provider.descriptor().id);
+    pub(crate) fn provider_path_saved(&mut self, provider: &AgentProvider, cx: &mut Context<Self>) {
+        let id = provider.descriptor().id;
+        if let Some(pending) = self.dialogs.provider_paths_saving.get_mut(id) {
+            *pending -= 1;
+            if *pending == 0 {
+                self.dialogs.provider_paths_saving.remove(id);
+            }
+        }
+        self.resume_queued_reload(cx);
+    }
+
+    /// Runs a reload that activation queued while settings were busy.
+    fn resume_queued_reload(&mut self, cx: &mut Context<Self>) {
+        if self.config_is_busy()
+            || self.dialogs.config_reloading
+            || !std::mem::take(&mut self.dialogs.config_reload_again)
+        {
+            return;
+        }
+        let window = self.window_handle;
+        let this = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| {
+                let _ = this.update(cx, |this, cx| this.reload_config(window, cx));
+            });
+        });
     }
 
     pub(crate) fn provider_scan_is_busy(&self) -> bool {
@@ -233,13 +257,19 @@ impl Workspace {
             Err(error) => self.dialogs.config_error = Some(error),
         }
         self.write_next_config(cx);
+        self.resume_queued_reload(cx);
         cx.notify();
     }
 
     /// Adopts settings the other frontend committed while this window was in
     /// the background. A different Vault takes the guarded Vault transition.
     pub(crate) fn reload_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.config_is_busy() || matches!(self.modal, Some(Modal::ChangingVault)) {
+        if matches!(self.modal, Some(Modal::ChangingVault)) {
+            return;
+        }
+        // A busy write would race the reload; run it once settings are idle.
+        if self.config_is_busy() {
+            self.dialogs.config_reload_again = true;
             return;
         }
         // Overlapping reloads would compare against the same `previous`, so a
@@ -304,7 +334,7 @@ impl Workspace {
         // A replaced Project, Turn or save in progress keeps the current
         // Vault; the session Vault stays pinned, so the next activation
         // retries.
-        let idle = same_project && self.editor.active_turns.is_empty() && !self.saving();
+        let idle = same_project && !self.vault_change_blocked();
         match config.notes_directory {
             Some(vault) if idle && previous.notes_directory.as_ref() != Some(&vault) => {
                 self.transition_vault(vault, VaultSource::Adopted, window, cx)
@@ -628,7 +658,7 @@ impl Workspace {
         if matches!(self.modal, Some(Modal::ChangingVault)) {
             return;
         }
-        if !self.editor.active_turns.is_empty() || self.saving() || self.config_is_busy() {
+        if self.vault_change_blocked() || self.config_is_busy() {
             self.notice =
                 Some("Wait for the active Turn or save before changing the notes directory".into());
             cx.notify();
@@ -2179,6 +2209,7 @@ mod tests {
             .try_send(DesktopEvent::ProviderPathValidated {
                 provider: AgentProvider::Codex,
                 result: Ok("Using automatic discovery".into()),
+                current: true,
             })
             .unwrap();
         cx.run_until_parked();
@@ -2332,6 +2363,63 @@ mod tests {
         workspace.read_with(cx, |this, _| {
             assert!(this.notice.is_some());
             assert_eq!(this.file_status.len(), 1);
+        });
+    }
+
+    #[gpui::test]
+    async fn a_reload_skipped_while_settings_are_busy_runs_when_they_finish(
+        cx: &mut TestAppContext,
+    ) {
+        let (directory, workspace, cx, events) = workspace(cx);
+        cx.executor().allow_parking();
+        let (other, _) =
+            thoughttree_desktop::Desktop::open(directory.path().join("config")).unwrap();
+        other
+            .set_default_provider(AgentProvider::ClaudeCode)
+            .unwrap();
+        let validated = |current| DesktopEvent::ProviderPathValidated {
+            provider: AgentProvider::Codex,
+            result: Ok("Using automatic discovery".into()),
+            current,
+        };
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.provider = AgentProvider::Codex;
+                this.save_provider_path(AgentProvider::Codex, None);
+                this.save_provider_path(AgentProvider::Codex, None);
+                this.reload_config(window, cx);
+                assert!(this.dialogs.config_reload_again && !this.dialogs.config_reloading);
+            })
+        });
+        // Every request reports once; the first, superseded one keeps
+        // settings busy until the latest reports too.
+        events.try_send(validated(false)).unwrap();
+        cx.run_until_parked();
+        workspace.read_with(cx, |this, _| {
+            assert!(this.config_is_busy());
+            assert_eq!(this.provider, AgentProvider::Codex);
+        });
+        events.try_send(validated(true)).unwrap();
+        cx.condition(&workspace, |this, _| {
+            this.provider == AgentProvider::ClaudeCode
+        })
+        .await;
+    }
+
+    #[gpui::test]
+    fn a_vault_change_waits_for_attachments_being_prepared(cx: &mut TestAppContext) {
+        let (directory, workspace, cx, _) = workspace(cx);
+        let image = directory.path().join("figure.png");
+        image::RgbImage::from_pixel(2, 2, image::Rgb([1, 2, 3]))
+            .save(&image)
+            .unwrap();
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.attach_images_to("question".into(), vec![image.clone()], cx);
+                this.change_notes_directory(directory.path().to_owned(), window, cx);
+                assert!(!matches!(this.modal, Some(Modal::ChangingVault)));
+                assert!(this.notice.as_deref().unwrap().contains("Wait"));
+            })
         });
     }
 }

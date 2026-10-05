@@ -144,6 +144,12 @@ impl Workspace {
         self.save_in_flight || self.save_as_jobs > 0
     }
 
+    /// Work a Vault transition would invalidate: a Turn, a save, or an
+    /// accepted attachment not yet in the graph.
+    pub(crate) fn vault_change_blocked(&self) -> bool {
+        !self.editor.active_turns.is_empty() || self.saving() || self.pending_edits > 0
+    }
+
     fn set_persistence_error(&mut self, error: String) {
         self.notice = Some(error.clone());
         self.persistence_error = Some(error);

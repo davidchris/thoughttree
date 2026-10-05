@@ -162,7 +162,7 @@ fn failed_executable_validation_preserves_the_path_and_reset_restores_discovery(
 }
 
 #[test]
-fn reset_during_slow_validation_wins_and_the_superseded_request_stays_silent() {
+fn reset_during_slow_validation_wins_and_the_superseded_request_reports_as_stale() {
     use std::os::unix::fs::PermissionsExt;
 
     let h = Harness::new();
@@ -178,12 +178,19 @@ fn reset_during_slow_validation_wins_and_the_superseded_request_stays_silent() {
         Some(slow.to_string_lossy().into_owned()),
     );
     h.desktop.set_provider_path(AgentProvider::Codex, None);
-    let DesktopEvent::ProviderPathValidated { result, .. } = h.next() else {
+    let DesktopEvent::ProviderPathValidated {
+        result, current, ..
+    } = h.next()
+    else {
         panic!("Expected path reset");
     };
+    assert!(current);
     assert!(result.unwrap().contains("automatic discovery"));
-    // Outlast the superseded probe: it must neither persist nor report.
-    std::thread::sleep(Duration::from_secs(2));
+    // The superseded probe reports once, as stale, and does not persist.
+    let DesktopEvent::ProviderPathValidated { current, .. } = h.next() else {
+        panic!("Expected the superseded validation");
+    };
+    assert!(!current);
     assert!(h.events.try_recv().is_err());
     assert!(h
         .desktop

@@ -47,7 +47,7 @@ impl Desktop {
     /// Validate the user's selected executable off the UI thread, then persist
     /// it only on success. Completion (including reset) arrives as an event.
     /// A newer choice or Reset for the same provider supersedes this request:
-    /// a superseded request neither persists nor reports.
+    /// once superseded, it no longer persists and reports as not `current`.
     pub fn set_provider_path(&self, provider: AgentProvider, path: Option<String>) {
         let generation = self.0.provider_path_requests.begin(&provider);
         let desktop = self.clone();
@@ -55,16 +55,15 @@ impl Desktop {
             let result = desktop
                 .apply_provider_path(provider.clone(), path, generation)
                 .await;
-            if desktop
+            let current = desktop
                 .0
                 .provider_path_requests
-                .is_current(&provider, generation)
-            {
-                desktop
-                    .0
-                    .sink
-                    .emit(DesktopEvent::ProviderPathValidated { provider, result });
-            }
+                .is_current(&provider, generation);
+            desktop.0.sink.emit(DesktopEvent::ProviderPathValidated {
+                provider,
+                result,
+                current,
+            });
         });
     }
 
@@ -81,18 +80,17 @@ impl Desktop {
         let desktop = self.clone();
         self.runtime()
             .spawn_blocking(move || {
-                // Decided under the config lock, so a newer request either
-                // supersedes this one first or commits after it.
-                desktop.0.config.update_if(|config| {
-                    let current = desktop
-                        .0
-                        .provider_path_requests
-                        .is_current(&provider, generation);
-                    if current {
-                        config.provider_paths.set(&provider, path.clone());
-                    }
-                    current
-                })
+                // Decided once, under the config lock: a request that begins
+                // after this check commits after it, and file and cache agree.
+                desktop.0.config.update_if(
+                    |_| {
+                        desktop
+                            .0
+                            .provider_path_requests
+                            .is_current(&provider, generation)
+                    },
+                    |config| config.provider_paths.set(&provider, path.clone()),
+                )
             })
             .await
             .map_err(|error| format!("Cannot save provider path: {error}"))??;

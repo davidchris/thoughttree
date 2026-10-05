@@ -31,25 +31,28 @@ impl ConfigStore {
 
     /// `change` runs twice: on the file contents and on the cache.
     pub(crate) fn update(&self, change: impl Fn(&mut Config)) -> Result<(), String> {
-        self.update_if(|config| {
-            change(config);
-            true
-        })
+        self.update_if(|_| true, change).map(drop)
     }
 
-    /// Commits only when `change` returns true. The decision runs under the
-    /// file lock, so it is ordered against every other writer.
-    pub(crate) fn update_if(&self, change: impl Fn(&mut Config) -> bool) -> Result<(), String> {
+    /// Commits `change` only when `condition` holds, and reports whether it
+    /// did. The decision runs once, under the file lock, so it is ordered
+    /// against every other writer and the file and cache always agree.
+    pub(crate) fn update_if(
+        &self,
+        condition: impl FnOnce(&Config) -> bool,
+        change: impl Fn(&mut Config),
+    ) -> Result<bool, String> {
         let mut writer = ConfigWriter::lock(&self.directory)?;
-        if !change(&mut writer.config) {
-            return Ok(());
+        if !condition(&writer.config) {
+            return Ok(false);
         }
+        change(&mut writer.config);
         writer.save()?;
         // Rendering reads the last committed value without waiting for a
         // different writer, disk access, or fsync. Publish before releasing
         // the file lock so concurrent updates cannot publish out of order.
         change(&mut self.value.lock().unwrap_or_else(|e| e.into_inner()));
-        Ok(())
+        Ok(true)
     }
 
     pub(crate) fn set_vault(&self, path: PathBuf) -> Result<(), String> {

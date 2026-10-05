@@ -65,6 +65,7 @@ pub struct Workspace {
     pub(crate) mention_state: crate::files::MentionState,
     updating_input: bool,
     pub(crate) generation: u64,
+    pub(crate) window_handle: AnyWindowHandle,
     /// Which file the open graph saves to. Save As changes it without
     /// replacing the graph, so only callbacks saving the former path go stale.
     pub(crate) save_epoch: u64,
@@ -192,6 +193,7 @@ impl Workspace {
             mention_state: Default::default(),
             updating_input: false,
             generation: 0,
+            window_handle: window.window_handle(),
             save_epoch: 0,
             save_as_jobs: 0,
             pending_edits: 0,
@@ -704,16 +706,23 @@ impl Workspace {
                 provider_path,
                 result,
             } => self.models_discovered(provider, provider_path, result, cx),
-            DesktopEvent::ProviderPathValidated { provider, result } => {
-                self.provider_path_saved(&provider);
+            DesktopEvent::ProviderPathValidated {
+                provider,
+                result,
+                current,
+            } => {
+                self.provider_path_saved(&provider, cx);
+                // A superseded request may still have been saved first.
                 self.refresh_provider_statuses(cx);
                 if result.is_ok() {
                     self.invalidate_models(&provider, cx);
                 }
-                self.notice = Some(match result {
-                    Ok(path) => format!("Provider found: {path}"),
-                    Err(error) => error,
-                });
+                if current {
+                    self.notice = Some(match result {
+                        Ok(path) => format!("Provider found: {path}"),
+                        Err(error) => error,
+                    });
+                }
             }
         }
         self.refresh(cx);
