@@ -2,6 +2,7 @@
 
 The paired JPEG images came from the running macOS applications through the native screenshot tool.
 The two PNG images under [Finder drop checks](#finder-drop-checks) were supplied by the user.
+The native rich-answer PNG came from a Codex agent's Computer Use capture of the running application.
 They contain the [authored parity project](../fixtures/README.md) and use isolated configuration and recovery directories.
 Provider responses came from the [offline ACP fixture](../fixture-adapter.md).
 No live model account was used.
@@ -12,7 +13,7 @@ The [parity matrix](../parity.md) records evidence for all 123 requirements.
 These images show visible behavior. They do not establish full feature parity without the accompanying interaction and persistence checks.
 
 The Tauri captures are 4112×2580 pixels, except for the 1600×1200 project chooser.
-The GPUI JPEG captures are 2880×1946 pixels. These dimensions include native window chrome.
+The GPUI JPEG captures are 2880×1946 pixels, and the native rich-answer PNG is 2880×1944 pixels. These dimensions include native window chrome.
 The user-supplied PNGs show graph regions and measure 1134×450 and 1328×890 pixels.
 All files are stored unchanged from the screenshot tool or user attachment. File extensions match the image bytes.
 
@@ -47,12 +48,11 @@ The GPUI graph capture has the original 11 nodes. The Tauri graph capture follow
 | ![Tauri graph](tauri-graph.jpg) | ![Native GPUI graph](gpui-graph.jpg) |
 
 Open `parity-synthesis`. Both previews show the table, Rust code, formulas, diagram, task list, and unchanged citation text.
-The native capture uses the corrected SVG colors, and wide code wraps within the panel.
-It predates native formula layout: its formulas are image blocks. Native formulas now flow inline and display math is centered. A new capture is pending.
+The native capture shows inline math on its text line, centered display math, readable table headers, and wide code wrapped within the panel.
 
 | Tauri | GPUI |
 | --- | --- |
-| ![Tauri rich answer](tauri-rich-answer.jpg) | ![Native GPUI rich answer](gpui-rich-answer.jpg) |
+| ![Tauri rich answer](tauri-rich-answer.jpg) | ![Native GPUI rich answer](gpui-rich-answer.png) |
 
 Expand Provenance and the Read activity, then scroll the panel.
 Both captures show indexed references, a partial-evidence warning, a missing citation, and the expanded Read detail.
