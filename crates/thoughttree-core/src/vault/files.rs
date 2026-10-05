@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
@@ -377,6 +377,21 @@ impl OpenedVaultFile {
         Ok(bytes)
     }
 
+    /// The checks of [`Self::read_image_for_prompt`] without reading the
+    /// pixels: the byte limit from stat and the longest side from the header.
+    pub fn check_image_header(&self) -> Result<(), VaultFileError> {
+        if self.stat.size > limits::IMAGE_MAX_BYTES {
+            return Err(VaultFileError::TooLarge {
+                limit: limits::IMAGE_MAX_BYTES,
+            });
+        }
+        let mut handle = &self.file;
+        handle.seek(SeekFrom::Start(0))?;
+        let dimensions =
+            imagesize::reader_size(BufReader::new(handle)).map_err(image_header_error)?;
+        check_image_side(dimensions)
+    }
+
     /// Up to `limit` bytes from the start of the file, never an error for a
     /// longer file.
     fn read_prefix(&self, limit: u64) -> Result<Vec<u8>, VaultFileError> {
@@ -401,13 +416,25 @@ pub fn validate_image_bytes(bytes: &[u8]) -> Result<(), VaultFileError> {
             limit: limits::IMAGE_MAX_BYTES,
         });
     }
-    let dimensions = imagesize::blob_size(bytes).map_err(image_header_error)?;
+    check_image_side(imagesize::blob_size(bytes).map_err(image_header_error)?)
+}
+
+fn check_image_side(dimensions: imagesize::ImageSize) -> Result<(), VaultFileError> {
     if dimensions.width > limits::IMAGE_MAX_SIDE as usize
         || dimensions.height > limits::IMAGE_MAX_SIDE as usize
     {
         return Err(VaultFileError::TooLarge {
             limit: u64::from(limits::IMAGE_MAX_SIDE),
         });
+    }
+    Ok(())
+}
+
+/// The checks a prompt applies to a Vault file, without building a preview.
+pub fn check_vault_file(root: &Path, relative: &str) -> Result<(), VaultFileError> {
+    let opened = OpenedVaultFile::open(root, relative)?;
+    if is_raster_image(&opened.mime_type()?) {
+        opened.check_image_header()?;
     }
     Ok(())
 }
@@ -555,7 +582,9 @@ pub struct FilePreviewResponse {
     pub preview: FilePreview,
 }
 
-/// Bounded in-memory preview cache keyed by (relative path, mtime, size).
+/// Bounded in-memory preview cache keyed by (canonical file path, mtime, size).
+/// The absolute path includes Vault identity, so switching Vaults cannot reuse
+/// a different file's preview with coincidentally identical relative metadata.
 /// Cleared wholesale when it grows past [`PREVIEW_CACHE_MAX_ENTRIES`].
 #[derive(Default)]
 pub struct PreviewCache {
@@ -566,7 +595,7 @@ const PREVIEW_CACHE_MAX_ENTRIES: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct PreviewKey {
-    relative: String,
+    canonical_path: PathBuf,
     modified_epoch_ms: u64,
     size: u64,
 }
@@ -579,7 +608,7 @@ impl PreviewCache {
     ) -> Result<FilePreviewResponse, VaultFileError> {
         let opened = OpenedVaultFile::open(root, relative)?;
         let key = PreviewKey {
-            relative: relative.to_string(),
+            canonical_path: opened.path().to_path_buf(),
             modified_epoch_ms: opened.stat().modified_epoch_ms,
             size: opened.stat().size,
         };
@@ -728,9 +757,9 @@ mod tests {
 
     use super::limits::{attachment_limits, IMAGE_MAX_BYTES, IMAGE_MAX_SIDE, PREVIEW_TEXT_BYTES};
     use super::{
-        extension_mime, is_raster_image, mime_for_file, relativize_vault_path, resolve_vault_file,
-        stat_vault_file, validate_image_bytes, FilePreview, OpenedVaultFile, PreviewCache,
-        VaultFileError,
+        check_vault_file, extension_mime, is_raster_image, mime_for_file, relativize_vault_path,
+        resolve_vault_file, stat_vault_file, validate_image_bytes, FilePreview, OpenedVaultFile,
+        PreviewCache, VaultFileError,
     };
 
     fn text_excerpt(preview: &FilePreview) -> (&str, bool) {
@@ -1115,6 +1144,38 @@ mod tests {
     }
 
     #[test]
+    fn file_check_applies_prompt_image_limits_without_a_preview() {
+        let vault = tempdir().unwrap();
+        write_png(&vault.path().join("ok.png"), 4, 3);
+        write_png(&vault.path().join("tall.png"), 1, IMAGE_MAX_SIDE + 1);
+        write_png(&vault.path().join("big.png"), 2, 2);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(vault.path().join("big.png"))
+            .unwrap()
+            .set_len(IMAGE_MAX_BYTES + 1)
+            .unwrap();
+        fs::write(vault.path().join("notes.md"), "text").unwrap();
+
+        check_vault_file(vault.path(), "ok.png").unwrap();
+        check_vault_file(vault.path(), "notes.md").unwrap();
+        for (name, limit) in [
+            ("tall.png", u64::from(IMAGE_MAX_SIDE)),
+            ("big.png", IMAGE_MAX_BYTES),
+        ] {
+            let err = check_vault_file(vault.path(), name).unwrap_err();
+            assert!(
+                matches!(err, VaultFileError::TooLarge { limit: l } if l == limit),
+                "{name}: {err:?}"
+            );
+        }
+        assert!(matches!(
+            check_vault_file(vault.path(), "gone.png"),
+            Err(VaultFileError::NotFound)
+        ));
+    }
+
+    #[test]
     fn image_for_prompt_rejects_images_over_the_side_limit() {
         let vault = tempdir().unwrap();
         write_png(&vault.path().join("tall.png"), 1, IMAGE_MAX_SIDE + 1);
@@ -1314,6 +1375,28 @@ mod tests {
         let fresh = cache.preview(vault.path(), "note.txt").unwrap();
         assert_eq!(text_excerpt(&fresh.preview).0, "cccccc");
         assert_eq!(fresh.info.size, 6);
+    }
+
+    #[test]
+    fn preview_cache_does_not_reuse_content_from_another_vault() {
+        let first_vault = tempdir().unwrap();
+        let second_vault = tempdir().unwrap();
+        let first_path = first_vault.path().join("note.txt");
+        let second_path = second_vault.path().join("note.txt");
+        fs::write(&first_path, "first").unwrap();
+        fs::write(&second_path, "other").unwrap();
+        let mtime = filetime::FileTime::from_unix_time(1_700_000_000, 0);
+        filetime::set_file_mtime(&first_path, mtime).unwrap();
+        filetime::set_file_mtime(&second_path, mtime).unwrap();
+        let cache = PreviewCache::default();
+
+        let first = cache.preview(first_vault.path(), "note.txt").unwrap();
+        let second = cache.preview(second_vault.path(), "note.txt").unwrap();
+
+        assert_eq!(first.info.size, second.info.size);
+        assert_eq!(first.info.modified_epoch_ms, second.info.modified_epoch_ms);
+        assert_eq!(text_excerpt(&first.preview).0, "first");
+        assert_eq!(text_excerpt(&second.preview).0, "other");
     }
 
     #[test]

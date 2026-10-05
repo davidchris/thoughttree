@@ -1,0 +1,44 @@
+name: GPUI macOS bundle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: gpui-macos
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Claude adapter
+        run: bun run build:sidecar
+
+      - name: Build local application bundle
+        run: ./scripts/build-gpui.sh
+
+      - name: Archive application bundle
+        # Preserve the executable bit, bundle metadata, and local signature.
+        run: ditto -c -k --sequesterRsrc --keepParent "target/release/bundle/ThoughtTree GPUI.app" "target/ThoughtTree-GPUI-macOS.zip"
+
+      - name: Upload development bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThoughtTree-GPUI-macOS
+          path: target/ThoughtTree-GPUI-macOS.zip
+          if-no-files-found: error

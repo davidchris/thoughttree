@@ -1,0 +1,38 @@
+[package]
+name = "thoughttree-gpui"
+version = "0.5.0"
+edition = "2021"
+publish = false
+description = "Native GPUI desktop frontend for ThoughtTree"
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.7" }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", features = ["runtime_shaders", "font-kit"] }
+gpui-component = { version = "=0.7.0", features = ["tree-sitter-languages"] }
+gpui-kit-assets = "=0.7.0"
+thoughttree-core = { path = "../thoughttree-core" }
+thoughttree-gpui-model = { path = "../thoughttree-gpui-model" }
+thoughttree-desktop = { path = "../thoughttree-desktop" }
+anyhow = "1"
+async-channel = "2"
+base64 = "0.22"
+chrono = "0.4"
+futures = "0.3"
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+markdown = "1"
+mermaid-rs-renderer = { version = "0.3.1", default-features = false }
+ratex-parser = "0.1.14"
+ratex-layout = "0.1.14"
+ratex-types = "0.1.14"
+ratex-svg = { version = "0.1.14", features = ["embed-fonts"] }
+url = "2"
+roxmltree = "0.20"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
+ureq = "3.4"
+smol = "2"
+
+[dev-dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.7", features = ["test-support"] }
+tempfile = "3"

@@ -26,6 +26,9 @@ pub const SEGMENT_SEPARATOR: &str = "\n\n---\n\n";
 /// registers an implementation as the connection's notification and
 /// permission-request handlers, so the futures must be `Send`.
 #[async_trait]
+// Rust 1.99 flags async-trait's generated #[must_use] on boxed futures.
+// Remove once stable includes https://github.com/rust-lang/rust-clippy/pull/17547.
+#[allow(clippy::double_must_use)]
 pub trait SessionClient: Send + Sync + 'static {
     async fn request_permission(
         &self,

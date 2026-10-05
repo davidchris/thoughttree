@@ -1,0 +1,15 @@
+[package]
+name = "thoughttree-gpui-model"
+version = "0.5.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+
+[dependencies]
+indexmap = { version = "2", features = ["serde"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+url = "2"
+uuid = { version = "1", features = ["v4"] }

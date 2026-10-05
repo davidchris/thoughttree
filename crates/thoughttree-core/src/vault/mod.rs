@@ -50,6 +50,9 @@ pub enum VaultError {
 }
 
 #[async_trait]
+// Rust 1.99 flags async-trait's generated #[must_use] on boxed futures.
+// Remove once stable includes https://github.com/rust-lang/rust-clippy/pull/17547.
+#[allow(clippy::double_must_use)]
 pub trait VaultStorage: Send + Sync {
     async fn list(&self) -> Result<Vec<ProjectEntry>, VaultError>;
     async fn read(&self, relative_path: &str) -> Result<ProjectDoc, VaultError>;

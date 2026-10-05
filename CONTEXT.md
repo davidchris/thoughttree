@@ -181,7 +181,7 @@ How hard a Provider's model thinks before answering: a single discrete scale `lo
 _Avoid_: thinking budget (numeric, provider-internal), thinking mode, effort level (redundant — "effort" suffices).
 
 **Config store**:
-The `tauri_plugin_store` instance keyed `config.json`, holding notes directory, default provider, model preferences, provider paths, and recent projects. Wrapped by `src-tauri/src/backend/config.rs`.
+The `config.json` file in the app data directory, holding notes directory, default provider, model preferences, provider paths, and recent projects. Both desktop frontends share it through `thoughttree_core::config`: every write takes `config.lock`, rereads the file, and replaces it atomically, so neither frontend erases the other's settings.
 _Avoid_: settings, preferences (use these for user-facing concepts, not the persisted store).
 
 ## Relationships
