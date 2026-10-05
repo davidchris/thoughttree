@@ -54,6 +54,9 @@ pub(crate) struct DialogState {
     config_writing: bool,
     /// Providers whose executable path is still being validated and saved.
     provider_paths_saving: BTreeSet<&'static str>,
+    /// One config reload runs at a time; activations meanwhile queue one more.
+    config_reloading: bool,
+    config_reload_again: bool,
     config_error: Option<String>,
     provider_scan: u64,
     providers_loading: bool,
@@ -140,6 +143,8 @@ impl DialogState {
             config_queue: VecDeque::new(),
             config_writing: false,
             provider_paths_saving: BTreeSet::new(),
+            config_reloading: false,
+            config_reload_again: false,
             config_error: None,
             provider_scan: 0,
             providers_loading: false,
@@ -237,6 +242,13 @@ impl Workspace {
         if self.config_is_busy() || matches!(self.modal, Some(Modal::ChangingVault)) {
             return;
         }
+        // Overlapping reloads would compare against the same `previous`, so a
+        // later one could refuse a change the earlier one already applied.
+        if self.dialogs.config_reloading {
+            self.dialogs.config_reload_again = true;
+            return;
+        }
+        self.dialogs.config_reloading = true;
         let previous = self.desktop.config();
         let desktop = self.desktop.clone();
         let generation = self.generation;
@@ -245,8 +257,12 @@ impl Workspace {
                 .background_spawn(async move { desktop.reload_config() })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
+                this.dialogs.config_reloading = false;
                 let same_project = this.generation == generation;
                 this.adopt_config(previous, result, same_project, window, cx);
+                if std::mem::take(&mut this.dialogs.config_reload_again) {
+                    this.reload_config(window, cx);
+                }
             });
         })
         .detach();
@@ -720,6 +736,8 @@ impl Workspace {
                 self.save_current(cx);
                 self.notice = Some(error);
                 self.schedule_summaries(cx);
+                // The transition invalidated inspections of the unchanged Vault.
+                self.refresh_files(cx);
             }
         }
         self.refresh(cx);
@@ -2256,6 +2274,64 @@ mod tests {
         cx.run_until_parked();
         workspace.read_with(cx, |this, _| {
             assert_eq!(this.provider, AgentProvider::ClaudeCode);
+        });
+    }
+
+    #[gpui::test]
+    async fn activations_during_a_reload_queue_exactly_one_more(cx: &mut TestAppContext) {
+        let (directory, workspace, cx, _) = workspace(cx);
+        cx.executor().allow_parking();
+        let (other, _) =
+            thoughttree_desktop::Desktop::open(directory.path().join("config")).unwrap();
+        other
+            .set_default_provider(AgentProvider::ClaudeCode)
+            .unwrap();
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.provider = AgentProvider::Codex;
+                this.reload_config(window, cx);
+                this.reload_config(window, cx);
+                this.reload_config(window, cx);
+                assert!(this.dialogs.config_reloading && this.dialogs.config_reload_again);
+            })
+        });
+        cx.run_until_parked();
+        workspace.read_with(cx, |this, _| {
+            assert!(!this.dialogs.config_reloading && !this.dialogs.config_reload_again);
+            assert_eq!(this.provider, AgentProvider::ClaudeCode);
+        });
+    }
+
+    #[gpui::test]
+    async fn a_failed_vault_transition_restarts_file_inspection(cx: &mut TestAppContext) {
+        let (directory, workspace, cx, _) = workspace(cx);
+        cx.executor().allow_parking();
+        let file = directory.path().join("vault/notes.md");
+        std::fs::write(&file, "Vault file").unwrap();
+        workspace.update(cx, |this, cx| {
+            this.canvas.update(cx, |_, cx| {
+                cx.emit(crate::canvas::GraphEvent::DropFiles(
+                    vec![file],
+                    Position { x: 0., y: 0. },
+                ));
+            });
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                assert_eq!(this.file_status.len(), 1);
+                this.refresh_files(cx);
+                this.change_notes_directory(directory.path().join("unmounted"), window, cx);
+            })
+        });
+        cx.condition(&workspace, |this, _| {
+            !matches!(this.modal, Some(Modal::ChangingVault)) && !this.saving()
+        })
+        .await;
+        cx.run_until_parked();
+        workspace.read_with(cx, |this, _| {
+            assert!(this.notice.is_some());
+            assert_eq!(this.file_status.len(), 1);
         });
     }
 }
