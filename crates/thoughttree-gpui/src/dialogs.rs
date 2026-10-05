@@ -245,9 +245,8 @@ impl Workspace {
                 .background_spawn(async move { desktop.reload_config() })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if this.generation == generation {
-                    this.adopt_config(previous, result, window, cx);
-                }
+                let same_project = this.generation == generation;
+                this.adopt_config(previous, result, same_project, window, cx);
             });
         })
         .detach();
@@ -257,9 +256,12 @@ impl Workspace {
         &mut self,
         previous: Config,
         result: Result<Config, String>,
+        same_project: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The cache already holds these settings, so they apply even if the
+        // Project changed meanwhile; a later reload would see no difference.
         let config = match result {
             Ok(config) => config,
             Err(error) => {
@@ -283,9 +285,10 @@ impl Workspace {
                 }
             }
         }
-        // A Turn or save in progress keeps the current Vault; the next
-        // activation retries.
-        let idle = self.editor.active_turns.is_empty() && !self.saving();
+        // A replaced Project, Turn or save in progress keeps the current
+        // Vault; the session Vault stays pinned, so the next activation
+        // retries.
+        let idle = same_project && self.editor.active_turns.is_empty() && !self.saving();
         match config.notes_directory {
             Some(vault) if idle && previous.notes_directory.as_ref() != Some(&vault) => {
                 self.transition_vault(vault, VaultSource::Adopted, window, cx)
@@ -2229,5 +2232,30 @@ mod tests {
         });
         cx.run_until_parked();
         workspace.read_with(cx, |this, _| assert!(!this.closing));
+    }
+
+    #[gpui::test]
+    async fn reloaded_settings_apply_even_when_the_project_changes_meanwhile(
+        cx: &mut TestAppContext,
+    ) {
+        let (directory, workspace, cx, _) = workspace(cx);
+        cx.executor().allow_parking();
+        let (other, _) =
+            thoughttree_desktop::Desktop::open(directory.path().join("config")).unwrap();
+        other
+            .set_default_provider(AgentProvider::ClaudeCode)
+            .unwrap();
+        cx.update(|window, cx| {
+            workspace.update(cx, |this, cx| {
+                this.provider = AgentProvider::Codex;
+                this.reload_config(window, cx);
+                // Opening another Project before the reload completes.
+                this.generation = this.generation.wrapping_add(1);
+            })
+        });
+        cx.run_until_parked();
+        workspace.read_with(cx, |this, _| {
+            assert_eq!(this.provider, AgentProvider::ClaudeCode);
+        });
     }
 }

@@ -139,7 +139,7 @@ impl Resolver for PublicResolver {
 fn is_public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(ip) => is_public_v4(ip),
-        IpAddr::V6(ip) => match ip.to_ipv4_mapped().or_else(|| embedded_v4(ip)) {
+        IpAddr::V6(ip) => match ip.to_ipv4_mapped().or_else(|| nat64_v4(ip)) {
             Some(ip) => is_public_v4(ip),
             None => is_public_v6(ip),
         },
@@ -162,27 +162,27 @@ fn is_public_v4(ip: Ipv4Addr) -> bool {
         || (a == 198 && (18..20).contains(&b)))
 }
 
+// Only global unicast (2000::/3) reaches the internet; loopback, local,
+// multicast and local-use translation prefixes all lie outside it. Within it,
+// reject the special-purpose blocks that are not plain hosts.
 fn is_public_v6(ip: Ipv6Addr) -> bool {
     let [first, second, ..] = ip.segments();
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_multicast()
-        || ip.is_unique_local()
-        || ip.is_unicast_link_local()
-        || (first == 0x2001 && second == 0x0db8))
+    first & 0xe000 == 0x2000
+        // IETF protocol assignments: Teredo, benchmarking, ORCHID.
+        && !(first == 0x2001 && second < 0x0200)
+        // Documentation.
+        && !(first == 0x2001 && second == 0x0db8)
+        && first & 0xfff0 != 0x3ff0
+        // 6to4 tunnels to an arbitrary IPv4 host.
+        && first != 0x2002
 }
 
-// NAT64 (64:ff9b::/96) and 6to4 (2002::/16) addresses reach an IPv4 host.
-fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
-    let segments = ip.segments();
-    let octets = ip.octets();
-    match segments {
-        [0x64, 0xff9b, 0, 0, 0, 0, ..] => Some(Ipv4Addr::new(
-            octets[12], octets[13], octets[14], octets[15],
-        )),
-        [0x2002, ..] => Some(Ipv4Addr::new(octets[2], octets[3], octets[4], octets[5])),
-        _ => None,
-    }
+// DNS64 synthesizes the well-known NAT64 prefix (64:ff9b::/96) for IPv4-only
+// hosts; the translated destination is the embedded IPv4 address.
+fn nat64_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let [a, b, c, d, e, f, ..] = ip.segments();
+    let [.., w, x, y, z] = ip.octets();
+    ([a, b, c, d, e, f] == [0x64, 0xff9b, 0, 0, 0, 0]).then(|| Ipv4Addr::new(w, x, y, z))
 }
 
 fn read_bounded(reader: impl Read, limit: usize) -> Result<Vec<u8>> {
@@ -255,11 +255,22 @@ mod tests {
             "fe80::1",
             "::ffff:127.0.0.1",
             "64:ff9b::a9fe:a9fe",
+            "64:ff9b:1::a9fe:a9fe",
             "2002:c0a8:0101::",
+            "2002:5db8:d70e::",
+            "2001::1",
+            "2001:db8::1",
+            "3fff::1",
+            "ff02::1",
         ] {
             assert!(!is_public(blocked.parse().unwrap()), "{blocked}");
         }
-        for public in ["93.184.215.14", "2606:4700::6810:85e5"] {
+        for public in [
+            "93.184.215.14",
+            "2606:4700::6810:85e5",
+            "2001:4860:4860::8888",
+            "64:ff9b::5db8:d70e",
+        ] {
             assert!(is_public(public.parse().unwrap()), "{public}");
         }
     }
