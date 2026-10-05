@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::{collections::HashMap, path::Path, sync::Mutex, time::Duration};
 
 use thoughttree_core::{
     acp::{
@@ -41,36 +41,76 @@ impl Desktop {
 
     /// Validate the user's selected executable off the UI thread, then persist
     /// it only on success. Completion (including reset) arrives as an event.
+    /// A newer choice or Reset for the same provider supersedes this request:
+    /// a superseded request neither persists nor reports.
     pub fn set_provider_path(&self, provider: AgentProvider, path: Option<String>) {
+        let generation = self.0.provider_path_requests.begin(&provider);
         let desktop = self.clone();
         self.runtime().spawn(async move {
-            let version = match &path {
-                Some(path) => validate_executable(Path::new(path), &provider).await,
-                None => Ok("Using automatic discovery".to_string()),
-            };
-            let result = match version {
-                Ok(version) => {
-                    let writer = desktop.clone();
-                    let selected = provider.clone();
-                    desktop
-                        .runtime()
-                        .spawn_blocking(move || {
-                            writer
-                                .0
-                                .config
-                                .update(|config| config.provider_paths.set(&selected, path))?;
-                            Ok(version)
-                        })
-                        .await
-                        .unwrap_or_else(|error| Err(format!("Cannot save provider path: {error}")))
-                }
-                Err(error) => Err(error),
-            };
-            desktop
+            let result = desktop
+                .apply_provider_path(provider.clone(), path, generation)
+                .await;
+            if desktop
                 .0
-                .sink
-                .emit(DesktopEvent::ProviderPathValidated { provider, result });
+                .provider_path_requests
+                .is_current(&provider, generation)
+            {
+                desktop
+                    .0
+                    .sink
+                    .emit(DesktopEvent::ProviderPathValidated { provider, result });
+            }
         });
+    }
+
+    async fn apply_provider_path(
+        &self,
+        provider: AgentProvider,
+        path: Option<String>,
+        generation: u64,
+    ) -> Result<String, String> {
+        let version = match &path {
+            Some(path) => validate_executable(Path::new(path), &provider).await?,
+            None => "Using automatic discovery".to_string(),
+        };
+        let desktop = self.clone();
+        self.runtime()
+            .spawn_blocking(move || {
+                // Decided under the config lock, so a newer request either
+                // supersedes this one first or commits after it.
+                desktop.0.config.update_if(|config| {
+                    let current = desktop
+                        .0
+                        .provider_path_requests
+                        .is_current(&provider, generation);
+                    if current {
+                        config.provider_paths.set(&provider, path);
+                    }
+                    current
+                })
+            })
+            .await
+            .map_err(|error| format!("Cannot save provider path: {error}"))??;
+        Ok(version)
+    }
+}
+
+/// The latest provider-path request per provider. Validation may take up to
+/// 15 seconds while Reset skips it, so requests can finish out of order.
+#[derive(Default)]
+pub(crate) struct ProviderPathRequests(Mutex<HashMap<&'static str, u64>>);
+
+impl ProviderPathRequests {
+    fn begin(&self, provider: &AgentProvider) -> u64 {
+        let mut latest = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let generation = latest.entry(provider.descriptor().id).or_default();
+        *generation += 1;
+        *generation
+    }
+
+    fn is_current(&self, provider: &AgentProvider, generation: u64) -> bool {
+        let latest = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        latest.get(provider.descriptor().id) == Some(&generation)
     }
 }
 

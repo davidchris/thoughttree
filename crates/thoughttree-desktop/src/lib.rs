@@ -17,6 +17,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use config::ConfigStore;
 use events::NativeEventSink;
+use providers::ProviderPathRequests;
 use thoughttree_core::{
     acp::sessions::{run_prompt_session, run_summary_session, PromptSessionParams},
     permissions::PermissionBroker,
@@ -56,6 +57,7 @@ struct Inner {
     active_turns: ActiveTurns,
     broker: PermissionBroker,
     preview_cache: PreviewCache,
+    provider_path_requests: ProviderPathRequests,
 }
 
 impl Drop for Inner {
@@ -91,6 +93,7 @@ impl Desktop {
                 active_turns: ActiveTurns::default(),
                 broker: PermissionBroker::new(),
                 preview_cache: PreviewCache::default(),
+                provider_path_requests: ProviderPathRequests::default(),
             })),
             receiver,
         ))

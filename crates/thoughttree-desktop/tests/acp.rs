@@ -153,6 +153,38 @@ fn failed_executable_validation_preserves_the_path_and_reset_restores_discovery(
 }
 
 #[test]
+fn reset_during_slow_validation_wins_and_the_superseded_request_stays_silent() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let h = Harness::new();
+    let slow = h._directory.path().join("slow-codex-acp");
+    fs::write(
+        &slow,
+        "#!/bin/sh\nsleep 1\necho 'Usage: codex-acp [OPTIONS]'\n",
+    )
+    .unwrap();
+    fs::set_permissions(&slow, fs::Permissions::from_mode(0o755)).unwrap();
+    h.desktop.set_provider_path(
+        AgentProvider::Codex,
+        Some(slow.to_string_lossy().into_owned()),
+    );
+    h.desktop.set_provider_path(AgentProvider::Codex, None);
+    let DesktopEvent::ProviderPathValidated { result, .. } = h.next() else {
+        panic!("Expected path reset");
+    };
+    assert!(result.unwrap().contains("automatic discovery"));
+    // Outlast the superseded probe: it must neither persist nor report.
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(h.events.try_recv().is_err());
+    assert!(h
+        .desktop
+        .config()
+        .provider_paths
+        .get(&AgentProvider::Codex)
+        .is_none());
+}
+
+#[test]
 fn streaming_and_provenance_arrive_before_prompt_completion() {
     let h = Harness::new();
     h.prompt("stream", "fixture:nopermission parity");
