@@ -34,3 +34,7 @@ learnings/
 .sidecar-build/
 
 .playwright-mcp/
+
+# Retired beads/bdx state that existing clones may still hold (credential key, Dolt store)
+.beads*
+.bdx/
