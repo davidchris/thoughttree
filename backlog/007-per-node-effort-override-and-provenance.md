@@ -15,7 +15,7 @@ These two belong together: the override work must touch the node schema anyway, 
 
 ## Context from the issue-#9 design session
 
-- Reasoning effort is a unified discrete scale `low | medium | high | xhigh` (see CONTEXT.md), stored per Provider at global (`config.json` `effort_preferences`) and project (`projectEffortPreferences`) scope.
+- Reasoning effort is a unified discrete scale `low | medium | high | xhigh` (see GLOSSARY.md), stored per Provider at global (`config.json` `effort_preferences`) and project (`projectEffortPreferences`) scope.
 - Resolution mirrors model: project → global → CLI default. A per-generation pick would sit in front of that chain, exactly like the per-generation model pick does today.
 
 ## Blocked by

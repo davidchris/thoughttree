@@ -32,7 +32,7 @@ Included in the slice:
 - Gemini's hardcoded fallback-model special case in model discovery becomes descriptor data (`fallback_models`).
 - Frontend: the parallel per-provider name records and settings provider list collapse into one TS descriptor array mirroring the Rust table; `ModelPreferences`/`ProviderPaths` become `Partial<Record<AgentProvider, T | null>>`.
 
-Vocabulary per CONTEXT.md (Provider, ACP adapter); distribution rationale per ADR-0001.
+Vocabulary per GLOSSARY.md (Provider, ACP adapter); distribution rationale per ADR-0001.
 
 ## Acceptance criteria
 
