@@ -1,4 +1,4 @@
-name: Tests
+name: Linux
 
 on:
   push:
@@ -9,46 +9,23 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  frontend-test:
-    name: Frontend Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Typecheck
-        run: bunx tsc --noEmit
-
-      - name: Lint
-        run: bun run lint --max-warnings 0
-
-      - name: Run tests
-        run: bun test:run
-
-  backend-test:
-    name: Backend Tests
+  # Linux build signal for the release targets. Not a required check: `verify` gates merges.
+  linux:
+    name: Linux (not required)
     runs-on: ubuntu-22.04
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build sidecar
-        run: bun run build:sidecar
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
+      - uses: oven-sh/setup-bun@v2
 
       - name: Install system dependencies
         run: |
@@ -59,55 +36,9 @@ jobs:
             libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libzstd-dev \
             libvulkan-dev
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+      - uses: swatinem/rust-cache@v2
 
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --all --check
-
-      - name: Clippy
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
-
-      - name: Run core, Tauri, graph model, and desktop service tests
-        # Native view interactions use macOS key bindings in the GPUI job below.
-        run: cargo test --locked --workspace --exclude thoughttree-gpui
-
-      - name: Core crate must stay tauri-free
-        run: ./scripts/check-core-no-tauri.sh
-
-  gpui-macos:
-    name: GPUI macOS
-    runs-on: macos-latest
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "0"
-      CARGO_PROFILE_TEST_DEBUG: "0"
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Setup Bun for cross-frontend format tests
-        uses: oven-sh/setup-bun@v2
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          shared-key: gpui-macos
-
-      - name: Lint native frontend
-        run: cargo clippy --locked -p thoughttree-gpui --all-targets -- -D warnings
-
-      - name: Test native views, model, and desktop service
-        run: cargo test --locked -p thoughttree-gpui -p thoughttree-gpui-model -p thoughttree-desktop
-
-      - name: Build native executable
-        run: cargo build --locked -p thoughttree-gpui
+      - run: just verify

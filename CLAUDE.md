@@ -5,6 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Development Commands
 
 ```bash
+# Prove a change: every check CI requires (format, lint, typecheck, tests)
+just verify
+
 # Full app development
 bun install           # Install dependencies
 bun run tauri dev     # Run app in development mode
@@ -62,6 +65,13 @@ The ACP client (`crates/thoughttree-core/src/acp/`) has critical implementation 
 
 App is released and functional. See CHANGELOG.md for version history and README.md for user documentation.
 
+**Frontend migration — Tauri frontend is feature-frozen.** The native GPUI frontend (`crates/thoughttree-gpui`, `crates/thoughttree-gpui-model`; see `docs/gpui/README.md`) will replace the React/Tauri frontend (`src/`, `src-tauri/`).
+
+- Build new user-facing features in the GPUI frontend only. Do not add them to `src/` or `src-tauri/`.
+- The Tauri frontend still ships as the release build. Fix its bugs, security issues, and dependency updates.
+- Shared Rust services (`thoughttree-core`, `thoughttree-desktop`) stay compatible with both frontends until the Tauri frontend is removed.
+- Build a local GPUI app bundle with `scripts/build-gpui.sh` (run `bun run build:sidecar` first for the Claude sidecar).
+
 ## Code Search
 
 Structural search: `sg -lang rust -p 'pattern'` for syntax-aware matching across Rust/TypeScript. Faster than text grep for finding function defs, imports, type patterns.
@@ -79,3 +89,21 @@ Structural search: `sg -lang rust -p 'pattern'` for syntax-aware matching across
 - `src/App.tsx` - React app root
 - `src/components/SidePanel/SidePanel.test.tsx` - Example test file
 - `src-tauri/tauri.conf.json` - Tauri configuration
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `davidchris/thoughttree`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### Workflow
+
+Definition of Ready and Done, evidence rules, filing rule, and merge gate. See `docs/agents/workflow.md`.
