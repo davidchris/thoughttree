@@ -1,6 +1,6 @@
 # PRD: Add OpenAI Codex as Provider (ACP)
 
-Source: [issue #10](https://github.com/davidchris/thoughttree/issues/10), refined in a grilling session on 2026-07-01. See ADR-0001 (user-installed ACP adapters) and CONTEXT.md (Provider, ACP adapter).
+Source: [issue #10](https://github.com/davidchris/thoughttree/issues/10), refined in a grilling session on 2026-07-01. See ADR-0001 (user-installed ACP adapters) and GLOSSARY.md (Provider, ACP adapter).
 
 Vertical slices: [006 prefactor](./006-provider-descriptor-prefactor.md) → [007 Codex end-to-end](./007-codex-provider-end-to-end.md) → [008 model selection](./008-codex-model-selection.md).
 

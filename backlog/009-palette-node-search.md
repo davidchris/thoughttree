@@ -12,7 +12,7 @@ Implemented via TDD: `src/lib/palette/` (17 tests through `PaletteSearch.search`
 
 Post-implementation multi-agent review (15 findings) fixed: matching now runs case-insensitive regex over original strings (`search` returns `{hits, total}` with a limit; no lowercased copies, positions never drift); surrogate-safe truncation; titles skip leading blank lines; palette closes when a permission request/settings dialog appears while open; `open()` reconciles stale `editingNodeId`; IME composition Enter ignored; Tab focus-trapped; overlay closes on mousedown-on-backdrop (not click); active row scrolls into view; ⌘K also matches `e.code === 'KeyK'`; keydown listener attaches once via refs; flash lifecycle owned by `useUIStore.flashNode` (self-expiring, restarts on re-jump); `.streaming.flash` runs both animations; `settingsOpen` survives `reset()`; ContextMenu Escape moved to capture phase.
 
-Source: idea 02 in `docs/improvement-ideas.html`, refined in a grilling session on 2026-07-02. Domain terms (Palette, Corpus snapshot, Search hit, Jump) are in CONTEXT.md.
+Source: idea 02 in `docs/improvement-ideas.html`, refined in a grilling session on 2026-07-02. Domain terms (Palette, Corpus snapshot, Search hit, Jump) are in GLOSSARY.md.
 
 ## Problem
 

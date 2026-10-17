@@ -1,6 +1,6 @@
 # PRD: Reasoning effort per global & project scope
 
-Source: [issue #9](https://github.com/davidchris/thoughttree/issues/9), refined in a grilling session on 2026-07-06. See ADR-0002 (unified static reasoning-effort scale) and CONTEXT.md (Reasoning effort, Provider, Config store).
+Source: [issue #9](https://github.com/davidchris/thoughttree/issues/9), refined in a grilling session on 2026-07-06. See ADR-0002 (unified static reasoning-effort scale) and GLOSSARY.md (Reasoning effort, Provider, Config store).
 
 ## Problem Statement
 
@@ -25,7 +25,7 @@ Add **Reasoning effort** as a per-Provider preference mirroring the existing mod
 ## Implementation Decisions
 
 - **Scale (ADR-0002):** unified `low | medium | high | xhigh`, verified against vendor docs. Codex's `minimal` unexposed. `max` (Claude, session-only) unexposed. No numeric budgets.
-- **Canonical term:** *Reasoning effort* (CONTEXT.md). Type name both sides: `ReasoningEffort`. Avoid "effort level", "thinking budget".
+- **Canonical term:** *Reasoning effort* (GLOSSARY.md). Type name both sides: `ReasoningEffort`. Avoid "effort level", "thinking budget".
 - **Capability declaration:** `supportedEfforts: ReasoningEffort[]` on the **TS** `ProviderDescriptor` only — `claude-code` and `codex` → all four, `gemini-cli` → `[]` (control not rendered). No Rust capability list; the Rust `ReasoningEffort` serde enum (`#[serde(rename_all = "lowercase")]`) is the validation at the IPC boundary. No model×effort matrix: model-gated `xhigh` (Opus/Sonnet 4.6; only two Codex models) falls back CLI-side.
 - **Type shape:** parallel record, not a combined per-provider object: `EffortPreferences = Partial<Record<AgentProvider, ReasoningEffort>>` (TS), `PerProvider<ReasoningEffort>` (Rust). Zero migration; per-lever project/global override falls out of per-key merge.
 - **Resolution:** `getEffectiveEffort(provider)` in `useGraphStore`, exact twin of `getEffectiveModel` — project key → global key → `undefined` (CLI default). Frontend resolves; backend receives the resolved value.

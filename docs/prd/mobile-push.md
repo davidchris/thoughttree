@@ -2,7 +2,7 @@
 
 **Status:** Draft, grilled 2026-07-07
 **Strategy record:** vault note `2026-07-06-175349_thoughttree-mobile-strategy-exploration.md` — full option analysis, architecture rationale, torhaus boundary, backburner. This PRD does not repeat it.
-**Vocabulary:** `CONTEXT.md` (Deployment shape, Project file, Vault, Guarded write, Turn, Attachment, Parked permission).
+**Vocabulary:** `GLOSSARY.md` (Deployment shape, Project file, Vault, Guarded write, Turn, Attachment, Parked permission).
 
 ## Goal
 
