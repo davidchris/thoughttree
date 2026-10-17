@@ -6,7 +6,7 @@
 //! [`TurnRecorder::close`], which touches the filesystem only to decide
 //! whether a referenced path lies inside the Vault.
 //!
-//! Rules (see CONTEXT.md, "Tool activity"):
+//! Rules (see GLOSSARY.md, "Tool activity"):
 //! - Tool activity is ordered by first appearance; lifecycle updates refine
 //!   the same item and terminal state never regresses.
 //! - Activity still pending or in progress when the Turn closes becomes
