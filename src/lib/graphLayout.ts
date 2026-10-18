@@ -1,8 +1,16 @@
 import type { Edge, Node } from '@xyflow/react';
 
+import { computeStyledLayout, type LayoutStyle } from './layout';
+
 export type LayoutDirection = 'TB' | 'LR';
 
+// Keep in sync with --tt-node-width / --tt-node-height in design/tokens.css.
+const DEFAULT_NODE_WIDTH = 170;
+const DEFAULT_NODE_HEIGHT = 120;
+
 export interface AutoLayoutOptions {
+  /** Defaults to 'tree', the original one-row tidy tree below. */
+  style?: LayoutStyle;
   direction?: LayoutDirection;
   gridSize?: number;
   nodeGap?: number;
@@ -220,6 +228,17 @@ export function computeAutoLayout(
   edges: Array<Edge>,
   options: AutoLayoutOptions = {}
 ): Map<string, Pos> {
+  const style = options.style ?? 'tree';
+  if (style !== 'tree') {
+    const layoutNodes = nodes.map((n) => ({
+      id: n.id,
+      ...n.position,
+      width: n.measured?.width ?? DEFAULT_NODE_WIDTH,
+      height: n.measured?.height ?? DEFAULT_NODE_HEIGHT,
+    }));
+    return computeStyledLayout(style, layoutNodes, edges, { gridSize: options.gridSize });
+  }
+
   const direction: LayoutDirection = options.direction ?? 'TB';
   const gridSize = options.gridSize ?? 20;
 

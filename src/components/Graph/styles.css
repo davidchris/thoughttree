@@ -50,7 +50,7 @@
     height: var(--tt-node-height);
     max-width: var(--tt-node-width);
     cursor: pointer;
-    transition: border-color var(--tt-fast) var(--tt-ease), opacity var(--tt-fast) var(--tt-ease);
+    transition: border-color var(--tt-base) var(--tt-ease), background-color var(--tt-base) var(--tt-ease), opacity var(--tt-fast) var(--tt-ease);
     position: relative;
     display: flex;
     flex-direction: column;
@@ -281,6 +281,22 @@
 .react-flow__edge:focus .react-flow__edge-path,
 .react-flow__edge:focus-visible .react-flow__edge-path {
     stroke: var(--tt-edge-selected);
+}
+
+/* Lineage: everything that feeds into the selected node. A half-strength
+   mint border and the selection tint, so the path reads at a glance while
+   the selected node (full mint border) stays the one that stands out. */
+.react-flow__node.lineage .thought-node {
+    border-color: color-mix(in srgb, var(--tt-accent) 50%, var(--tt-line));
+    background: color-mix(in srgb, var(--tt-accent) 8%, var(--tt-surface));
+}
+
+.react-flow__edge-path {
+    transition: stroke var(--tt-base) var(--tt-ease);
+}
+
+.react-flow__edge.lineage .react-flow__edge-path {
+    stroke: color-mix(in srgb, var(--tt-accent) 60%, var(--tt-edge));
 }
 
 .react-flow__connection-path {

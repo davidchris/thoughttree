@@ -5,6 +5,7 @@ import { RecoverySnapshots } from '../RecoverySnapshots';
 import { SettingsDialog } from '../SettingsDialog';
 import { LogoMark } from '../LogoMark';
 import { ToolbarButton } from './ToolbarButton';
+import { LayoutSwitch } from './LayoutSwitch';
 import {
   ExportAllIcon,
   ExportThreadIcon,
@@ -45,6 +46,8 @@ export function Toolbar() {
   // In the UI store (not local state) so the Palette can suppress ⌘K while open.
   const showSettings = useUIStore((state) => state.settingsOpen);
   const setShowSettings = useUIStore((state) => state.setSettingsOpen);
+  const layoutStyle = useUIStore((state) => state.layoutStyle);
+  const setLayoutStyle = useUIStore((state) => state.setLayoutStyle);
 
   // Check if selected node is an agent node (can reply)
   const selectedNodeData = selectedNodeId ? nodeData.get(selectedNodeId) : null;
@@ -57,7 +60,7 @@ export function Toolbar() {
   };
 
   const handleCleanUp = () => {
-    autoLayout({ direction: 'TB', gridSize: 20 });
+    autoLayout({ style: layoutStyle, direction: 'TB', gridSize: 20 });
   };
 
   // Get project name from path
@@ -235,14 +238,23 @@ export function Toolbar() {
         <span className="toolbar-divider" />
         <ToolbarButton
           icon={<TidyIcon />}
+          className="keeps-label"
           label="Tidy graph"
           title="Tidy graph (Cmd/Ctrl+L)"
           onClick={handleCleanUp}
           disabled={nodes.length === 0}
         />
+        <LayoutSwitch
+          value={layoutStyle}
+          onPick={(style) => {
+            setLayoutStyle(style);
+            if (nodes.length > 0) autoLayout({ style, direction: 'TB', gridSize: 20 });
+          }}
+        />
         <span className="toolbar-divider" />
         <ToolbarButton
           icon={<ReplyIcon />}
+          className="keeps-label"
           label="Reply"
           title="Reply to selected agent node (Enter)"
           onClick={handleReply}
