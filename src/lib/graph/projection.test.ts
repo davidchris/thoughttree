@@ -79,12 +79,54 @@ describe('graphToFlowNodes', () => {
   });
 });
 
+/**
+ * Merge graph:  a   x
+ *               |   |
+ *               b   y
+ *                \ /
+ *                 m -- c (sibling branch off b: b -> c)
+ */
+function mergeGraph() {
+  let g = GraphMutations.empty();
+  for (const id of ['a', 'b', 'c', 'm', 'x', 'y']) g = GraphMutations.addNode(g, userNode(id), { x: 0, y: 0 });
+  for (const [s, t] of [['a', 'b'], ['b', 'm'], ['b', 'c'], ['x', 'y'], ['y', 'm']]) g = GraphMutations.addEdge(g, s, t);
+  return g;
+}
+
+describe('lineage highlight', () => {
+  it('marks every ancestor of the selected node, across all parents of a merge', () => {
+    const nodes = graphToFlowNodes(mergeGraph(), { selectedNodeId: 'm' });
+    const lineage = nodes.filter((n) => n.className === 'lineage').map((n) => n.id).sort();
+    expect(lineage).toEqual(['a', 'b', 'x', 'y']);
+  });
+
+  it('does not mark the selected node itself, descendants, or side branches', () => {
+    const nodes = graphToFlowNodes(mergeGraph(), { selectedNodeId: 'b' });
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    expect(byId.get('a')!.className).toBe('lineage');
+    for (const id of ['b', 'c', 'm', 'x', 'y']) expect(byId.get(id)!.className).toBeUndefined();
+  });
+
+  it('marks only the edges that lead into the selected node', () => {
+    const edges = graphToFlowEdges(mergeGraph(), { selectedNodeId: 'm' });
+    const lineage = edges.filter((e) => e.className === 'lineage').map((e) => e.id).sort();
+    expect(lineage).toEqual(['a->b', 'b->m', 'x->y', 'y->m']);
+  });
+
+  it('marks nothing without a selection', () => {
+    expect(graphToFlowNodes(mergeGraph(), { selectedNodeId: null }).some((n) => n.className)).toBe(false);
+    expect(graphToFlowEdges(mergeGraph(), { selectedNodeId: null }).some((e) => e.className)).toBe(false);
+  });
+});
+
 describe('graphToFlowEdges', () => {
-  it('passes edges through unchanged', () => {
+  it('projects edges as floating edges', () => {
     let g = GraphMutations.empty();
     g = GraphMutations.addNode(g, userNode('a'), { x: 0, y: 0 });
     g = GraphMutations.addNode(g, userNode('b'), { x: 0, y: 0 });
     g = GraphMutations.addEdge(g, 'a', 'b');
-    expect(graphToFlowEdges(g)).toEqual([{ id: 'a->b', source: 'a', target: 'b' }]);
+    expect(graphToFlowEdges(g, { selectedNodeId: null })).toEqual([
+      { id: 'a->b', source: 'a', target: 'b', type: 'floating' },
+    ]);
   });
 });

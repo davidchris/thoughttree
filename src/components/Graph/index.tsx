@@ -4,6 +4,7 @@ import {
   Controls,
   MiniMap,
   NodeTypes,
+  type EdgeTypes,
   useReactFlow,
   type OnConnectEnd,
   type Connection,
@@ -15,6 +16,8 @@ import '@xyflow/react/dist/style.css';
 import { UserNode } from './UserNode';
 import { AgentNode } from './AgentNode';
 import { FileNode } from './FileNode';
+import { FloatingEdge } from './FloatingEdge';
+import { FLOATING_EDGE } from '../../lib/graph/projection';
 import { ContextMenu, type ContextMenuTarget } from './ContextMenu';
 import { AlignmentGuides, type AlignmentGuide } from './AlignmentGuides';
 import { useGraphStore } from '../../store/useGraphStore';
@@ -42,6 +45,10 @@ const nodeTypes: NodeTypes = {
   user: UserNode,
   agent: AgentNode,
   file: FileNode,
+};
+
+const edgeTypes: EdgeTypes = {
+  [FLOATING_EDGE]: FloatingEdge,
 };
 
 function minimapColor(node: Node): string {
@@ -523,6 +530,7 @@ export function Graph() {
         onNodeContextMenu={onNodeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}

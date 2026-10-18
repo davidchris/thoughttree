@@ -105,7 +105,18 @@
   flex-shrink: 0;
 }
 
-/* Narrow window: labels collapse, icons carry the buttons, title carries the text */
+/* Labels collapse in two steps; icons carry the buttons, title carries the
+   text. First the secondary actions, then everything. */
+@container (max-width: 1720px) {
+  .toolbar-button:not(.keeps-label) .toolbar-label {
+    display: none;
+  }
+
+  .toolbar-button:not(.keeps-label) {
+    padding: 5px 6px;
+  }
+}
+
 @container (max-width: 1180px) {
   .toolbar-label {
     display: none;
@@ -122,4 +133,31 @@
   .node-count {
     display: none;
   }
+}
+
+/* Tidy layout switch: a hairline segmented control of layout pictograms.
+   The pressed segment uses the selection tint; the rest stay ghost. */
+.layout-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 2px;
+  gap: 2px;
+  border: var(--tt-border) solid var(--tt-line);
+  border-radius: var(--tt-radius);
+}
+
+.toolbar .layout-switch-option {
+  padding: 3px 5px;
+  border: none;
+  border-radius: var(--tt-radius-sm);
+}
+
+.toolbar .layout-switch-option[aria-pressed='true'] {
+  color: var(--tt-text);
+  background: var(--tt-accent-soft);
+}
+
+.toolbar .layout-switch-option:focus-visible {
+  outline: none;
+  box-shadow: var(--tt-focus);
 }

@@ -452,7 +452,7 @@ function projectGraph(
   });
   return {
     nodes,
-    edges: graphToFlowEdges(graph),
+    edges: graphToFlowEdges(graph, { selectedNodeId }),
     nodeData: graph.nodes,
   };
 }
@@ -545,7 +545,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     set({
       nodes: newNodes,
       graph,
-      edges: graphToFlowEdges(graph),
+      edges: graphToFlowEdges(graph, { selectedNodeId }),
       nodeData: graph.nodes,
       isDirty: dirty,
       selectedNodeId,
@@ -584,7 +584,7 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     set({
       graph,
       nodes: state.nodes,
-      edges: graphToFlowEdges(graph),
+      edges: graphToFlowEdges(graph, { selectedNodeId: state.selectedNodeId }),
       nodeData: graph.nodes,
       isDirty: true,
     });
