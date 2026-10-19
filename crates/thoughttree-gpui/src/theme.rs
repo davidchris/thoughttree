@@ -28,6 +28,20 @@ pub fn danger() -> Hsla {
 pub fn edge() -> Hsla {
     rgb(0x4f7a76).into()
 }
+/// Lineage highlight, after the Tauri prototype: thicker edges 60% of the
+/// way from `edge` to `accent` and a light accent tint on `surface`. Every
+/// card border is already `accent`, so a soft accent glow marks the nodes.
+pub fn lineage_edge() -> Hsla {
+    rgb(0x93c7aa).into()
+}
+pub fn lineage_tint() -> Hsla {
+    rgb(0x234c4d).into()
+}
+pub fn lineage_glow() -> Hsla {
+    let mut glow: Hsla = accent();
+    glow.a = 0.45;
+    glow
+}
 
 pub fn init(cx: &mut App) {
     Theme::change(ThemeMode::Dark, None, cx);

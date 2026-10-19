@@ -132,7 +132,7 @@ Local macOS verification on 2026-10-03 passed:
 At [commit b4d01c2](https://github.com/davidchris/thoughttree/commit/b4d01c280dfa3dacb1b7f86ded5ae8273da16dd2), Linux CI, GPUI macOS CI, frontend checks, and CodeQL passed.
 
 The [capture record](screenshots/README.md) contains ten paired states from the running applications.
-The [matrix](parity.md) records evidence for all 123 requirements.
+The [matrix](parity.md) records evidence for all 124 requirements.
 On 2026-10-04, the user confirmed real Finder file and image drops and supplied the [final screenshots](screenshots/README.md#finder-drop-checks).
 
 Run focused native checks first:

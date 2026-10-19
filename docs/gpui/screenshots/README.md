@@ -9,7 +9,7 @@ No live model account was used.
 
 Ten states now have captures from both frontends, with one additional native capture of blocked cards.
 The user also supplied two images confirming real OS file and image drops.
-The [parity matrix](../parity.md) records evidence for all 123 requirements.
+The [parity matrix](../parity.md) records evidence for all 124 requirements.
 These images show visible behavior. They do not establish full feature parity without the accompanying interaction and persistence checks.
 
 The Tauri captures are 4112×2580 pixels, except for the 1600×1200 project chooser.
@@ -127,6 +127,14 @@ These macOS interactions were observed in the running native application on 2026
 
 Native regressions verify that Settings, search, and permission overlays cover the full window, including the toolbar.
 Scrolling or clicking these overlays cannot move or clear the graph underneath them.
+
+## Lineage highlight
+
+Open the [authored parity project](../fixtures/README.md) and select the Synthesizer node “Synthesize both branches”.
+Its ancestors on both branches, including the linked file, glow and tint; the edges among them and into it are thicker.
+The image was rendered from the running window with GPUI's `Window::render_to_image` (2880×1880, no window chrome), because the agent's shell had no Screen Recording permission.
+
+![Native Lineage highlight](gpui-lineage.jpg)
 
 ## Finder drop checks
 
