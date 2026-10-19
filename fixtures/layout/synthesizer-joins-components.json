@@ -1,0 +1,168 @@
+{
+  "description": "A Synthesizer node with parents in two Graph components sits below and between them; the joined trees stay together.",
+  "options": {
+    "gridSize": 20,
+    "gapX": 40,
+    "gapY": 40,
+    "componentGap": 120
+  },
+  "nodes": [
+    {
+      "id": "left0",
+      "x": 0,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "left1",
+      "x": 0,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "left2",
+      "x": 0,
+      "y": 320,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "left3",
+      "x": 0,
+      "y": 480,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "right0",
+      "x": 900,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "right1",
+      "x": 900,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "other0",
+      "x": 400,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "other1",
+      "x": 400,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "other2",
+      "x": 400,
+      "y": 320,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "solo0",
+      "x": 1300,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "synth",
+      "x": 450,
+      "y": 700,
+      "width": 170,
+      "height": 120
+    }
+  ],
+  "edges": [
+    {
+      "source": "left0",
+      "target": "left1"
+    },
+    {
+      "source": "left1",
+      "target": "left2"
+    },
+    {
+      "source": "left2",
+      "target": "left3"
+    },
+    {
+      "source": "right0",
+      "target": "right1"
+    },
+    {
+      "source": "other0",
+      "target": "other1"
+    },
+    {
+      "source": "other1",
+      "target": "other2"
+    },
+    {
+      "source": "left3",
+      "target": "synth"
+    },
+    {
+      "source": "right1",
+      "target": "synth"
+    }
+  ],
+  "expected": {
+    "left0": {
+      "x": 0,
+      "y": 0
+    },
+    "left1": {
+      "x": 0,
+      "y": 160
+    },
+    "left2": {
+      "x": 0,
+      "y": 320
+    },
+    "left3": {
+      "x": 0,
+      "y": 480
+    },
+    "right0": {
+      "x": 220,
+      "y": 320
+    },
+    "right1": {
+      "x": 220,
+      "y": 480
+    },
+    "other0": {
+      "x": 500,
+      "y": 0
+    },
+    "other1": {
+      "x": 500,
+      "y": 160
+    },
+    "other2": {
+      "x": 500,
+      "y": 320
+    },
+    "solo0": {
+      "x": 800,
+      "y": 0
+    },
+    "synth": {
+      "x": 100,
+      "y": 640
+    }
+  }
+}

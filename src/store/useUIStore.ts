@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { PermissionRequest } from '../types';
-import type { LayoutStyle } from '../lib/layout';
 
 /** Keep in sync with the palette-flash animation duration in
  * src/components/Graph/styles.css. */
@@ -34,9 +33,6 @@ interface UIState {
   setNotice: (message: string | null) => void;
   settingsOpen: boolean;
   triggerSidePanelEdit: boolean;
-  /** Arrangement used by Tidy graph. Survives reset(): it is a preference, not project state. */
-  layoutStyle: LayoutStyle;
-  setLayoutStyle: (style: LayoutStyle) => void;
 
   setEditing: (nodeId: string | null) => void;
   setPreviewNode: (nodeId: string | null) => void;
@@ -73,8 +69,6 @@ export const useUIStore = create<UIState>()((set, get) => ({
   },
   settingsOpen: false,
   triggerSidePanelEdit: false,
-  layoutStyle: 'layered',
-  setLayoutStyle: (layoutStyle) => set({ layoutStyle }),
 
   setEditing: (nodeId) => set({ editingNodeId: nodeId }),
   setPreviewNode: (nodeId) => set({ previewNodeId: nodeId }),

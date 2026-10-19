@@ -27,61 +27,6 @@ export function bounds(placement: Placement, nodes: Map<string, LayoutNode>): Bo
 }
 
 /**
- * Push overlapping boxes apart along the axis that needs the smaller move.
- * Boxes are sorted by x so each pass only compares horizontal neighbours.
- */
-export function resolveOverlaps(
-  placement: Placement,
-  nodes: Map<string, LayoutNode>,
-  gap: number,
-  maxPasses = 100
-): void {
-  const ids = [...placement.keys()].filter((id) => nodes.has(id));
-  const maxWidth = Math.max(0, ...ids.map((id) => nodes.get(id)!.width));
-
-  // Push box i away from every box to its right that could still touch it.
-  const separateFromRight = (i: number) => {
-    const a = placement.get(ids[i])!;
-    let moved = false;
-    for (let j = i + 1; j < ids.length; j++) {
-      const b = placement.get(ids[j])!;
-      if (b.x - a.x >= maxWidth + gap) break;
-      if (separate(a, nodes.get(ids[i])!, b, nodes.get(ids[j])!, gap, i + j)) moved = true;
-    }
-    return moved;
-  };
-
-  for (let pass = 0; pass < maxPasses; pass++) {
-    ids.sort((a, b) => placement.get(a)!.x - placement.get(b)!.x);
-    let moved = false;
-    for (let i = 0; i < ids.length; i++) moved = separateFromRight(i) || moved;
-    if (!moved) return;
-  }
-}
-
-/** Move two overlapping boxes half the overlap each. Returns true when they moved. */
-function separate(a: Point, na: LayoutNode, b: Point, nb: LayoutNode, gap: number, salt: number) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const overlapX = (na.width + nb.width) / 2 + gap - Math.abs(dx);
-  const overlapY = (na.height + nb.height) / 2 + gap - Math.abs(dy);
-  if (overlapX <= 0.5 || overlapY <= 0.5) return false;
-
-  // Coincident centres have no direction; pick one deterministically.
-  const sign = (d: number) => (d === 0 ? (salt % 2 ? 1 : -1) : Math.sign(d));
-  if (overlapX < overlapY) {
-    const push = (overlapX / 2) * sign(dx);
-    a.x -= push;
-    b.x += push;
-  } else {
-    const push = (overlapY / 2) * sign(dy);
-    a.y -= push;
-    b.y += push;
-  }
-  return true;
-}
-
-/**
  * Arrange independent components in rows ("shelves") so the whole canvas comes
  * out roughly `aspect` wide per unit tall instead of one long horizontal strip.
  * Bigger components go first; each keeps its own internal layout.

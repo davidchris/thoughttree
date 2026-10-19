@@ -1,18 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { fitRow } from './layered';
-import { computeStyledLayout, LAYOUT_STYLES, type LayoutEdge, type LayoutNode, type LayoutStyle } from './index';
+import { computeLayout, type LayoutEdge, type LayoutNode } from './index';
 
 const W = 170;
 const H = 120;
-const STYLES = LAYOUT_STYLES.map((s) => s.id).filter((s): s is Exclude<LayoutStyle, 'tree'> => s !== 'tree');
 
 function node(id: string, x = 0, y = 0): LayoutNode {
   return { id, x, y, width: W, height: H };
 }
 
-function chain(prefix: string, length: number) {
-  const nodes = Array.from({ length }, (_, i) => node(`${prefix}${i}`, 0, i));
+function chain(prefix: string, length: number, x = 0) {
+  const nodes = Array.from({ length }, (_, i) => node(`${prefix}${i}`, x, i));
   const edges = nodes.slice(1).map((n, i) => ({ source: nodes[i].id, target: n.id }));
   return { nodes, edges };
 }
@@ -30,7 +29,7 @@ function overlaps(pos: Map<string, { x: number; y: number }>) {
   return hits;
 }
 
-/** Two trees joined by a merge, a long thread, a cycle and a few loose nodes. */
+/** Two trees joined by a Synthesizer node, a long thread, a cycle, loose nodes and a dangling edge. */
 function mixedGraph() {
   const left = chain('l', 6);
   const right = chain('r', 4);
@@ -59,10 +58,14 @@ function mixedGraph() {
   return { nodes, edges };
 }
 
-describe.each(STYLES)('%s layout', (style) => {
-  it('places every node, without overlaps, on the grid', () => {
+describe('computeLayout', () => {
+  it('returns nothing for an empty graph', () => {
+    expect(computeLayout([], [])).toEqual(new Map());
+  });
+
+  it('places every node, without overlaps, on the grid, despite cycles and missing endpoints', () => {
     const { nodes, edges } = mixedGraph();
-    const pos = computeStyledLayout(style, nodes, edges);
+    const pos = computeLayout(nodes, edges);
 
     expect([...pos.keys()].sort()).toEqual(nodes.map((n) => n.id).sort());
     expect(overlaps(pos)).toEqual([]);
@@ -70,22 +73,74 @@ describe.each(STYLES)('%s layout', (style) => {
       expect(p.x % 20).toBe(0);
       expect(p.y % 20).toBe(0);
     }
+    // The cycle still reads top-down: one node of it sits above the other.
+    expect(pos.get('c1')!.y).not.toBe(pos.get('c2')!.y);
   });
 
   it('is deterministic', () => {
     const { nodes, edges } = mixedGraph();
-    expect(computeStyledLayout(style, nodes, edges)).toEqual(computeStyledLayout(style, nodes, edges));
+    expect(computeLayout(nodes, edges)).toEqual(computeLayout(nodes, edges));
   });
 
   it('anchors the result at the old top-left corner', () => {
     const { nodes, edges } = chain('a', 3);
     const moved = nodes.map((n, i) => ({ ...n, x: 400 + i * 7, y: 300 + i * 50 }));
-    const pos = computeStyledLayout(style, moved, edges);
+    const pos = computeLayout(moved, edges);
     expect(Math.min(...[...pos.values()].map((p) => p.x))).toBe(400);
     expect(Math.min(...[...pos.values()].map((p) => p.y))).toBe(300);
   });
 
-  it('keeps trees joined by a merge next to each other', () => {
+  it('stacks a single child directly below its parent', () => {
+    const { nodes, edges } = chain('a', 4);
+    const pos = computeLayout(nodes, edges, { gridSize: 0 });
+    const xs = new Set([...pos.values()].map((p) => p.x));
+    expect(xs.size).toBe(1);
+    expect(pos.get('a1')!.y - pos.get('a0')!.y).toBe(H + 40);
+  });
+
+  it('centres a parent over its children, which keep their current left-to-right order', () => {
+    const nodes = [node('p'), node('a', 20), node('b', -50), node('c', 10)];
+    const edges = ['a', 'b', 'c'].map((t) => ({ source: 'p', target: t }));
+    const pos = computeLayout(nodes, edges, { gridSize: 0 });
+    expect(pos.get('p')!.x).toBeCloseTo(pos.get('c')!.x);
+    expect(pos.get('b')!.x).toBeLessThan(pos.get('c')!.x);
+    expect(pos.get('c')!.x).toBeLessThan(pos.get('a')!.x);
+  });
+
+  it('swaps siblings only where the swap removes a crossing', () => {
+    // p's children start as [b, a]. a and q feed one Synthesizer node, and q
+    // sits left, so keeping b first would cross b -> bc with a -> m.
+    const nodes = [node('q', 0, 160), node('p', 300), node('b', 200, 160), node('a', 400, 160), node('bc', 200, 320), node('m', 100, 320)];
+    const edges = [
+      { source: 'p', target: 'b' },
+      { source: 'p', target: 'a' },
+      { source: 'b', target: 'bc' },
+      { source: 'q', target: 'm' },
+      { source: 'a', target: 'm' },
+    ];
+    const pos = computeLayout(nodes, edges, { gridSize: 0 });
+    expect(pos.get('a')!.x).toBeLessThan(pos.get('b')!.x);
+    expect(pos.get('q')!.x).toBeLessThan(pos.get('a')!.x);
+  });
+
+  it('puts a Synthesizer node below all of its parents and between them', () => {
+    const left = chain('l', 4);
+    const right = chain('r', 2, 500);
+    const nodes = [...left.nodes, ...right.nodes, node('m')];
+    const edges = [...left.edges, ...right.edges, { source: 'l3', target: 'm' }, { source: 'r1', target: 'm' }];
+    const pos = computeLayout(nodes, edges, { gridSize: 0 });
+
+    const m = pos.get('m')!;
+    expect(m.y).toBeGreaterThan(pos.get('l3')!.y);
+    expect(m.y).toBeGreaterThan(pos.get('r1')!.y);
+    const [lo, hi] = [pos.get('l3')!.x, pos.get('r1')!.x].sort((a, b) => a - b);
+    expect(m.x).toBeGreaterThanOrEqual(lo);
+    expect(m.x).toBeLessThanOrEqual(hi);
+    // The short tree is pulled down to join where it merges.
+    expect(pos.get('r1')!.y).toBe(pos.get('l3')!.y);
+  });
+
+  it('keeps Graph components joined by a Synthesizer node next to each other', () => {
     // Two linked trees plus ten unrelated ones that could separate them.
     const a = chain('a', 3);
     const b = chain('b', 3);
@@ -98,52 +153,15 @@ describe.each(STYLES)('%s layout', (style) => {
       { source: 'a2', target: 'm' },
       { source: 'b2', target: 'm' },
     ];
-    const pos = computeStyledLayout(style, nodes, edges);
-    // The merge's parents end up close, with no unrelated tree between them.
-    const gap = Math.hypot(pos.get('a2')!.x - pos.get('b2')!.x, pos.get('a2')!.y - pos.get('b2')!.y);
-    expect(gap).toBeLessThan(3 * W);
-  });
-});
-
-describe('layered layout', () => {
-  it('stacks a single child directly below its parent', () => {
-    const { nodes, edges } = chain('a', 4);
-    const pos = computeStyledLayout('layered', nodes, edges, { gridSize: 0 });
-    const xs = new Set([...pos.values()].map((p) => p.x));
-    expect(xs.size).toBe(1);
-    expect(pos.get('a1')!.y - pos.get('a0')!.y).toBe(H + 40);
+    const pos = computeLayout(nodes, edges);
+    // Side by side on the same layer, with no unrelated tree between them.
+    expect(pos.get('a2')!.y).toBe(pos.get('b2')!.y);
+    expect(Math.abs(pos.get('a2')!.x - pos.get('b2')!.x)).toBeLessThanOrEqual(W + 60);
   });
 
-  it('centres a parent over its children', () => {
-    const nodes = [node('p'), node('a', 0), node('b', 10), node('c', 20)];
-    const edges = ['a', 'b', 'c'].map((t) => ({ source: 'p', target: t }));
-    const pos = computeStyledLayout('layered', nodes, edges, { gridSize: 0 });
-    expect(pos.get('p')!.x).toBeCloseTo(pos.get('b')!.x);
-    expect(pos.get('a')!.x).toBeLessThan(pos.get('b')!.x);
-    expect(pos.get('b')!.x).toBeLessThan(pos.get('c')!.x);
-  });
-
-  it('puts a merge below all of its parents and between them', () => {
-    const left = chain('l', 4);
-    const right = chain('r', 2);
-    const nodes = [...left.nodes, ...right.nodes.map((n) => ({ ...n, x: 500 })), node('m')];
-    const edges = [...left.edges, ...right.edges, { source: 'l3', target: 'm' }, { source: 'r1', target: 'm' }];
-    const pos = computeStyledLayout('layered', nodes, edges, { gridSize: 0 });
-
-    const m = pos.get('m')!;
-    expect(m.y).toBeGreaterThan(pos.get('l3')!.y);
-    expect(m.y).toBeGreaterThan(pos.get('r1')!.y);
-    const [lo, hi] = [pos.get('l3')!.x, pos.get('r1')!.x].sort((a, b) => a - b);
-    expect(m.x).toBeGreaterThanOrEqual(lo);
-    expect(m.x).toBeLessThanOrEqual(hi);
-    // The short tree is pulled down to join where it merges.
-    expect(pos.get('r1')!.y).toBe(pos.get('l3')!.y);
-  });
-
-  it('packs many separate conversations into a block, not one long row', () => {
-    const trees = Array.from({ length: 16 }, (_, i) => chain(`t${i}x`, 3));
-    const pos = computeStyledLayout(
-      'layered',
+  it('packs many separate Graph components into a block, not one long row', () => {
+    const trees = Array.from({ length: 16 }, (_, i) => chain(`t${i}x`, 3, i * 210));
+    const pos = computeLayout(
       trees.flatMap((t) => t.nodes),
       trees.flatMap((t) => t.edges)
     );
@@ -152,31 +170,7 @@ describe('layered layout', () => {
     const width = Math.max(...xs) - Math.min(...xs) + W;
     const height = Math.max(...ys) - Math.min(...ys) + H;
     expect(width / height).toBeLessThan(3);
-  });
-});
-
-describe('folded layout', () => {
-  it('leaves a shallow conversation unfolded', () => {
-    const { nodes, edges } = chain('a', 4);
-    expect(computeStyledLayout('folded', nodes, edges)).toEqual(computeStyledLayout('layered', nodes, edges));
-  });
-
-  it('folds a long thread into columns that alternate down and up', () => {
-    const { nodes, edges } = chain('a', 40);
-    const pos = computeStyledLayout('folded', nodes, edges, { gridSize: 0 });
-    const ys = [...pos.values()].map((p) => p.y);
-    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(20 * (H + 40));
-
-    // Every step is one row up or down, or one level step sideways at a turn.
-    let ups = 0;
-    for (let i = 1; i < 40; i++) {
-      const a = pos.get(`a${i - 1}`)!;
-      const b = pos.get(`a${i}`)!;
-      if (a.y === b.y) expect(b.x).toBeGreaterThan(a.x);
-      else expect(Math.abs(b.y - a.y)).toBe(H + 40);
-      if (b.y < a.y) ups++;
-    }
-    expect(ups).toBeGreaterThan(0);
+    expect(new Set(ys).size).toBeGreaterThan(3);
   });
 });
 

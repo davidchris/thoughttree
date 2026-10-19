@@ -1,7 +1,4 @@
-import { useId, type SVGProps } from 'react';
-
-import { LAYOUT_GLYPHS, LINK_WIDTH, NODE_RADIUS } from '../../lib/layout/glyphs';
-import type { LayoutStyle } from '../../lib/layout';
+import type { SVGProps } from 'react';
 
 // UI icons per design/DESIGN.md: line style, 16px, 1.5px stroke, currentColor.
 function Icon({ children, ...rest }: SVGProps<SVGSVGElement>) {
@@ -103,31 +100,3 @@ export const SettingsIcon = () => (
     <circle cx="5.5" cy="11.5" r="1.5" />
   </Icon>
 );
-
-/**
- * Pictogram of a tidy style in the app icon's grammar: filled root, hollow
- * nodes. Links are masked out under each node so the nodes stay hollow on any
- * background, including the selected segment's tint.
- */
-export function LayoutGlyph({ style }: { style: LayoutStyle }) {
-  const mask = useId();
-  const { links, nodes } = LAYOUT_GLYPHS[style];
-  return (
-    <Icon strokeWidth={LINK_WIDTH}>
-      <mask id={mask}>
-        <rect width="16" height="16" fill="white" stroke="none" />
-        {nodes.map(([cx, cy]) => (
-          <circle key={`${cx},${cy}`} cx={cx} cy={cy} r={NODE_RADIUS + 0.4} fill="black" stroke="none" />
-        ))}
-      </mask>
-      <g mask={`url(#${mask})`}>
-        {links.map((l) => (
-          <polyline key={l.join(',')} points={l.join(' ')} />
-        ))}
-      </g>
-      {nodes.map(([cx, cy], i) => (
-        <circle key={`${cx},${cy}`} cx={cx} cy={cy} r={NODE_RADIUS} fill={i === 0 ? 'currentColor' : 'none'} />
-      ))}
-    </Icon>
-  );
-}

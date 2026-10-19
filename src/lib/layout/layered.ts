@@ -1,14 +1,17 @@
 import type { Placement } from './geometry';
-import type { Structure } from './structure';
+import { byPosition, type Structure } from './structure';
 
 /**
  * Layered DAG layout (a small Sugiyama): every parent counts, not just the
- * first one, so a merge node sits below all of its parents, between them.
+ * first one, so a Synthesizer node sits below all of its parents, between them.
  *
  * 1. Layer = longest path from a source; then every node is pulled down to
  *    sit just above its nearest child, so a second tree joins where it merges.
  * 2. Edges that skip layers get invisible waypoints that reserve a lane.
- * 3. Barycenter sweeps reorder each layer to cut crossings.
+ * 3. Layers start in depth-first order from the sources, left to right by
+ *    current position. Barycenter sweeps then reorder them, but a sweep is
+ *    kept only when it removes crossings, so siblings keep their current
+ *    order unless a swap removes a crossing.
  * 4. x is solved per layer as a weighted least-squares fit to the neighbours,
  *    with order and spacing as hard constraints (pool adjacent violators).
  */
@@ -101,16 +104,16 @@ function buildLayers(s: Structure, component: string[], layerOf: Map<string, num
 
   const depth = Math.max(0, ...all.map((v) => v.layer)) + 1;
   const layers: Vertex[][] = Array.from({ length: depth }, () => []);
-  for (const v of preorder(component, vertices)) layers[v.layer].push(v);
+  for (const v of preorder(s, component, vertices)) layers[v.layer].push(v);
   return layers;
 }
 
 /** Depth-first order from the sources; for a pure tree this already has no crossings. */
-function preorder(component: string[], vertices: Map<string, Vertex>): Vertex[] {
+function preorder(s: Structure, component: string[], vertices: Map<string, Vertex>): Vertex[] {
   const seen = new Set<Vertex>();
   const out: Vertex[] = [];
-  const sources = component.map((id) => vertices.get(id)!).filter((v) => v.up.length === 0);
-  const stack = [...sources].reverse();
+  const sources = component.filter((id) => !s.parents.has(id)).sort(byPosition(s.nodes));
+  const stack = sources.map((id) => vertices.get(id)!).reverse();
   while (stack.length) {
     const v = stack.pop()!;
     if (seen.has(v)) continue;
@@ -218,122 +221,24 @@ function assignX(layers: Vertex[][], gapX: number) {
   }
 }
 
-function layout(s: Structure, component: string[], gapX: number): Vertex[][] {
-  const layers = buildLayers(s, component, assignLayers(s, component));
-  reduceCrossings(layers);
-  assignX(layers, gapX);
-  return layers;
-}
-
+/** Node centres of one Graph component, with layer 0 starting at y = 0. */
 export function layeredComponent(
   s: Structure,
   component: string[],
   { gapX, gapY }: LayeredOptions
 ): Placement {
+  const layers = buildLayers(s, component, assignLayers(s, component));
+  reduceCrossings(layers);
+  assignX(layers, gapX);
+
   const placement: Placement = new Map();
   let top = 0;
-  for (const layer of layout(s, component, gapX)) {
+  for (const layer of layers) {
     const height = Math.max(0, ...layer.map((v) => v.height));
     for (const v of layer) {
       if (s.nodes.has(v.id)) placement.set(v.id, { x: v.x, y: top + height / 2 });
     }
     top += height + gapY;
   }
-  return placement;
-}
-
-/** Target width:height of a folded conversation, close to a laptop screen. */
-const FOLD_ASPECT = 1.6;
-/** Short threads stay straight: a band holds at least this many layers. */
-const MIN_BAND_ROWS = 6;
-
-interface Band {
-  first: number;
-  end: number; // exclusive
-  min: number;
-  width: number;
-}
-
-/** A fold may cut between two layers only if each holds at most this many nodes. */
-const QUIET_CUT = 2;
-
-/**
- * Where the band starting at `first` should end. The turn edges of a fold run
- * along the row shared by the two layers around the cut, so the cut goes
- * where those layers are emptiest, preferring the last half of the band. When
- * no quiet cut is in reach the band runs on to the next quiet one: a band
- * that is too tall reads better than turn edges running through nodes.
- */
-function bandEnd(layers: Vertex[][], first: number, rows: number): number {
-  const crowd = (e: number) => Math.max(layers[e - 1].length, layers[e].length);
-  let end = first + rows;
-  if (end >= layers.length) return layers.length;
-  for (let e = end - 1; e >= first + Math.ceil(rows / 2); e--) {
-    if (crowd(e) < crowd(end)) end = e;
-  }
-  while (end < layers.length && crowd(end) > QUIET_CUT) end++;
-  return end;
-}
-
-/** Cut the layers into bands of about `rows` layers each. */
-function cutBands(layers: Vertex[][], rows: number): Band[] {
-  const bands: Band[] = [];
-  for (let first = 0; first < layers.length; ) {
-    const end = bandEnd(layers, first, rows);
-    const slice = layers.slice(first, end).flat();
-    const min = Math.min(...slice.map((v) => v.x - v.width / 2));
-    const max = Math.max(...slice.map((v) => v.x + v.width / 2));
-    bands.push({ first, end, min, width: max - min });
-    first = end;
-  }
-  return bands;
-}
-
-/**
- * Folded (serpentine) layout: the layered drawing cut into bands placed side
- * by side. Even bands read downwards, odd bands upwards, so a long thread
- * snakes down, steps right, climbs back up, and so on. The band height is
- * chosen so the result is about as wide as it is tall on a 16:10 screen;
- * shallow conversations stay unfolded.
- */
-export function foldedComponent(
-  s: Structure,
-  component: string[],
-  { gapX, gapY }: LayeredOptions
-): Placement {
-  const layers = layout(s, component, gapX);
-  const pitch = Math.max(...component.map((id) => s.nodes.get(id)!.height)) + gapY;
-  const bandGap = gapX * 2;
-
-  const score = (bands: Band[]) => {
-    const width = bands.reduce((sum, b) => sum + b.width, 0) + (bands.length - 1) * bandGap;
-    const height = Math.max(...bands.map((b) => b.end - b.first)) * pitch;
-    return Math.max(width / FOLD_ASPECT, height);
-  };
-
-  // Ties go to taller bands: fewer folds read more easily.
-  let bands = cutBands(layers, layers.length);
-  for (let rows = layers.length - 1; rows >= MIN_BAND_ROWS; rows--) {
-    const candidate = cutBands(layers, rows);
-    if (score(candidate) < score(bands)) bands = candidate;
-  }
-
-  // Odd bands are turned 180 degrees, like folded paper: each band starts on
-  // the row where the previous one ended, and parallel threads nest instead
-  // of crossing at the turn.
-  const placement: Placement = new Map();
-  let left = 0;
-  let row = 0;
-  bands.forEach((band, b) => {
-    const step = b % 2 === 0 ? 1 : -1;
-    const x = (v: Vertex) => left + (step > 0 ? v.x - band.min : band.min + band.width - v.x);
-    for (let l = band.first; l < band.end; l++, row += step) {
-      for (const v of layers[l]) {
-        if (s.nodes.has(v.id)) placement.set(v.id, { x: x(v), y: row * pitch });
-      }
-    }
-    row -= step;
-    left += band.width + bandGap;
-  });
   return placement;
 }

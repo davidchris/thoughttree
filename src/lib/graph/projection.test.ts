@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GraphMutations, type GraphNode } from '@thoughttree/graph-model';
-import { graphToFlowEdges, graphToFlowNodes } from './projection';
+import { graphToFlowEdges, graphToFlowNodes, withLineage } from './projection';
 
 function userNode(id: string, ts = 1): GraphNode {
   return { id, role: 'user', content: '', timestamp: ts, contentUpdatedAt: ts };
@@ -94,7 +94,7 @@ function mergeGraph() {
 }
 
 describe('lineage highlight', () => {
-  it('marks every ancestor of the selected node, across all parents of a merge', () => {
+  it('marks every ancestor of the selected node, across all parents of a Synthesizer node', () => {
     const nodes = graphToFlowNodes(mergeGraph(), { selectedNodeId: 'm' });
     const lineage = nodes.filter((n) => n.className === 'lineage').map((n) => n.id).sort();
     expect(lineage).toEqual(['a', 'b', 'x', 'y']);
@@ -113,9 +113,38 @@ describe('lineage highlight', () => {
     expect(lineage).toEqual(['a->b', 'b->m', 'x->y', 'y->m']);
   });
 
-  it('marks nothing without a selection', () => {
-    expect(graphToFlowNodes(mergeGraph(), { selectedNodeId: null }).some((n) => n.className)).toBe(false);
-    expect(graphToFlowEdges(mergeGraph(), { selectedNodeId: null }).some((e) => e.className)).toBe(false);
+  it('leaves the selected node out when a legacy cycle makes it its own ancestor', () => {
+    // a -> b -> a, plus an edge from a node that no longer exists.
+    let g = GraphMutations.empty();
+    for (const id of ['a', 'b']) g = GraphMutations.addNode(g, userNode(id), { x: 0, y: 0 });
+    g = {
+      ...g,
+      edges: [
+        { id: 'a->b', source: 'a', target: 'b' },
+        { id: 'b->a', source: 'b', target: 'a' },
+        { id: 'ghost->b', source: 'ghost', target: 'b' },
+      ],
+    };
+    const nodes = graphToFlowNodes(g, { selectedNodeId: 'b' });
+    expect(nodes.filter((n) => n.className === 'lineage').map((n) => n.id)).toEqual(['a']);
+    const edges = graphToFlowEdges(g, { selectedNodeId: 'b' });
+    expect(edges.filter((e) => e.className === 'lineage').map((e) => e.id)).toEqual(['a->b']);
+  });
+
+  it('marks nothing without a selection, or with more than one selected node', () => {
+    for (const ui of [{ selectedNodeId: null }, { selectedNodeId: 'm', multiSelection: true }]) {
+      expect(graphToFlowNodes(mergeGraph(), ui).some((n) => n.className)).toBe(false);
+      expect(graphToFlowEdges(mergeGraph(), ui).some((e) => e.className)).toBe(false);
+    }
+  });
+
+  it('re-marks nodes ReactFlow already holds without touching their selection', () => {
+    const g = mergeGraph();
+    const held = graphToFlowNodes(g, { selectedNodeId: null }).map((n) => ({ ...n, selected: n.id === 'm' }));
+    const marked = withLineage(held, g, { selectedNodeId: 'm' });
+    expect(marked.filter((n) => n.className === 'lineage').map((n) => n.id).sort()).toEqual(['a', 'b', 'x', 'y']);
+    expect(marked.filter((n) => n.selected).map((n) => n.id)).toEqual(['m']);
+    expect(withLineage(marked, g, { selectedNodeId: null }).some((n) => n.className)).toBe(false);
   });
 });
 

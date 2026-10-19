@@ -22,11 +22,12 @@ export interface Structure {
   parents: Map<string, string[]>;
   /** Every child, ordered by current position (x, then y) for stable layouts. */
   children: Map<string, string[]>;
-  /** Weakly connected components; trees joined by a merge share one. */
+  /** Graph components, in reading order; trees joined by a Synthesizer node share one. */
   components: string[][];
 }
 
-function byPosition(nodes: Map<string, LayoutNode>) {
+/** Current left-to-right order: x, then y. */
+export function byPosition(nodes: Map<string, LayoutNode>) {
   return (a: string, b: string) => {
     const na = nodes.get(a)!;
     const nb = nodes.get(b)!;
@@ -48,7 +49,7 @@ function push<T>(map: Map<string, T[]>, key: string, value: T) {
   else map.set(key, [value]);
 }
 
-/** Union-find over node ids, used to group trees that a merge edge links. */
+/** Union-find over node ids, used to group trees that a Synthesizer node links. */
 function findComponents(ids: string[], edges: LayoutEdge[]): Map<string, string> {
   const root = new Map(ids.map((id) => [id, id] as const));
   const find = (id: string): string => {
@@ -127,33 +128,4 @@ export function buildStructure(nodeList: LayoutNode[], edgeList: LayoutEdge[]): 
   for (const id of ordered) push(grouped, componentOf.get(id)!, id);
 
   return { nodes, parents, children, components: [...grouped.values()] };
-}
-
-/** A tree over node ids, e.g. a breadth-first tree of one component. */
-export interface SpanningTree {
-  root: string;
-  children: Map<string, string[]>;
-  parent: Map<string, string>;
-}
-
-/** Number of leaves under each tree node, the usual weight for sharing space. */
-export function leafCounts(tree: SpanningTree): Map<string, number> {
-  const leaves = new Map<string, number>();
-  for (const id of postOrder(tree)) {
-    const kids = tree.children.get(id) ?? [];
-    leaves.set(id, kids.length ? kids.reduce((sum, k) => sum + leaves.get(k)!, 0) : 1);
-  }
-  return leaves;
-}
-
-/** Children before parents, without recursion (conversations can be very deep). */
-export function postOrder(tree: SpanningTree): string[] {
-  const order: string[] = [];
-  const stack = [tree.root];
-  while (stack.length) {
-    const id = stack.pop()!;
-    order.push(id);
-    for (const kid of tree.children.get(id) ?? []) stack.push(kid);
-  }
-  return order.reverse();
 }

@@ -1,0 +1,157 @@
+{
+  "description": "Siblings of 'root' keep their current x order (c, a, b). Under 'p', b starts left of a, but a swap removes the crossing with q -> synth <- a.",
+  "options": {
+    "gridSize": 20,
+    "gapX": 40,
+    "gapY": 40,
+    "componentGap": 120
+  },
+  "nodes": [
+    {
+      "id": "root",
+      "x": 0,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "c",
+      "x": -300,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "a",
+      "x": 0,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "b",
+      "x": 300,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "q",
+      "x": 1000,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "p",
+      "x": 1300,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "pb",
+      "x": 1200,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "pa",
+      "x": 1400,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "pbc",
+      "x": 1200,
+      "y": 320,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "synth",
+      "x": 1100,
+      "y": 320,
+      "width": 170,
+      "height": 120
+    }
+  ],
+  "edges": [
+    {
+      "source": "root",
+      "target": "a"
+    },
+    {
+      "source": "root",
+      "target": "b"
+    },
+    {
+      "source": "root",
+      "target": "c"
+    },
+    {
+      "source": "p",
+      "target": "pb"
+    },
+    {
+      "source": "p",
+      "target": "pa"
+    },
+    {
+      "source": "pb",
+      "target": "pbc"
+    },
+    {
+      "source": "q",
+      "target": "synth"
+    },
+    {
+      "source": "pa",
+      "target": "synth"
+    }
+  ],
+  "expected": {
+    "root": {
+      "x": -80,
+      "y": 560
+    },
+    "c": {
+      "x": -300,
+      "y": 720
+    },
+    "a": {
+      "x": -80,
+      "y": 720
+    },
+    "b": {
+      "x": 120,
+      "y": 720
+    },
+    "q": {
+      "x": -300,
+      "y": 160
+    },
+    "p": {
+      "x": 20,
+      "y": 0
+    },
+    "pb": {
+      "x": 120,
+      "y": 160
+    },
+    "pa": {
+      "x": -80,
+      "y": 160
+    },
+    "pbc": {
+      "x": 120,
+      "y": 320
+    },
+    "synth": {
+      "x": -200,
+      "y": 320
+    }
+  }
+}

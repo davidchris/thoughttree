@@ -57,6 +57,49 @@ describe('useGraphStore', () => {
     expect(useGraphStore.getState().isDirty).toBe(false);
   });
 
+  it('shows the Lineage highlight only while exactly one node is selected', () => {
+    const store = useGraphStore.getState();
+    const root = store.createUserNode();
+    const reply = store.createAgentNodeDownstream(root);
+    const lineage = () => useGraphStore.getState().nodes.filter((n) => n.className === 'lineage').map((n) => n.id);
+    const lineageEdges = () => useGraphStore.getState().edges.filter((e) => e.className === 'lineage');
+
+    store.selectNode(reply);
+    expect(lineage()).toEqual([root]);
+    expect(lineageEdges()).toHaveLength(1);
+
+    // A selection box adds the root: two nodes selected, so no highlight.
+    store.onNodesChange([{ id: root, type: 'select', selected: true }]);
+    expect(lineage()).toEqual([]);
+    expect(lineageEdges()).toHaveLength(0);
+
+    store.onNodesChange([{ id: root, type: 'select', selected: false }]);
+    expect(lineage()).toEqual([root]);
+
+    store.onNodesChange([{ id: reply, type: 'remove' }]);
+    expect(lineage()).toEqual([]);
+  });
+
+  it('tidies with Layered and keeps every node and edge', () => {
+    const store = useGraphStore.getState();
+    const left = store.createUserNode({ x: 0, y: 0 });
+    const right = store.createUserNode({ x: 900, y: 0 });
+    const synth = store.createUserNode({ x: 333, y: 777 });
+    store.onConnect({ source: left, target: synth, sourceHandle: null, targetHandle: null });
+    store.onConnect({ source: right, target: synth, sourceHandle: null, targetHandle: null });
+    const edgesBefore = useGraphStore.getState().graph.edges;
+
+    useGraphStore.getState().autoLayout({ gridSize: 20 });
+
+    const { graph } = useGraphStore.getState();
+    expect(graph.edges).toEqual(edgesBefore);
+    expect([...graph.layout.keys()].sort()).toEqual([left, right, synth].sort());
+    const [l, r, s] = [left, right, synth].map((id) => graph.layout.get(id)!);
+    expect(s.y).toBeGreaterThan(Math.max(l.y, r.y));
+    expect(s.x).toBeGreaterThan(Math.min(l.x, r.x));
+    expect(s.x).toBeLessThan(Math.max(l.x, r.x));
+  });
+
   it('marks dirty for positional node changes', () => {
     const state = useGraphStore.getState();
     const id = state.createUserNode();

@@ -43,7 +43,7 @@ import {
   type TurnProvenance,
   type TurnReference,
 } from '@thoughttree/graph-model';
-import { graphToFlowEdges, graphToFlowNodes, type FlowNode } from '../lib/graph/projection';
+import { graphToFlowEdges, graphToFlowNodes, withLineage, type FlowNode } from '../lib/graph/projection';
 
 const COLLAPSED_NODE_HEIGHT = 120;
 
@@ -542,10 +542,13 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       }
     }
 
+    // A selection box can select several nodes; the Lineage highlight needs exactly one.
+    const ui = { selectedNodeId, multiSelection: newNodes.filter((n) => n.selected).length > 1 };
+    const selectionChanged = changes.some((c) => c.type === 'select' || c.type === 'remove');
     set({
-      nodes: newNodes,
+      nodes: selectionChanged ? withLineage(newNodes, graph, ui) : newNodes,
       graph,
-      edges: graphToFlowEdges(graph, { selectedNodeId }),
+      edges: graphToFlowEdges(graph, ui),
       nodeData: graph.nodes,
       isDirty: dirty,
       selectedNodeId,
