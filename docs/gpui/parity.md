@@ -46,6 +46,7 @@ Baseline: `src/components/Graph`, `src/lib/graphLayout.ts`, `src/store/useGraphS
 | G16 | Layout ignores unknown endpoints. It preserves all nodes and uses safe fallback positions for unplaceable graph structures. | Bounded graph traversal with explicit cycle handling. | [x] Model `layout_keeps_sibling_order_grid_and_legacy_unplaceable_nodes` exercises legacy cycles and missing endpoints. |
 | G17 | Double-clicking a user card opens its editor in the side panel. Assistant and file cards open their previews. | Role-specific preview actions. | [x] Native `selection_pane_clear_double_click_and_card_toggle_keep_preview_state_consistent` double-clicks user, assistant, and file cards and checks role-specific editor and preview behavior. |
 | G18 | Card expansion toggles the same side panel. Long messages use summaries. Short messages show their content directly. | Shared preview state and summary cache. | [x] Native card-toggle test and canvas `short_cards_show_exact_content_and_long_cards_use_summary`. |
+| G19 | While exactly one GraphNode is selected, the Lineage highlight marks its ancestors and the GraphEdges among them and into it. Every parent of a Synthesizer node counts; the selected node is never its own ancestor. Selecting a second node or clearing the selection removes it. | Model `LineageHighlight` from the canvas selection; the canvas paints an accent glow and tint on ancestor cards and thicker lineage edges. | [x] Model `lineage::tests` cover a linear chain, a Synthesizer node, a legacy cycle, missing endpoints, and the single-selection rule. Native `lineage_highlight_follows_a_single_selected_node` clicks, Shift-clicks, and clears. The [native capture](screenshots/gpui-lineage.jpg) shows the highlight for the Synthesizer node. |
 
 ## Editor and side panel
 
@@ -217,7 +218,7 @@ GPUI can correct this defect by exporting every requested node once. The PR must
 ## Evidence
 
 The [capture record](screenshots/README.md) contains ten paired running-app states and records differences in window size and fixture state.
-All 123 requirements have recorded evidence. The final OS file and image drop checks passed on 2026-10-04, confirmed by the user with screenshots.
+All 124 requirements have recorded evidence. The final OS file and image drop checks passed on 2026-10-04, confirmed by the user with screenshots.
 
 | Case | Tauri capture | GPUI capture | Required behavioral evidence |
 | --- | --- | --- | --- |

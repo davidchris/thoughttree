@@ -11,7 +11,9 @@ use thoughttree_core::vault::files::{
     extension_mime, is_raster_image, FilePreview, FilePreviewResponse,
 };
 use thoughttree_desktop::VaultFileStatus;
-use thoughttree_gpui_model::{GraphEdge, GraphNode, ImageAttachment, Position, Role};
+use thoughttree_gpui_model::{
+    GraphEdge, GraphNode, ImageAttachment, LineageHighlight, Position, Role,
+};
 
 use crate::{
     theme,
@@ -92,6 +94,15 @@ impl GraphCanvas {
     #[cfg(test)]
     pub(crate) fn guide_count(&self) -> usize {
         self.guides.len()
+    }
+
+    /// The Lineage highlight for the current selection.
+    pub fn lineage(&self) -> LineageHighlight {
+        LineageHighlight::new(
+            self.nodes.iter().map(|(node, _)| &node.id),
+            &self.edges,
+            &self.selection,
+        )
     }
 
     pub fn new() -> Self {
@@ -438,10 +449,12 @@ impl GraphCanvas {
         &self,
         node: &GraphNode,
         position: Position,
+        lineage: &LineageHighlight,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = node.id.clone();
         let selected = self.selection.contains(&id);
+        let in_lineage = lineage.nodes.contains(&id);
         let streaming = self.streaming.contains(&id);
         let blocked = self.blocked.contains(&id);
         let user = node.role() == Role::User;
@@ -490,6 +503,8 @@ impl GraphCanvas {
             .rounded(px(6. * zoom))
             .bg(if user {
                 theme::accent()
+            } else if in_lineage {
+                theme::lineage_tint()
             } else {
                 theme::surface()
             })
@@ -503,7 +518,19 @@ impl GraphCanvas {
                 theme::accent()
             })
             .when(blocked && !streaming, |d| d.opacity(0.65))
-            .shadow_sm()
+            .map(|d| {
+                if in_lineage {
+                    d.shadow(vec![BoxShadow {
+                        color: theme::lineage_glow(),
+                        offset: point(px(0.), px(0.)),
+                        blur_radius: px(14. * zoom),
+                        spread_radius: px(2. * zoom),
+                        inset: false,
+                    }])
+                } else {
+                    d.shadow_sm()
+                }
+            })
             .cursor_pointer()
             .on_mouse_down(
                 MouseButton::Left,
@@ -669,14 +696,22 @@ impl Render for GraphCanvas {
         let owner = cx.weak_entity();
         let positions: BTreeMap<_, _> =
             self.nodes.iter().map(|(n, p)| (n.id.clone(), *p)).collect();
+        let lineage = self.lineage();
         let edges: Vec<_> = self
             .edges
             .iter()
             .filter_map(|e| {
+                let stroke = if self.selected_edge.as_ref() == Some(&e.id) {
+                    (theme::accent(), 1.8)
+                } else if lineage.edges.contains(&e.id) {
+                    (theme::lineage_edge(), 2.6)
+                } else {
+                    (theme::edge(), 1.8)
+                };
                 Some((
                     *positions.get(&e.source)?,
                     *positions.get(&e.target)?,
-                    self.selected_edge.as_ref() == Some(&e.id),
+                    stroke,
                 ))
             })
             .collect();
@@ -709,7 +744,7 @@ impl Render for GraphCanvas {
                         bounds.origin.y + px(p.y as f32),
                     )
                 };
-                for (source, target, selected) in &edges {
+                for (source, target, (color, width)) in &edges {
                     let s = view.screen(Position {
                         x: source.x + NODE_WIDTH / 2.,
                         y: source.y + NODE_HEIGHT,
@@ -719,20 +754,15 @@ impl Render for GraphCanvas {
                         y: target.y,
                     });
                     let middle = (s.y + t.y) / 2.;
-                    let mut path = PathBuilder::stroke(px(1.8));
+                    let mut path = PathBuilder::stroke(px(*width));
                     path.move_to(to_point(s));
                     path.cubic_bezier_to(
                         to_point(t),
                         to_point(Position { x: s.x, y: middle }),
                         to_point(Position { x: t.x, y: middle }),
                     );
-                    let color = if *selected {
-                        theme::accent()
-                    } else {
-                        theme::edge()
-                    };
                     if let Ok(path) = path.build() {
-                        window.paint_path(path, color);
+                        window.paint_path(path, *color);
                     }
                 }
                 if let Some((source, target)) = connection {
@@ -795,7 +825,7 @@ impl Render for GraphCanvas {
                     && p.x <= view.width
                     && p.y <= view.height
             })
-            .map(|(n, p)| self.node_card(n, *p, cx))
+            .map(|(n, p)| self.node_card(n, *p, &lineage, cx))
             .collect();
         div()
             .id("graph-canvas")

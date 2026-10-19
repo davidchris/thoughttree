@@ -1974,3 +1974,37 @@ fn startup_and_settings_dialogs_remain_centered_within_the_full_window(cx: &mut 
         assert!(dialog.top() >= overlay.top() && dialog.bottom() <= overlay.bottom());
     }
 }
+
+#[gpui::test]
+fn lineage_highlight_follows_a_single_selected_node(cx: &mut TestAppContext) {
+    let (_directory, workspace, cx, _events) = workspace(cx);
+    cx.simulate_resize(size(px(1440.), px(940.)));
+    cx.run_until_parked();
+    let lineage = |cx: &mut VisualTestContext| {
+        workspace.read_with(cx, |this, cx| this.canvas.read(cx).lineage())
+    };
+    let ids = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect();
+
+    let answer = graph_point(&workspace, cx, Position { x: 40., y: 240. });
+    cx.simulate_click(answer, Modifiers::default());
+    let highlight = lineage(cx);
+    assert_eq!(highlight.nodes, ids(&["question"]));
+    assert_eq!(highlight.edges, ids(&["question->answer"]));
+
+    // A second selected node removes the highlight.
+    let sibling = graph_point(&workspace, cx, Position { x: 280., y: 240. });
+    let shift = Modifiers {
+        shift: true,
+        ..Default::default()
+    };
+    cx.simulate_click(sibling, shift);
+    assert_eq!(read_state(&workspace, cx).editor.selection.len(), 2);
+    assert!(lineage(cx).is_empty());
+
+    // Back to one node, then clearing the selection.
+    cx.simulate_click(sibling, shift);
+    assert_eq!(lineage(cx).nodes, ids(&["question"]));
+    let blank = graph_point(&workspace, cx, Position { x: 510., y: 430. });
+    cx.simulate_click(blank, Modifiers::default());
+    assert!(lineage(cx).is_empty());
+}
