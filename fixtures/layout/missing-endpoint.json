@@ -1,0 +1,79 @@
+{
+  "description": "Edges to and from an unknown node are ignored. Mixed node sizes and a negative, off-grid anchor exercise rounding.",
+  "options": {
+    "gridSize": 20,
+    "gapX": 40,
+    "gapY": 40,
+    "componentGap": 120
+  },
+  "nodes": [
+    {
+      "id": "a",
+      "x": -333.3,
+      "y": -117.5,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "b",
+      "x": -250,
+      "y": 40,
+      "width": 170,
+      "height": 150
+    },
+    {
+      "id": "c",
+      "x": 10.25,
+      "y": 41,
+      "width": 220,
+      "height": 90
+    },
+    {
+      "id": "d",
+      "x": 400,
+      "y": -30,
+      "width": 170,
+      "height": 120
+    }
+  ],
+  "edges": [
+    {
+      "source": "ghost",
+      "target": "a"
+    },
+    {
+      "source": "a",
+      "target": "b"
+    },
+    {
+      "source": "a",
+      "target": "c"
+    },
+    {
+      "source": "c",
+      "target": "ghost"
+    },
+    {
+      "source": "ghost",
+      "target": "d"
+    }
+  ],
+  "expected": {
+    "a": {
+      "x": -220,
+      "y": -120
+    },
+    "b": {
+      "x": -340,
+      "y": 40
+    },
+    "c": {
+      "x": -120,
+      "y": 80
+    },
+    "d": {
+      "x": -340,
+      "y": 320
+    }
+  }
+}

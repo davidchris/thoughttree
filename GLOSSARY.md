@@ -56,6 +56,18 @@ _Avoid_: intent detection, heuristic.
 Per-node spatial position `{x, y}` used to render the Graph in ReactFlow. Stored inside Graph (persisted with project file) but semantically separate from node content.
 _Avoid_: position (ambiguous), coords.
 
+**Tidy**:
+The user action that recomputes the Layout of the whole Graph with one fixed arrangement. There is no user-selectable layout style.
+_Avoid_: auto layout, arrange, layout style.
+
+**Graph component**:
+A maximal set of GraphNodes linked by GraphEdges in either direction. A Synthesizer node joins its parents' Graph components into one. Tidy arranges each Graph component on its own, then places them side by side in two dimensions.
+_Avoid_: tree, conversation, cluster.
+
+**Lineage highlight**:
+The marking shown while exactly one GraphNode is selected: its ancestors and the GraphEdges among them and into it, i.e. its Lineage subgraph without the selected GraphNode itself. Clearing the selection removes it.
+_Avoid_: path highlight, ancestry, trace.
+
 **Project file**:
 A `.thoughttree` file persisting one Graph (nodes, edges, Layout). The unit of opening, saving, syncing, and conflict.
 _Avoid_: document, save file, project (alone — that's the open app state, not the file).
@@ -199,6 +211,8 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - The **ReactFlow projection** consumes a **Graph** plus UI state; ReactFlow itself never sees **GraphNode** directly
 - The **Palette** searches a **Corpus snapshot** of the **Graph**'s **GraphNodes**; each **Search hit** references one **GraphNode**
 - A **Jump** sets selection and viewport to one **GraphNode**
+- **Tidy** rewrites the **Layout** of every **Graph component**; a **Synthesizer node** sits below all of its parents
+- A **Lineage highlight** shows the **Lineage subgraph** of the selected **GraphNode**
 - An **ACP session** is spawned per **Provider** and bound to one streaming **GraphNode** at a time
 - An **ACP session** drives an **ACP client**; user-permission prompts during the session use a **Permission channel** routed back through a **Tauri command**
 - All **ACP session**s and model-discovery runs execute on a **LocalSet runtime**

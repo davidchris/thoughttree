@@ -1,0 +1,94 @@
+{
+  "description": "A legacy cycle (c1 -> c2 -> c3 -> c1), a self loop and a duplicate edge; every node is still placed.",
+  "options": {
+    "gridSize": 20,
+    "gapX": 40,
+    "gapY": 40,
+    "componentGap": 120
+  },
+  "nodes": [
+    {
+      "id": "c1",
+      "x": 0,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "c2",
+      "x": 0,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "c3",
+      "x": 200,
+      "y": 160,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "tail",
+      "x": 0,
+      "y": 320,
+      "width": 170,
+      "height": 120
+    },
+    {
+      "id": "loop",
+      "x": 600,
+      "y": 0,
+      "width": 170,
+      "height": 120
+    }
+  ],
+  "edges": [
+    {
+      "source": "c1",
+      "target": "c2"
+    },
+    {
+      "source": "c2",
+      "target": "c3"
+    },
+    {
+      "source": "c3",
+      "target": "c1"
+    },
+    {
+      "source": "c2",
+      "target": "tail"
+    },
+    {
+      "source": "c2",
+      "target": "tail"
+    },
+    {
+      "source": "loop",
+      "target": "loop"
+    }
+  ],
+  "expected": {
+    "c1": {
+      "x": 100,
+      "y": 0
+    },
+    "c2": {
+      "x": 100,
+      "y": 160
+    },
+    "c3": {
+      "x": 220,
+      "y": 320
+    },
+    "tail": {
+      "x": 0,
+      "y": 320
+    },
+    "loop": {
+      "x": 500,
+      "y": 0
+    }
+  }
+}

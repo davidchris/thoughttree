@@ -57,6 +57,87 @@ describe('useGraphStore', () => {
     expect(useGraphStore.getState().isDirty).toBe(false);
   });
 
+  it('shows the Lineage highlight only while exactly one node is selected', () => {
+    const store = useGraphStore.getState();
+    const root = store.createUserNode();
+    const reply = store.createAgentNodeDownstream(root);
+    const loose = store.createUserNode({ x: 600, y: 0 });
+    const lineage = () => useGraphStore.getState().nodes.filter((n) => n.className === 'lineage').map((n) => n.id);
+    const lineageEdges = () =>
+      useGraphStore.getState().edges.filter((e) => e.className === 'lineage').map((e) => e.id);
+    const select = (id: string, selected: boolean) =>
+      useGraphStore.getState().onNodesChange([{ id, type: 'select', selected }]);
+
+    store.selectNode(reply);
+    expect(lineage()).toEqual([root]);
+    expect(lineageEdges()).toHaveLength(1);
+
+    // A selection box adds the root: two nodes selected, so no highlight.
+    select(root, true);
+    expect(lineage()).toEqual([]);
+    expect(lineageEdges()).toEqual([]);
+
+    // Box-deselecting both leaves nothing selected.
+    select(root, false);
+    expect(lineage()).toEqual([root]);
+    select(reply, false);
+    expect(lineage()).toEqual([]);
+
+    // A selection box around the reply alone selects it without a click.
+    select(reply, true);
+    expect(lineage()).toEqual([root]);
+
+    // Connecting a new parent adds it; removing that edge takes it out again.
+    useGraphStore.getState().onConnect({ source: loose, target: reply, sourceHandle: null, targetHandle: null });
+    expect(lineage().sort()).toEqual([root, loose].sort());
+    const looseEdge = useGraphStore.getState().edges.find((e) => e.source === loose)!;
+    expect(looseEdge.className).toBe('lineage');
+    useGraphStore.getState().onEdgesChange([{ id: looseEdge.id, type: 'remove' }]);
+    expect(lineage()).toEqual([root]);
+
+    useGraphStore.getState().onNodesChange([{ id: reply, type: 'remove' }]);
+    expect(lineage()).toEqual([]);
+  });
+
+  it('keeps a selection-box selection through Tidy', () => {
+    const store = useGraphStore.getState();
+    const root = store.createUserNode();
+    const reply = store.createAgentNodeDownstream(root);
+    store.selectNode(root);
+
+    // The box moves the selection from the root to the reply without a click.
+    store.onNodesChange([
+      { id: root, type: 'select', selected: false },
+      { id: reply, type: 'select', selected: true },
+    ]);
+    expect(useGraphStore.getState().selectedNodeId).toBe(reply);
+
+    useGraphStore.getState().autoLayout({ gridSize: 20 });
+    const { nodes } = useGraphStore.getState();
+    expect(nodes.filter((n) => n.selected).map((n) => n.id)).toEqual([reply]);
+    expect(nodes.filter((n) => n.className === 'lineage').map((n) => n.id)).toEqual([root]);
+  });
+
+  it('tidies with Layered and keeps every node and edge', () => {
+    const store = useGraphStore.getState();
+    const left = store.createUserNode({ x: 0, y: 0 });
+    const right = store.createUserNode({ x: 900, y: 0 });
+    const synth = store.createUserNode({ x: 333, y: 777 });
+    store.onConnect({ source: left, target: synth, sourceHandle: null, targetHandle: null });
+    store.onConnect({ source: right, target: synth, sourceHandle: null, targetHandle: null });
+    const edgesBefore = useGraphStore.getState().graph.edges;
+
+    useGraphStore.getState().autoLayout({ gridSize: 20 });
+
+    const { graph } = useGraphStore.getState();
+    expect(graph.edges).toEqual(edgesBefore);
+    expect([...graph.layout.keys()].sort()).toEqual([left, right, synth].sort());
+    const [l, r, s] = [left, right, synth].map((id) => graph.layout.get(id)!);
+    expect(s.y).toBeGreaterThan(Math.max(l.y, r.y));
+    expect(s.x).toBeGreaterThan(Math.min(l.x, r.x));
+    expect(s.x).toBeLessThan(Math.max(l.x, r.x));
+  });
+
   it('marks dirty for positional node changes', () => {
     const state = useGraphStore.getState();
     const id = state.createUserNode();

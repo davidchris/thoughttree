@@ -43,7 +43,7 @@ import {
   type TurnProvenance,
   type TurnReference,
 } from '@thoughttree/graph-model';
-import { graphToFlowEdges, graphToFlowNodes, type FlowNode } from '../lib/graph/projection';
+import { graphToFlowEdges, graphToFlowNodes, lineageNodeId, withLineage, type FlowNode } from '../lib/graph/projection';
 
 const COLLAPSED_NODE_HEIGHT = 120;
 
@@ -452,7 +452,7 @@ function projectGraph(
   });
   return {
     nodes,
-    edges: graphToFlowEdges(graph),
+    edges: graphToFlowEdges(graph, { selectedNodeId }),
     nodeData: graph.nodes,
   };
 }
@@ -542,10 +542,15 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       }
     }
 
+    // Follow ReactFlow's own selection: a selection box selects without a click.
+    // Adopting a single or empty selection keeps it through later reprojections.
+    const selectionChanged = changes.some((c) => c.type === 'select' || c.type === 'remove');
+    const lineageId = lineageNodeId(newNodes);
+    if (selectionChanged && (lineageId || !newNodes.some((n) => n.selected))) selectedNodeId = lineageId;
+    const flow = { nodes: newNodes, edges: graphToFlowEdges(graph, { selectedNodeId: lineageId }) };
     set({
-      nodes: newNodes,
+      ...(selectionChanged ? withLineage(flow, graph, lineageId) : flow),
       graph,
-      edges: graphToFlowEdges(graph),
       nodeData: graph.nodes,
       isDirty: dirty,
       selectedNodeId,
@@ -569,8 +574,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       }
     }
 
+    const flow = { nodes: state.nodes, edges: newEdges };
+    const removed = changes.some((c) => c.type === 'remove');
     set({
-      edges: newEdges,
+      // A removed edge can cut ancestors out of the Lineage highlight.
+      ...(removed ? withLineage(flow, graph, lineageNodeId(state.nodes)) : flow),
       graph,
       nodeData: graph.nodes,
       isDirty: dirty,
@@ -581,10 +589,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     if (!connection.source || !connection.target) return;
     const state = get();
     const graph = GraphMutations.addEdge(state.graph, connection.source, connection.target);
+    const lineageId = lineageNodeId(state.nodes);
     set({
       graph,
-      nodes: state.nodes,
-      edges: graphToFlowEdges(graph),
+      ...withLineage({ nodes: state.nodes, edges: graphToFlowEdges(graph, { selectedNodeId: lineageId }) }, graph, lineageId),
       nodeData: graph.nodes,
       isDirty: true,
     });

@@ -1,0 +1,525 @@
+{
+  "version": 5,
+  "graph": {
+    "version": 5,
+    "nodes": [
+      {
+        "id": "soil-q0",
+        "role": "user",
+        "content": "How does soil moisture affect seed germination?",
+        "timestamp": 1750000060000,
+        "contentUpdatedAt": 1750000060000
+      },
+      {
+        "id": "soil-a0",
+        "role": "assistant",
+        "content": "Germination needs water uptake; too little stalls it, too much starves seeds of oxygen.",
+        "timestamp": 1750000120000,
+        "contentUpdatedAt": 1750000120000,
+        "provider": "codex"
+      },
+      {
+        "id": "soil-q1",
+        "role": "user",
+        "content": "Which moisture range is best for beans?",
+        "timestamp": 1750000180000,
+        "contentUpdatedAt": 1750000180000
+      },
+      {
+        "id": "soil-a1",
+        "role": "assistant",
+        "content": "Roughly 60 to 80 percent of field capacity in most trials.",
+        "timestamp": 1750000240000,
+        "contentUpdatedAt": 1750000240000,
+        "provider": "codex"
+      },
+      {
+        "id": "light-q0",
+        "role": "user",
+        "content": "Does light matter for bean germination?",
+        "timestamp": 1750000300000,
+        "contentUpdatedAt": 1750000300000
+      },
+      {
+        "id": "light-a0",
+        "role": "assistant",
+        "content": "Beans germinate in darkness; light matters after emergence.",
+        "timestamp": 1750000360000,
+        "contentUpdatedAt": 1750000360000,
+        "provider": "codex"
+      },
+      {
+        "id": "light-b-q0",
+        "role": "user",
+        "content": "What about seedling stretch?",
+        "timestamp": 1750000420000,
+        "contentUpdatedAt": 1750000420000
+      },
+      {
+        "id": "light-b-a0",
+        "role": "assistant",
+        "content": "Low light makes seedlings stretch toward the source.",
+        "timestamp": 1750000480000,
+        "contentUpdatedAt": 1750000480000,
+        "provider": "codex"
+      },
+      {
+        "id": "synth-q",
+        "role": "user",
+        "content": "Combine both: a planting guide for beans.",
+        "timestamp": 1750000540000,
+        "contentUpdatedAt": 1750000540000
+      },
+      {
+        "id": "synth-a",
+        "role": "assistant",
+        "content": "Sow into moist, not wet, soil; give full light once shoots appear.",
+        "timestamp": 1750000600000,
+        "contentUpdatedAt": 1750000600000,
+        "provider": "codex"
+      },
+      {
+        "id": "pests-q0",
+        "role": "user",
+        "content": "Common pests on bean seedlings?",
+        "timestamp": 1750000660000,
+        "contentUpdatedAt": 1750000660000
+      },
+      {
+        "id": "pests-a0",
+        "role": "assistant",
+        "content": "Aphids, slugs and bean seed fly.",
+        "timestamp": 1750000720000,
+        "contentUpdatedAt": 1750000720000,
+        "provider": "codex"
+      },
+      {
+        "id": "pests-slug-q0",
+        "role": "user",
+        "content": "How do I stop slugs?",
+        "timestamp": 1750000780000,
+        "contentUpdatedAt": 1750000780000
+      },
+      {
+        "id": "pests-slug-a0",
+        "role": "assistant",
+        "content": "Barriers, evening hand picking, or ferric phosphate.",
+        "timestamp": 1750000840000,
+        "contentUpdatedAt": 1750000840000,
+        "provider": "codex"
+      },
+      {
+        "id": "pests-aphid-q0",
+        "role": "user",
+        "content": "And aphids?",
+        "timestamp": 1750000900000,
+        "contentUpdatedAt": 1750000900000
+      },
+      {
+        "id": "pests-aphid-a0",
+        "role": "assistant",
+        "content": "Water spray, ladybirds, or insecticidal soap.",
+        "timestamp": 1750000960000,
+        "contentUpdatedAt": 1750000960000,
+        "provider": "codex"
+      },
+      {
+        "id": "compost-q0",
+        "role": "user",
+        "content": "How long does compost take?",
+        "timestamp": 1750001020000,
+        "contentUpdatedAt": 1750001020000
+      },
+      {
+        "id": "compost-a0",
+        "role": "assistant",
+        "content": "Two months hot, up to a year cold.",
+        "timestamp": 1750001080000,
+        "contentUpdatedAt": 1750001080000,
+        "provider": "codex"
+      },
+      {
+        "id": "compost-q1",
+        "role": "user",
+        "content": "Can I speed it up?",
+        "timestamp": 1750001140000,
+        "contentUpdatedAt": 1750001140000
+      },
+      {
+        "id": "compost-a1",
+        "role": "assistant",
+        "content": "Turn it weekly and keep it as damp as a wrung sponge.",
+        "timestamp": 1750001200000,
+        "contentUpdatedAt": 1750001200000,
+        "provider": "codex"
+      },
+      {
+        "id": "tools-q0",
+        "role": "user",
+        "content": "Best hand tools for a small plot?",
+        "timestamp": 1750001260000,
+        "contentUpdatedAt": 1750001260000
+      },
+      {
+        "id": "tools-a0",
+        "role": "assistant",
+        "content": "A hori-hori, a hoe and a good trowel.",
+        "timestamp": 1750001320000,
+        "contentUpdatedAt": 1750001320000,
+        "provider": "codex"
+      },
+      {
+        "id": "rain-q0",
+        "role": "user",
+        "content": "How do I size a rain barrel?",
+        "timestamp": 1750001380000,
+        "contentUpdatedAt": 1750001380000
+      },
+      {
+        "id": "rain-a0",
+        "role": "assistant",
+        "content": "About 0.6 litres per square metre of roof per millimetre of rain.",
+        "timestamp": 1750001440000,
+        "contentUpdatedAt": 1750001440000,
+        "provider": "codex"
+      },
+      {
+        "id": "frost-q0",
+        "role": "user",
+        "content": "When is the last frost here?",
+        "timestamp": 1750001500000,
+        "contentUpdatedAt": 1750001500000
+      },
+      {
+        "id": "frost-a0",
+        "role": "assistant",
+        "content": "Check a local frost date table; plant beans two weeks after.",
+        "timestamp": 1750001560000,
+        "contentUpdatedAt": 1750001560000,
+        "provider": "codex"
+      },
+      {
+        "id": "seeds-q0",
+        "role": "user",
+        "content": "How long do bean seeds keep?",
+        "timestamp": 1750001620000,
+        "contentUpdatedAt": 1750001620000
+      },
+      {
+        "id": "seeds-a0",
+        "role": "assistant",
+        "content": "Three to four years if kept cool and dry.",
+        "timestamp": 1750001680000,
+        "contentUpdatedAt": 1750001680000,
+        "provider": "codex"
+      }
+    ],
+    "edges": [
+      {
+        "id": "soil-q0->soil-a0",
+        "source": "soil-q0",
+        "target": "soil-a0"
+      },
+      {
+        "id": "soil-a0->soil-q1",
+        "source": "soil-a0",
+        "target": "soil-q1"
+      },
+      {
+        "id": "soil-q1->soil-a1",
+        "source": "soil-q1",
+        "target": "soil-a1"
+      },
+      {
+        "id": "light-q0->light-a0",
+        "source": "light-q0",
+        "target": "light-a0"
+      },
+      {
+        "id": "light-a0->light-b-q0",
+        "source": "light-a0",
+        "target": "light-b-q0"
+      },
+      {
+        "id": "light-b-q0->light-b-a0",
+        "source": "light-b-q0",
+        "target": "light-b-a0"
+      },
+      {
+        "id": "soil-a1->synth-q",
+        "source": "soil-a1",
+        "target": "synth-q"
+      },
+      {
+        "id": "light-a0->synth-q",
+        "source": "light-a0",
+        "target": "synth-q"
+      },
+      {
+        "id": "synth-q->synth-a",
+        "source": "synth-q",
+        "target": "synth-a"
+      },
+      {
+        "id": "pests-q0->pests-a0",
+        "source": "pests-q0",
+        "target": "pests-a0"
+      },
+      {
+        "id": "pests-a0->pests-slug-q0",
+        "source": "pests-a0",
+        "target": "pests-slug-q0"
+      },
+      {
+        "id": "pests-slug-q0->pests-slug-a0",
+        "source": "pests-slug-q0",
+        "target": "pests-slug-a0"
+      },
+      {
+        "id": "pests-a0->pests-aphid-q0",
+        "source": "pests-a0",
+        "target": "pests-aphid-q0"
+      },
+      {
+        "id": "pests-aphid-q0->pests-aphid-a0",
+        "source": "pests-aphid-q0",
+        "target": "pests-aphid-a0"
+      },
+      {
+        "id": "compost-q0->compost-a0",
+        "source": "compost-q0",
+        "target": "compost-a0"
+      },
+      {
+        "id": "compost-a0->compost-q1",
+        "source": "compost-a0",
+        "target": "compost-q1"
+      },
+      {
+        "id": "compost-q1->compost-a1",
+        "source": "compost-q1",
+        "target": "compost-a1"
+      },
+      {
+        "id": "tools-q0->tools-a0",
+        "source": "tools-q0",
+        "target": "tools-a0"
+      },
+      {
+        "id": "rain-q0->rain-a0",
+        "source": "rain-q0",
+        "target": "rain-a0"
+      },
+      {
+        "id": "frost-q0->frost-a0",
+        "source": "frost-q0",
+        "target": "frost-a0"
+      },
+      {
+        "id": "seeds-q0->seeds-a0",
+        "source": "seeds-q0",
+        "target": "seeds-a0"
+      }
+    ],
+    "layout": [
+      {
+        "id": "soil-q0",
+        "position": {
+          "x": 1326,
+          "y": 154
+        }
+      },
+      {
+        "id": "soil-a0",
+        "position": {
+          "x": 1617,
+          "y": 666
+        }
+      },
+      {
+        "id": "soil-q1",
+        "position": {
+          "x": 197,
+          "y": 74
+        }
+      },
+      {
+        "id": "soil-a1",
+        "position": {
+          "x": 2194,
+          "y": 96
+        }
+      },
+      {
+        "id": "light-q0",
+        "position": {
+          "x": 1497,
+          "y": 596
+        }
+      },
+      {
+        "id": "light-a0",
+        "position": {
+          "x": 237,
+          "y": 519
+        }
+      },
+      {
+        "id": "light-b-q0",
+        "position": {
+          "x": 879,
+          "y": 38
+        }
+      },
+      {
+        "id": "light-b-a0",
+        "position": {
+          "x": 352,
+          "y": 444
+        }
+      },
+      {
+        "id": "synth-q",
+        "position": {
+          "x": 1712,
+          "y": 71
+        }
+      },
+      {
+        "id": "synth-a",
+        "position": {
+          "x": 985,
+          "y": 92
+        }
+      },
+      {
+        "id": "pests-q0",
+        "position": {
+          "x": 2257,
+          "y": 434
+        }
+      },
+      {
+        "id": "pests-a0",
+        "position": {
+          "x": 242,
+          "y": 846
+        }
+      },
+      {
+        "id": "pests-slug-q0",
+        "position": {
+          "x": 2316,
+          "y": 126
+        }
+      },
+      {
+        "id": "pests-slug-a0",
+        "position": {
+          "x": 914,
+          "y": 645
+        }
+      },
+      {
+        "id": "pests-aphid-q0",
+        "position": {
+          "x": 2387,
+          "y": 63
+        }
+      },
+      {
+        "id": "pests-aphid-a0",
+        "position": {
+          "x": 2363,
+          "y": 599
+        }
+      },
+      {
+        "id": "compost-q0",
+        "position": {
+          "x": 1624,
+          "y": 50
+        }
+      },
+      {
+        "id": "compost-a0",
+        "position": {
+          "x": 905,
+          "y": 47
+        }
+      },
+      {
+        "id": "compost-q1",
+        "position": {
+          "x": 2280,
+          "y": 879
+        }
+      },
+      {
+        "id": "compost-a1",
+        "position": {
+          "x": 545,
+          "y": 296
+        }
+      },
+      {
+        "id": "tools-q0",
+        "position": {
+          "x": 1716,
+          "y": 147
+        }
+      },
+      {
+        "id": "tools-a0",
+        "position": {
+          "x": 2214,
+          "y": 120
+        }
+      },
+      {
+        "id": "rain-q0",
+        "position": {
+          "x": 2338,
+          "y": 315
+        }
+      },
+      {
+        "id": "rain-a0",
+        "position": {
+          "x": 2294,
+          "y": 835
+        }
+      },
+      {
+        "id": "frost-q0",
+        "position": {
+          "x": 740,
+          "y": 105
+        }
+      },
+      {
+        "id": "frost-a0",
+        "position": {
+          "x": 2382,
+          "y": 584
+        }
+      },
+      {
+        "id": "seeds-q0",
+        "position": {
+          "x": 769,
+          "y": 381
+        }
+      },
+      {
+        "id": "seeds-a0",
+        "position": {
+          "x": 399,
+          "y": 560
+        }
+      }
+    ]
+  },
+  "projectModelPreferences": {},
+  "projectEffortPreferences": {}
+}

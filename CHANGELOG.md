@@ -15,6 +15,8 @@
 
 ### Added
 
+- Layered Tidy - Tidy graph now places a Synthesizer node below all of its parents, between them, and keeps the Graph components it joins together. Separate Graph components are packed into a block instead of one long row. Siblings keep their left-to-right order unless a swap removes an edge crossing. Edges attach to whichever sides of two nodes face each other.
+- Lineage highlight - Selecting one node marks its ancestors and the edges among them and into it. Selecting several nodes or clearing the selection removes it.
 - Turn provenance for live replies - Every assistant reply now records which files the agent read, edited, searched, or otherwise touched, plus the tool activity of the Turn. Open the reply in the side panel and expand "Provenance" to see them. Files inside the notes directory show their Vault path; files outside it show only a name. A cancelled or failed Turn still records what happened before it stopped.
 - File nodes - Link a file from your notes directory into the graph by dropping it on the canvas or with right-click → "Add file…". The card shows a type badge, name, size, and a preview (image thumbnail or text excerpt). Connect it to a user node and the file becomes context for everything downstream.
 - Images (PNG, JPG, GIF, WebP) are sent inline, read fresh from disk at send time. Limits: 5 MB per image, 8000 px on the longest side, 20 images per prompt; a larger image is refused before any request is made. Every other file type is sent as a pointer the agent reads from disk itself, with no size limit.
