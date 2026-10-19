@@ -543,9 +543,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     }
 
     // Follow ReactFlow's own selection: a selection box selects without a click.
-    const lineageId = lineageNodeId(newNodes);
-    const flow = { nodes: newNodes, edges: graphToFlowEdges(graph, { selectedNodeId: lineageId }) };
+    // Adopting a single or empty selection keeps it through later reprojections.
     const selectionChanged = changes.some((c) => c.type === 'select' || c.type === 'remove');
+    const lineageId = lineageNodeId(newNodes);
+    if (selectionChanged && (lineageId || !newNodes.some((n) => n.selected))) selectedNodeId = lineageId;
+    const flow = { nodes: newNodes, edges: graphToFlowEdges(graph, { selectedNodeId: lineageId }) };
     set({
       ...(selectionChanged ? withLineage(flow, graph, lineageId) : flow),
       graph,

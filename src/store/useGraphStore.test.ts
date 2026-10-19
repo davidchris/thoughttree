@@ -99,6 +99,25 @@ describe('useGraphStore', () => {
     expect(lineage()).toEqual([]);
   });
 
+  it('keeps a selection-box selection through Tidy', () => {
+    const store = useGraphStore.getState();
+    const root = store.createUserNode();
+    const reply = store.createAgentNodeDownstream(root);
+    store.selectNode(root);
+
+    // The box moves the selection from the root to the reply without a click.
+    store.onNodesChange([
+      { id: root, type: 'select', selected: false },
+      { id: reply, type: 'select', selected: true },
+    ]);
+    expect(useGraphStore.getState().selectedNodeId).toBe(reply);
+
+    useGraphStore.getState().autoLayout({ gridSize: 20 });
+    const { nodes } = useGraphStore.getState();
+    expect(nodes.filter((n) => n.selected).map((n) => n.id)).toEqual([reply]);
+    expect(nodes.filter((n) => n.className === 'lineage').map((n) => n.id)).toEqual([root]);
+  });
+
   it('tidies with Layered and keeps every node and edge', () => {
     const store = useGraphStore.getState();
     const left = store.createUserNode({ x: 0, y: 0 });
