@@ -279,6 +279,30 @@ fn layout_is_deterministic_on_the_grid_and_keeps_every_node_and_edge() {
 }
 
 #[test]
+fn layout_drops_duplicate_edges_by_the_same_key_as_typescript() {
+    // "a" -> "b\0c" and "a\0b" -> "c" share the TypeScript key "a\0b\0c", so
+    // only the first counts; c stays a separate root, as in the Tauri Tidy.
+    let nodes = [
+        node("a", 0., 0.),
+        node("b\0c", 0., 0.),
+        node("a\0b", 0., 0.),
+        node("c", 0., 0.),
+    ];
+    let edges = [edge("a", "b\0c"), edge("a\0b", "c")];
+    let pos = layout(&nodes, &edges, LayoutOptions::default());
+    // Positions from the TypeScript Tidy for the same input.
+    let expected = [
+        ("a", 0., 0.),
+        ("b\0c", 0., 160.),
+        ("a\0b", 300., 0.),
+        ("c", 0., 400.),
+    ];
+    for (id, x, y) in expected {
+        assert_eq!(pos[id], Position { x, y }, "{id:?}");
+    }
+}
+
+#[test]
 fn layout_of_an_empty_graph_is_empty() {
     assert!(compute_layout(&[], &[], LayoutOptions::default()).is_empty());
 }

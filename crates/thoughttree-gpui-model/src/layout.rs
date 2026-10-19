@@ -173,15 +173,17 @@ impl<'a> Structure<'a> {
             cmp(nodes[a].y, nodes[b].y).then_with(|| cmp(nodes[a].x, nodes[b].x))
         });
 
+        // Same duplicate key as the TypeScript Tidy, NUL-joined ids included.
         let mut seen = HashSet::new();
         let valid: Vec<(usize, usize)> = edges
             .iter()
             .filter_map(|&(source, target)| {
-                if source == target || seen.contains(&(source, target)) {
+                let key = format!("{source}\u{0}{target}");
+                if source == target || seen.contains(&key) {
                     return None;
                 }
                 let edge = (*index.get(source)?, *index.get(target)?);
-                seen.insert((source, target));
+                seen.insert(key);
                 Some(edge)
             })
             .collect();
