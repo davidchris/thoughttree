@@ -9,14 +9,14 @@ import { byPosition, type Structure } from './structure';
  *    sit just above its nearest child, so a second tree joins where it merges.
  * 2. Edges that skip layers get invisible waypoints that reserve a lane.
  * 3. Layers start in depth-first order from the sources, left to right by
- *    current position. Barycenter sweeps then reorder them, but a sweep is
- *    kept only when it removes crossings, so siblings keep their current
- *    order unless a swap removes a crossing.
+ *    current position. Neighbours swap only where that removes crossings, so
+ *    siblings keep their current order unless a swap removes a crossing.
  * 4. x is solved per layer as a weighted least-squares fit to the neighbours,
  *    with order and spacing as hard constraints (pool adjacent violators).
  */
 
 const WAYPOINT_WIDTH = 24;
+/** Alternating up/down passes of the x fit. */
 const SWEEPS = 8;
 
 interface Vertex {
@@ -128,46 +128,39 @@ function renumber(layers: Vertex[][]) {
   for (const layer of layers) layer.forEach((v, i) => (v.order = i));
 }
 
-/** Crossings between one layer and the next: pairs of edges whose ends swap order. */
-function layerCrossings(layer: Vertex[]): number {
-  const ends = layer.flatMap((v) => v.down.map((d) => [v.order, d.order] as const));
+/** Crossings among the edges of u and v toward one neighbouring layer, with u left of v. */
+function pairCrossings(uEnds: Vertex[], vEnds: Vertex[]): number {
   let total = 0;
-  ends.forEach(([a1, b1], i) => {
-    for (const [a2, b2] of ends.slice(i + 1)) if ((a1 - a2) * (b1 - b2) < 0) total++;
-  });
+  for (const a of uEnds) for (const b of vEnds) if (a.order > b.order) total++;
   return total;
 }
 
-function crossings(layers: Vertex[][]): number {
-  return layers.reduce((sum, layer) => sum + layerCrossings(layer), 0);
-}
-
-function sortByBarycenter(layer: Vertex[], neighbours: (v: Vertex) => Vertex[]) {
-  const key = new Map<Vertex, number>();
-  for (const v of layer) {
-    const ns = neighbours(v);
-    key.set(v, ns.length ? ns.reduce((sum, n) => sum + n.order, 0) / ns.length : v.order);
-  }
-  layer.sort((a, b) => key.get(a)! - key.get(b)! || a.order - b.order);
-  layer.forEach((v, i) => (v.order = i));
-}
-
+/**
+ * Swap neighbours in a layer only where the swap removes crossings, until no
+ * such swap is left. Every swap lowers the total, so this ends, and two
+ * vertices never trade places for nothing.
+ */
 function reduceCrossings(layers: Vertex[][]) {
   renumber(layers);
-  let best = layers.map((l) => [...l]);
-  let bestCrossings = crossings(layers);
-
-  for (let sweep = 0; sweep < SWEEPS && bestCrossings > 0; sweep++) {
-    for (let l = 1; l < layers.length; l++) sortByBarycenter(layers[l], (v) => v.up);
-    for (let l = layers.length - 2; l >= 0; l--) sortByBarycenter(layers[l], (v) => v.down);
-    const c = crossings(layers);
-    if (c < bestCrossings) {
-      bestCrossings = c;
-      best = layers.map((layer) => [...layer]);
-    }
+  for (let swapped = true; swapped; ) {
+    swapped = false;
+    for (const layer of layers) swapped = swapPass(layer) || swapped;
   }
-  best.forEach((layer, l) => (layers[l] = layer));
-  renumber(layers);
+}
+
+/** One left-to-right pass over a layer. Returns true when anything swapped. */
+function swapPass(layer: Vertex[]): boolean {
+  let swapped = false;
+  for (let i = 0; i + 1 < layer.length; i++) {
+    const [u, v] = [layer[i], layer[i + 1]];
+    const kept = pairCrossings(u.up, v.up) + pairCrossings(u.down, v.down);
+    const flipped = pairCrossings(v.up, u.up) + pairCrossings(v.down, u.down);
+    if (flipped >= kept) continue;
+    [layer[i], layer[i + 1]] = [v, u];
+    [u.order, v.order] = [i + 1, i];
+    swapped = true;
+  }
+  return swapped;
 }
 
 /**

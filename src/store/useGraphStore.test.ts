@@ -61,22 +61,41 @@ describe('useGraphStore', () => {
     const store = useGraphStore.getState();
     const root = store.createUserNode();
     const reply = store.createAgentNodeDownstream(root);
+    const loose = store.createUserNode({ x: 600, y: 0 });
     const lineage = () => useGraphStore.getState().nodes.filter((n) => n.className === 'lineage').map((n) => n.id);
-    const lineageEdges = () => useGraphStore.getState().edges.filter((e) => e.className === 'lineage');
+    const lineageEdges = () =>
+      useGraphStore.getState().edges.filter((e) => e.className === 'lineage').map((e) => e.id);
+    const select = (id: string, selected: boolean) =>
+      useGraphStore.getState().onNodesChange([{ id, type: 'select', selected }]);
 
     store.selectNode(reply);
     expect(lineage()).toEqual([root]);
     expect(lineageEdges()).toHaveLength(1);
 
     // A selection box adds the root: two nodes selected, so no highlight.
-    store.onNodesChange([{ id: root, type: 'select', selected: true }]);
+    select(root, true);
     expect(lineage()).toEqual([]);
-    expect(lineageEdges()).toHaveLength(0);
+    expect(lineageEdges()).toEqual([]);
 
-    store.onNodesChange([{ id: root, type: 'select', selected: false }]);
+    // Box-deselecting both leaves nothing selected.
+    select(root, false);
+    expect(lineage()).toEqual([root]);
+    select(reply, false);
+    expect(lineage()).toEqual([]);
+
+    // A selection box around the reply alone selects it without a click.
+    select(reply, true);
     expect(lineage()).toEqual([root]);
 
-    store.onNodesChange([{ id: reply, type: 'remove' }]);
+    // Connecting a new parent adds it; removing that edge takes it out again.
+    useGraphStore.getState().onConnect({ source: loose, target: reply, sourceHandle: null, targetHandle: null });
+    expect(lineage().sort()).toEqual([root, loose].sort());
+    const looseEdge = useGraphStore.getState().edges.find((e) => e.source === loose)!;
+    expect(looseEdge.className).toBe('lineage');
+    useGraphStore.getState().onEdgesChange([{ id: looseEdge.id, type: 'remove' }]);
+    expect(lineage()).toEqual([root]);
+
+    useGraphStore.getState().onNodesChange([{ id: reply, type: 'remove' }]);
     expect(lineage()).toEqual([]);
   });
 

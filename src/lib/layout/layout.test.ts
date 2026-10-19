@@ -123,6 +123,16 @@ describe('computeLayout', () => {
     expect(pos.get('q')!.x).toBeLessThan(pos.get('a')!.x);
   });
 
+  it('does not swap nodes when the swap removes no crossing', () => {
+    // k0 and k4 cross the same number of edges in either order.
+    const parents = ['p0', 'p1', 'p2', 'p3'].map((id, i) => node(id, i * 200));
+    const kids = ['k0', 'k2', 'k4'].map((id, i) => node(id, i * 300, 160));
+    const into = (target: string, sources: string[]) => sources.map((source) => ({ source, target }));
+    const edges = [...into('k0', ['p0', 'p2', 'p3']), ...into('k2', ['p0', 'p1', 'p2']), ...into('k4', ['p0', 'p3'])];
+    const pos = computeLayout([...parents, ...kids], edges, { gridSize: 0 });
+    expect(pos.get('k0')!.x).toBeLessThan(pos.get('k4')!.x);
+  });
+
   it('puts a Synthesizer node below all of its parents and between them', () => {
     const left = chain('l', 4);
     const right = chain('r', 2, 500);

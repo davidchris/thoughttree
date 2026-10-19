@@ -10,8 +10,6 @@ export type FlowNode = Node<FlowNodeData>;
 
 interface UiState {
   selectedNodeId: NodeId | null;
-  /** More than one node is selected (e.g. with a selection box): no Lineage highlight. */
-  multiSelection?: boolean;
 }
 
 const DEFAULT_POSITION = { x: 0, y: 0 };
@@ -31,17 +29,21 @@ const FLOW_TYPE_BY_ROLE: Record<GraphNode['role'], string> = {
  * parent, so both sides of a Synthesizer node count. The selected node itself
  * is not included, even when a legacy cycle makes it its own ancestor.
  */
-function lineageOf(g: Graph, ui: UiState): Set<NodeId> {
-  const { selectedNodeId } = ui;
-  if (ui.multiSelection || !selectedNodeId || !g.nodes.has(selectedNodeId)) return new Set();
+function lineageOf(g: Graph, selectedNodeId: NodeId | null): Set<NodeId> {
+  if (!selectedNodeId || !g.nodes.has(selectedNodeId)) return new Set();
   const lineage = GraphModel.ancestors(g, selectedNodeId);
   lineage.delete(selectedNodeId);
   for (const id of lineage) if (!g.nodes.has(id)) lineage.delete(id);
   return lineage;
 }
 
+/** An edge among the Lineage highlight's nodes, or from one of them into the selected node. */
+function inLineage(e: { source: string; target: string }, lineage: Set<NodeId>, selectedNodeId: NodeId | null) {
+  return lineage.has(e.source) && (e.target === selectedNodeId || lineage.has(e.target));
+}
+
 export function graphToFlowNodes(g: Graph, ui: UiState): FlowNode[] {
-  const lineage = lineageOf(g, ui);
+  const lineage = lineageOf(g, ui.selectedNodeId);
   const result: FlowNode[] = [];
   for (const node of g.nodes.values()) {
     const position = g.layout.get(node.id) ?? DEFAULT_POSITION;
@@ -63,27 +65,41 @@ export function graphToFlowNodes(g: Graph, ui: UiState): FlowNode[] {
 export const FLOATING_EDGE = 'floating';
 
 /**
- * Re-mark the Lineage highlight on nodes ReactFlow already holds, keeping its
- * own state (selection, measurements) intact.
+ * The node the Lineage highlight belongs to: the only node ReactFlow has
+ * selected. A selection box can select several, and then there is none.
  */
-export function withLineage(nodes: FlowNode[], g: Graph, ui: UiState): FlowNode[] {
-  const lineage = lineageOf(g, ui);
-  return nodes.map((n) => {
-    const className = lineage.has(n.id) ? LINEAGE_CLASS : undefined;
-    return n.className === className ? n : { ...n, className };
-  });
+export function lineageNodeId(nodes: FlowNode[]): NodeId | null {
+  const selected = nodes.filter((n) => n.selected);
+  return selected.length === 1 ? selected[0].id : null;
+}
+
+/**
+ * Re-mark the Lineage highlight on nodes and edges ReactFlow already holds,
+ * keeping their own state (selection, measurements) intact.
+ */
+export function withLineage(
+  flow: { nodes: FlowNode[]; edges: Edge[] },
+  g: Graph,
+  selectedNodeId: NodeId | null
+): { nodes: FlowNode[]; edges: Edge[] } {
+  const lineage = lineageOf(g, selectedNodeId);
+  const mark = <T extends { className?: string }>(item: T, on: boolean): T => {
+    const className = on ? LINEAGE_CLASS : undefined;
+    return item.className === className ? item : { ...item, className };
+  };
+  return {
+    nodes: flow.nodes.map((n) => mark(n, lineage.has(n.id))),
+    edges: flow.edges.map((e) => mark(e, inLineage(e, lineage, selectedNodeId))),
+  };
 }
 
 export function graphToFlowEdges(g: Graph, ui: UiState): Edge[] {
-  const lineage = lineageOf(g, ui);
-  return g.edges.map((e) => {
-    const intoSelection = e.target === ui.selectedNodeId || lineage.has(e.target);
-    return {
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      type: FLOATING_EDGE,
-      ...(intoSelection && lineage.has(e.source) && { className: LINEAGE_CLASS }),
-    };
-  });
+  const lineage = lineageOf(g, ui.selectedNodeId);
+  return g.edges.map((e) => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    type: FLOATING_EDGE,
+    ...(inLineage(e, lineage, ui.selectedNodeId) && { className: LINEAGE_CLASS }),
+  }));
 }

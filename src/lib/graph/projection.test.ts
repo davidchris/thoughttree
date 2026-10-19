@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GraphMutations, type GraphNode } from '@thoughttree/graph-model';
-import { graphToFlowEdges, graphToFlowNodes, withLineage } from './projection';
+import { graphToFlowEdges, graphToFlowNodes, lineageNodeId, withLineage } from './projection';
 
 function userNode(id: string, ts = 1): GraphNode {
   return { id, role: 'user', content: '', timestamp: ts, contentUpdatedAt: ts };
@@ -131,20 +131,38 @@ describe('lineage highlight', () => {
     expect(edges.filter((e) => e.className === 'lineage').map((e) => e.id)).toEqual(['a->b']);
   });
 
-  it('marks nothing without a selection, or with more than one selected node', () => {
-    for (const ui of [{ selectedNodeId: null }, { selectedNodeId: 'm', multiSelection: true }]) {
-      expect(graphToFlowNodes(mergeGraph(), ui).some((n) => n.className)).toBe(false);
-      expect(graphToFlowEdges(mergeGraph(), ui).some((e) => e.className)).toBe(false);
-    }
+  it('marks nothing without a selection', () => {
+    expect(graphToFlowNodes(mergeGraph(), { selectedNodeId: null }).some((n) => n.className)).toBe(false);
+    expect(graphToFlowEdges(mergeGraph(), { selectedNodeId: null }).some((e) => e.className)).toBe(false);
   });
 
-  it('re-marks nodes ReactFlow already holds without touching their selection', () => {
+  it('belongs to the only node ReactFlow has selected, if exactly one is', () => {
+    const nodes = graphToFlowNodes(mergeGraph(), { selectedNodeId: null });
+    const select = (...ids: string[]) => nodes.map((n) => ({ ...n, selected: ids.includes(n.id) }));
+    expect(lineageNodeId(select('m'))).toBe('m');
+    expect(lineageNodeId(select())).toBeNull();
+    expect(lineageNodeId(select('m', 'c'))).toBeNull();
+  });
+
+  it('re-marks nodes and edges ReactFlow already holds without touching their selection', () => {
     const g = mergeGraph();
-    const held = graphToFlowNodes(g, { selectedNodeId: null }).map((n) => ({ ...n, selected: n.id === 'm' }));
-    const marked = withLineage(held, g, { selectedNodeId: 'm' });
-    expect(marked.filter((n) => n.className === 'lineage').map((n) => n.id).sort()).toEqual(['a', 'b', 'x', 'y']);
-    expect(marked.filter((n) => n.selected).map((n) => n.id)).toEqual(['m']);
-    expect(withLineage(marked, g, { selectedNodeId: null }).some((n) => n.className)).toBe(false);
+    const held = {
+      nodes: graphToFlowNodes(g, { selectedNodeId: null }).map((n) => ({ ...n, selected: n.id === 'm' })),
+      edges: graphToFlowEdges(g, { selectedNodeId: null }).map((e) => ({ ...e, selected: e.id === 'b->c' })),
+    };
+    const marked = withLineage(held, g, 'm');
+    expect(marked.nodes.filter((n) => n.className === 'lineage').map((n) => n.id).sort()).toEqual(['a', 'b', 'x', 'y']);
+    expect(marked.edges.filter((e) => e.className === 'lineage').map((e) => e.id).sort()).toEqual([
+      'a->b',
+      'b->m',
+      'x->y',
+      'y->m',
+    ]);
+    expect(marked.nodes.filter((n) => n.selected).map((n) => n.id)).toEqual(['m']);
+    expect(marked.edges.filter((e) => e.selected).map((e) => e.id)).toEqual(['b->c']);
+
+    const cleared = withLineage(marked, g, null);
+    expect([...cleared.nodes, ...cleared.edges].some((item) => item.className)).toBe(false);
   });
 });
 

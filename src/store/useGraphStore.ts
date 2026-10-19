@@ -43,7 +43,7 @@ import {
   type TurnProvenance,
   type TurnReference,
 } from '@thoughttree/graph-model';
-import { graphToFlowEdges, graphToFlowNodes, withLineage, type FlowNode } from '../lib/graph/projection';
+import { graphToFlowEdges, graphToFlowNodes, lineageNodeId, withLineage, type FlowNode } from '../lib/graph/projection';
 
 const COLLAPSED_NODE_HEIGHT = 120;
 
@@ -542,13 +542,13 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       }
     }
 
-    // A selection box can select several nodes; the Lineage highlight needs exactly one.
-    const ui = { selectedNodeId, multiSelection: newNodes.filter((n) => n.selected).length > 1 };
+    // Follow ReactFlow's own selection: a selection box selects without a click.
+    const lineageId = lineageNodeId(newNodes);
+    const flow = { nodes: newNodes, edges: graphToFlowEdges(graph, { selectedNodeId: lineageId }) };
     const selectionChanged = changes.some((c) => c.type === 'select' || c.type === 'remove');
     set({
-      nodes: selectionChanged ? withLineage(newNodes, graph, ui) : newNodes,
+      ...(selectionChanged ? withLineage(flow, graph, lineageId) : flow),
       graph,
-      edges: graphToFlowEdges(graph, ui),
       nodeData: graph.nodes,
       isDirty: dirty,
       selectedNodeId,
@@ -572,8 +572,11 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
       }
     }
 
+    const flow = { nodes: state.nodes, edges: newEdges };
+    const removed = changes.some((c) => c.type === 'remove');
     set({
-      edges: newEdges,
+      // A removed edge can cut ancestors out of the Lineage highlight.
+      ...(removed ? withLineage(flow, graph, lineageNodeId(state.nodes)) : flow),
       graph,
       nodeData: graph.nodes,
       isDirty: dirty,
@@ -584,10 +587,10 @@ export const useGraphStore = create<GraphState>()((set, get) => ({
     if (!connection.source || !connection.target) return;
     const state = get();
     const graph = GraphMutations.addEdge(state.graph, connection.source, connection.target);
+    const lineageId = lineageNodeId(state.nodes);
     set({
       graph,
-      nodes: state.nodes,
-      edges: graphToFlowEdges(graph, { selectedNodeId: state.selectedNodeId }),
+      ...withLineage({ nodes: state.nodes, edges: graphToFlowEdges(graph, { selectedNodeId: lineageId }) }, graph, lineageId),
       nodeData: graph.nodes,
       isDirty: true,
     });
