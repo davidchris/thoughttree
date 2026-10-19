@@ -57,7 +57,7 @@ export function Toolbar() {
   };
 
   const handleCleanUp = () => {
-    autoLayout({ direction: 'TB', gridSize: 20 });
+    autoLayout({ gridSize: 20 });
   };
 
   // Get project name from path
