@@ -136,6 +136,14 @@ The image was rendered from the running window with GPUI's `Window::render_to_im
 
 ![Native Lineage highlight](gpui-lineage.jpg)
 
+## Tidy
+
+Open the committed sample graph `test/fixtures/tidy-sample.thoughttree` (fictitious gardening questions) and run Tidy.
+The two threads joined by the Synthesizer node “Combine both…” sit side by side with the Synthesizer node below and between them. The pests branch keeps its siblings in order, and the separate Graph components are packed into a second row instead of one long strip.
+The image was rendered from the running window with GPUI's `Window::render_to_image` (2880×1880, no window chrome), because the agent's shell had no Screen Recording permission. A provider error banner from the offline fixture adapter was cleared before rendering.
+
+![Native Tidy on the sample graph](gpui-tidy.jpg)
+
 ## Finder drop checks
 
 On 2026-10-04, the user performed both checks in ThoughtTree Native Review with the isolated parity project and confirmed both succeeded.
