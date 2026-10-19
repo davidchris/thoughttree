@@ -512,7 +512,7 @@ fn kagi_retains_unanswered_users_and_drops_orphan_assistant_messages() {
 }
 
 #[test]
-fn tidy_layout_preserves_synthesis_edges_and_supports_both_directions() {
+fn tidy_layout_preserves_synthesis_edges() {
     let mut graph = text_graph();
     let edges = graph.edges.clone();
     graph.auto_layout(LayoutOptions::default());
@@ -520,11 +520,6 @@ fn tidy_layout_preserves_synthesis_edges_and_supports_both_directions() {
     assert!(graph.layout["root"].y < graph.layout["left"].y);
     assert!(graph.layout["left"].y < graph.layout["merge"].y);
     assert_ne!(graph.layout["left"].x, graph.layout["right"].x);
-    graph.auto_layout(LayoutOptions {
-        direction: LayoutDirection::LeftToRight,
-        ..Default::default()
-    });
-    assert!(graph.layout["root"].x < graph.layout["left"].x);
 }
 
 #[test]

@@ -1,7 +1,5 @@
 use thoughttree_gpui_model::Position;
-
-pub const NODE_WIDTH: f64 = 170.;
-pub const NODE_HEIGHT: f64 = 120.;
+pub use thoughttree_gpui_model::{NODE_HEIGHT, NODE_WIDTH};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Viewport {
