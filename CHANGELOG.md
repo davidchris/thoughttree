@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
+- Final Tauri release. macOS moves to the native app from v0.7.0. Linux and Windows stay on v0.6.0 until native builds exist. v0.6.0 gets no further security or dependency fixes.
 - Fixed Codex startup from macOS desktop launches where Node was missing from PATH.
 - Fixed ignored model and reasoning effort choices with current Codex ACP adapters.
 - Codex model menus now use live discovery, with current Astra, Sol, Terra, Luna, GPT-5.5, and Spark fallbacks.
