@@ -2,7 +2,7 @@
 
 The `thoughttree-gpui` executable uses GPUI (`gpui-pre` 0.3.7) and gpui-component 0.7 native components.
 It shares the Rust provider, Vault, attachment, and recovery services with the desktop backend.
-The existing Tauri application remains available.
+The Tauri application gets one final release, v0.6.0, and then leaves the repository ([ADR 0010](../adr/0010-gpui-only-desktop-frontend.md)).
 
 The [parity matrix](parity.md) records the acceptance requirements and their verification status.
 Unchecked rows are not verified. Screenshots alone cannot establish full feature parity.
@@ -33,8 +33,11 @@ To create a local macOS application bundle:
 
 ```sh
 scripts/build-gpui.sh --debug
-open 'target/debug/bundle/ThoughtTree GPUI.app'
+open target/debug/bundle/ThoughtTree.app
 ```
+
+The bundle has the name `ThoughtTree` and the identifier `com.david.thoughttree`, the same identifier as the Tauri app.
+Its version is the `thoughttree-gpui` crate version, which the script reads with `cargo metadata` and `jq`.
 
 Omit `--debug` for an optimized release build.
 Use `--debug --no-build` to package an existing debug executable after `cargo build`.

@@ -43,7 +43,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
     exit 0
 fi
 
-GPUI_BUNDLE="$GPUI_TARGET/$GPUI_PROFILE/bundle/ThoughtTree GPUI.app"
+GPUI_BUNDLE="$GPUI_TARGET/$GPUI_PROFILE/bundle/ThoughtTree.app"
 mkdir -p "$GPUI_BUNDLE/Contents/MacOS" "$GPUI_BUNDLE/Contents/Resources"
 cp "$GPUI_BINARY" "$GPUI_BUNDLE/Contents/MacOS/thoughttree-gpui"
 cp "$GPUI_ROOT/src-tauri/icons/icon.icns" "$GPUI_BUNDLE/Contents/Resources/icon.icns"
@@ -52,18 +52,20 @@ if [[ -x "$GPUI_SIDECAR" ]]; then
 else
     echo "Claude sidecar absent. Run bun run build:sidecar, then package again to include it." >&2
 fi
-cat > "$GPUI_BUNDLE/Contents/Info.plist" <<'PLIST'
+GPUI_VERSION="$(cargo metadata --format-version 1 --no-deps \
+    | jq -er '.packages[] | select(.name == "thoughttree-gpui") | .version')"
+cat > "$GPUI_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleName</key><string>ThoughtTree GPUI</string>
-<key>CFBundleDisplayName</key><string>ThoughtTree GPUI</string>
-<key>CFBundleIdentifier</key><string>com.david.thoughttree.gpui</string>
+<key>CFBundleName</key><string>ThoughtTree</string>
+<key>CFBundleDisplayName</key><string>ThoughtTree</string>
+<key>CFBundleIdentifier</key><string>com.david.thoughttree</string>
 <key>CFBundleExecutable</key><string>thoughttree-gpui</string>
 <key>CFBundleIconFile</key><string>icon.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.5.0</string>
-<key>CFBundleVersion</key><string>0.5.0</string>
+<key>CFBundleShortVersionString</key><string>$GPUI_VERSION</string>
+<key>CFBundleVersion</key><string>$GPUI_VERSION</string>
 <key>LSMinimumSystemVersion</key><string>12.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSSupportsAutomaticGraphicsSwitching</key><true/>

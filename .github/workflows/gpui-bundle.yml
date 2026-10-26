@@ -34,11 +34,11 @@ jobs:
 
       - name: Archive application bundle
         # Preserve the executable bit, bundle metadata, and local signature.
-        run: ditto -c -k --sequesterRsrc --keepParent "target/release/bundle/ThoughtTree GPUI.app" "target/ThoughtTree-GPUI-macOS.zip"
+        run: ditto -c -k --sequesterRsrc --keepParent target/release/bundle/ThoughtTree.app target/ThoughtTree-macOS.zip
 
       - name: Upload development bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ThoughtTree-GPUI-macOS
-          path: target/ThoughtTree-GPUI-macOS.zip
+          name: ThoughtTree-macOS
+          path: target/ThoughtTree-macOS.zip
           if-no-files-found: error
