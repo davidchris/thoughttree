@@ -83,7 +83,7 @@ bun run build:sidecar
 ./scripts/build-gpui.sh
 ```
 
-The bundle is `target/release/bundle/ThoughtTree GPUI.app`.
+The bundle is `target/release/bundle/ThoughtTree.app`.
 The script includes the Claude adapter when it exists.
 It applies a local signature. It does not notarize or publish the app.
 The manual **GPUI macOS bundle** workflow produces the same development bundle as a download artifact.
