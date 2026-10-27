@@ -28,9 +28,9 @@ pub fn danger() -> Hsla {
 pub fn edge() -> Hsla {
     rgb(0x4f7a76).into()
 }
-/// Lineage highlight, after the Tauri prototype: thicker edges 60% of the
-/// way from `edge` to `accent` and a light accent tint on `surface`. Every
-/// card border is already `accent`, so a soft accent glow marks the nodes.
+/// Lineage highlight, after the former TypeScript frontend: thicker edges 60%
+/// of the way from `edge` to `accent` and a light accent tint on `surface`.
+/// Every card border is already `accent`, so a soft accent glow marks the nodes.
 pub fn lineage_edge() -> Hsla {
     rgb(0x93c7aa).into()
 }

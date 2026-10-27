@@ -1,8 +1,8 @@
 # Native GPUI desktop frontend
 
 The `thoughttree-gpui` executable uses GPUI (`gpui-pre` 0.3.7) and gpui-component 0.7 native components.
-It shares the Rust provider, Vault, attachment, and recovery services with the desktop backend.
-The Tauri application gets one final release, v0.6.0, and then leaves the repository ([ADR 0010](../adr/0010-gpui-only-desktop-frontend.md)).
+It gets its provider, Vault, attachment, and recovery services from `thoughttree-desktop` and `thoughttree-core`.
+It is the only desktop frontend. The Tauri application had its final release in v0.6.0 and then left the repository ([ADR 0010](../adr/0010-gpui-only-desktop-frontend.md)).
 
 The [parity matrix](parity.md) records the acceptance requirements and their verification status.
 Unchecked rows are not verified. Screenshots alone cannot establish full feature parity.
@@ -27,7 +27,7 @@ cargo run --locked -p thoughttree-gpui -- /absolute/path/project.thoughttree
 The application uses the existing ThoughtTree configuration directory by default.
 Set `THOUGHTTREE_CONFIG_DIR` to use a separate configuration.
 Set `THOUGHTTREE_LOCAL_STATE_DIR` to isolate recovery snapshots and other local state.
-These overrides are useful when comparing the two frontends.
+These overrides are useful for isolated tests and development sessions.
 
 To create a local macOS application bundle:
 
@@ -49,14 +49,16 @@ After a release build, `scripts/build-dmg.sh` packages the bundle as the release
 
 Use Settings to select the notes directory, default provider, executable paths, models, and reasoning effort.
 Providers require their own installed and authenticated command-line tools.
-Claude also requires the existing ACP sidecar:
+Claude also requires the bundled ACP sidecar:
 
 ```sh
 bun run build:sidecar
 scripts/build-gpui.sh --debug --no-build
 ```
 
+`bun run build:sidecar` writes `binaries/claude-code-acp-<target triple>`.
 The bundle script copies the current architecture's sidecar when it exists.
+On macOS, `cargo run` also finds it there.
 It does not download, authenticate, or configure a provider.
 Codex uses its configured ACP adapter directly.
 

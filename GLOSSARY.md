@@ -10,15 +10,15 @@ _Avoid_: tree (the structure is a DAG, not a tree), canvas, board.
 
 **GraphNode**:
 A single message in the Graph — a user prompt, an assistant response, or a File node. Pure domain shape; carries content, role, timestamp, and role-specific fields (provider/model for assistant, images for user, a Vault file reference for file).
-_Avoid_: message, item, card, ThoughtTreeFlowNodeData (that's the ReactFlow projection).
+_Avoid_: message, item, card.
 
 **GraphEdge**:
 A directed link from one GraphNode to another, indicating message ordering and lineage. Multiple incoming edges = synthesizer node.
 _Avoid_: connection, link, relation.
 
 **GraphModel**:
-The functional API over a Graph value. All mutations are pure: `(Graph, args) → Graph`. Owns traversal, lineage, and serialization. Lives in `src/lib/graph/`.
-_Avoid_: GraphService, GraphManager, GraphStore (the Zustand store *uses* GraphModel, it isn't one).
+The API over a Graph value: edits, traversal, lineage, and serialization.
+_Avoid_: GraphService, GraphManager, GraphStore.
 
 **Synthesizer node**:
 A GraphNode with multiple parents. Receives content from converging branches as prior conversation turns.
@@ -53,7 +53,7 @@ The rule deciding whether Node markers, Structure annotations, and the Lineage m
 _Avoid_: intent detection, heuristic.
 
 **Layout**:
-Per-node spatial position `{x, y}` used to render the Graph in ReactFlow. Stored inside Graph (persisted with project file) but semantically separate from node content.
+Per-node spatial position `{x, y}` used to draw the Graph on the canvas. Stored inside Graph (persisted with project file) but semantically separate from node content.
 _Avoid_: position (ambiguous), coords.
 
 **Tidy**:
@@ -87,10 +87,6 @@ _Avoid_: strict CAS, transaction.
 **Recovery snapshot**:
 An independent saved version of ThoughtTree edits, retained separately from the Project file for recovery after conflict or crash. It covers the edits in a completed snapshot, not external versions ThoughtTree never observed.
 _Avoid_: backup (implies broader protection), external version history.
-
-**ReactFlow projection**:
-The transformation `(Graph, uiState) → ReactFlow Node[]` that produces presentation nodes for `@xyflow/react`. ReactFlow `node.data` carries only `{ id }`; node components subscribe to the store by id for content.
-_Avoid_: node mapping, view model.
 
 **Palette**:
 The overlay for finding and jumping to GraphNodes. Searches a Corpus snapshot taken when it opens; an empty query lists recently updated GraphNodes.
@@ -172,20 +168,12 @@ _Avoid_: connection (transport-level), session (taken by ACP session).
 A permission request pending while nobody answers it. Pauses its Turn indefinitely — no timeout, no auto-deny; surfaced first when an Attachment (re)appears.
 _Avoid_: stale prompt, timed-out request.
 
-**Backend module tree**:
-The concern-grouped Rust modules under `src-tauri/src/backend/`: `types`, `state`, `runtime`, `config`, `acp/{clients,process,sessions}`, `commands/{chat,projects,providers,summary}`. `lib.rs` is a thin entry point that registers Tauri commands; all logic lives under `backend/`.
-_Avoid_: "the Rust side" as a catch-all when a specific module fits.
-
-**Tauri command**:
-A `#[tauri::command]` async fn registered with `tauri::generate_handler!`, invoked from the frontend via `invoke()`. The IPC surface between React and Rust. Lives in `src-tauri/src/backend/commands/`.
-_Avoid_: handler, endpoint, RPC.
-
 **Permission channel**:
-A `oneshot::Sender<String>` stored in `AppState::pending_permissions` keyed by request id. The ACP client awaits the receiver while the frontend shows a permission prompt; the `respond_to_permission` Tauri command resolves the sender with the user-selected option id.
+A `oneshot::Sender<String>` held by the `PermissionBroker`, keyed by request id. The ACP client awaits the receiver while the app shows a permission prompt; `Desktop::respond_to_permission` resolves the sender with the user-selected option id.
 _Avoid_: callback, promise.
 
 **LocalSet runtime**:
-The `run_localset_blocking` helper in `src-tauri/src/backend/runtime.rs`. Spawns a current-thread Tokio runtime + `LocalSet` on a blocking pool, used because ACP futures are `?Send`.
+The `run_localset_blocking` helper in `crates/thoughttree-core/src/runtime.rs`. Spawns a current-thread Tokio runtime + `LocalSet` on a blocking pool, used because ACP futures are `?Send`.
 _Avoid_: worker thread, executor.
 
 **Reasoning effort**:
@@ -193,7 +181,7 @@ How hard a Provider's model thinks before answering: a single discrete scale `lo
 _Avoid_: thinking budget (numeric, provider-internal), thinking mode, effort level (redundant — "effort" suffices).
 
 **Config store**:
-The `config.json` file in the app data directory, holding notes directory, default provider, model preferences, provider paths, and recent projects. Both desktop frontends share it through `thoughttree_core::config`: every write takes `config.lock`, rereads the file, and replaces it atomically, so neither frontend erases the other's settings.
+The `config.json` file in the app data directory, holding notes directory, default provider, model preferences, provider paths, and recent projects. Every running ThoughtTree app, v0.6.0 included, shares it through `thoughttree_core::config`: every write takes `config.lock`, rereads the file, and replaces it atomically, so no app erases another's settings.
 _Avoid_: settings, preferences (use these for user-facing concepts, not the persisted store).
 
 ## Relationships
@@ -207,14 +195,13 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 - A **Lineage subgraph** is derived from a **Graph** and a target **GraphNode**; the **Conversation path** is its linearization
 - **Node marker**s bind **Conversation path** content to **GraphNode**s; **Structure annotation**s and the **Lineage map** describe the **Lineage subgraph**'s topology; all three are controlled by the **Structure gate**
 - Cross-branch operations (contrast, synthesis across branches) require a **Synthesizer node** — the agent never sees non-ancestors, so merging branches is the only way to bring them into scope
-- The **GraphModel** operates on a **Graph**; the Zustand store holds a **Graph** value and calls **GraphModel** for mutations
-- The **ReactFlow projection** consumes a **Graph** plus UI state; ReactFlow itself never sees **GraphNode** directly
+- The **GraphModel** operates on a **Graph**
 - The **Palette** searches a **Corpus snapshot** of the **Graph**'s **GraphNodes**; each **Search hit** references one **GraphNode**
 - A **Jump** sets selection and viewport to one **GraphNode**
 - **Tidy** rewrites the **Layout** of every **Graph component**; a **Synthesizer node** sits below all of its parents
 - A **Lineage highlight** shows the **Lineage subgraph** of the selected **GraphNode**
 - An **ACP session** is spawned per **Provider** and bound to one streaming **GraphNode** at a time
-- An **ACP session** drives an **ACP client**; user-permission prompts during the session use a **Permission channel** routed back through a **Tauri command**
+- An **ACP session** drives an **ACP client**; user-permission prompts during the session use a **Permission channel**
 - All **ACP session**s and model-discovery runs execute on a **LocalSet runtime**
 - A **Vault** contains many **Project files**; each **Project file** persists one **Graph**
 - Every persist of a **Project file** is a **Guarded write**, regardless of **Deployment shape** or writer
@@ -230,10 +217,9 @@ _Avoid_: settings, preferences (use these for user-facing concepts, not the pers
 > **Dev:** "When a user creates a node downstream of two existing assistant nodes, what does the **Conversation path** look like?"
 > **Domain expert:** "It's a **Synthesizer node**. The path includes all ancestors topo-sorted by timestamp. If two consecutive ancestors are both `assistant`, we merge their content into one message before sending — Claude expects role alternation."
 
-> **Dev:** "Should the **GraphModel** know about ReactFlow?"
-> **Domain expert:** "No. The **ReactFlow projection** is the only place `@xyflow/react` types appear on the read path. **GraphModel** is pure TS — testable without rendering."
+> **Dev:** "Should the **GraphModel** know about the canvas?"
+> **Domain expert:** "No. The **GraphModel** has no UI dependency, so it is testable without rendering."
 
 ## Flagged ambiguities
 
-- "node" was used to mean both **GraphNode** (domain) and ReactFlow `Node<ThoughtTreeFlowNodeData>` (projection) — resolved: the latter is the **ReactFlow projection**'s output, never called just "node" in domain code.
 - "lineage" was used to mean both ancestor *set* and ordered *path* — resolved: lineage = set, **Conversation path** = ordered.

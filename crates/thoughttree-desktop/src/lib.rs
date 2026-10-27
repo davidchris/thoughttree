@@ -1,5 +1,5 @@
 //! In-process native desktop services. ACP, Vault resolution, guarded writes,
-//! recovery, attachment validation and provenance use the same core as Tauri.
+//! recovery, attachment validation and provenance come from `thoughttree-core`.
 //!
 //! `Desktop::open` takes an explicit config directory for isolated fixtures.
 //! All ACP work runs on an owned Tokio runtime and reaches the UI through an

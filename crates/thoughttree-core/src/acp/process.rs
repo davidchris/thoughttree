@@ -6,67 +6,40 @@ use tracing::{info, warn};
 
 use crate::types::{AgentProvider, ProviderDescriptor, ProviderPaths, ReasoningEffort};
 
+/// Target triple of the development sidecar that `bun run build:sidecar`
+/// names; empty where the development lookup is not supported.
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+const DEV_SIDECAR_TRIPLE: &str = "aarch64-apple-darwin";
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+const DEV_SIDECAR_TRIPLE: &str = "x86_64-apple-darwin";
+#[cfg(not(target_os = "macos"))]
+const DEV_SIDECAR_TRIPLE: &str = "";
+
 /// Find the bundled claude-code-acp sidecar binary
 pub fn find_sidecar_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let exe_dir = exe.parent()?;
+    find_sidecar_from(exe.parent()?, DEV_SIDECAR_TRIPLE)
+}
 
-    // Standard location: next to the main executable
+/// The sidecar next to the executable (an app bundle), else the development
+/// build in `binaries/` or `target/` of an ancestor directory.
+fn find_sidecar_from(exe_dir: &Path, target_triple: &str) -> Option<PathBuf> {
     let sidecar = exe_dir.join("claude-code-acp");
     if sidecar.exists() {
         return Some(sidecar);
     }
-
-    // Development: check src-tauri/binaries with target triple
-    // Get the target triple for the current platform
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    let target_triple = "aarch64-apple-darwin";
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    let target_triple = "x86_64-apple-darwin";
-    #[cfg(not(target_os = "macos"))]
-    let target_triple = "";
-
-    if !target_triple.is_empty() {
-        // Try to find in development location
-        // Walk up from exe to find src-tauri/binaries
-        let mut current = exe_dir.to_path_buf();
-        for _ in 0..10 {
-            let dev_sidecar = current
-                .join("src-tauri/binaries")
-                .join(format!("claude-code-acp-{target_triple}"));
-            if dev_sidecar.exists() {
-                return Some(dev_sidecar);
-            }
-
-            // Also check Cargo build outputs in dev workflows. In a workspace,
-            // `target/` lives at the repo root instead of `src-tauri/target/`.
-            let dev_target = current.join("src-tauri/target");
-            let dev_debug = dev_target.join("debug/claude-code-acp");
-            if dev_debug.exists() {
-                return Some(dev_debug);
-            }
-            let dev_release = dev_target.join("release/claude-code-acp");
-            if dev_release.exists() {
-                return Some(dev_release);
-            }
-
-            let workspace_target = current.join("target");
-            let workspace_debug = workspace_target.join("debug/claude-code-acp");
-            if workspace_debug.exists() {
-                return Some(workspace_debug);
-            }
-            let workspace_release = workspace_target.join("release/claude-code-acp");
-            if workspace_release.exists() {
-                return Some(workspace_release);
-            }
-
-            if !current.pop() {
-                break;
-            }
-        }
+    if target_triple.is_empty() {
+        return None;
     }
-
-    None
+    exe_dir.ancestors().take(10).find_map(|dir| {
+        [
+            dir.join(format!("binaries/claude-code-acp-{target_triple}")),
+            dir.join("target/debug/claude-code-acp"),
+            dir.join("target/release/claude-code-acp"),
+        ]
+        .into_iter()
+        .find(|path| path.exists())
+    })
 }
 
 /// Ordered executable candidates for a provider. Pure: environment inputs
@@ -415,6 +388,28 @@ mod tests {
             .expect("modern adapter must receive CODEX_CONFIG, not just ignored CLI flags");
         assert_eq!(config["model"], "gpt-5.6-sol");
         assert_eq!(config["model_reasoning_effort"], "medium");
+    }
+
+    #[test]
+    fn development_run_finds_the_sidecar_that_build_sidecar_writes() {
+        let repo = tempfile::tempdir().unwrap();
+        let exe_dir = repo.path().join("target/debug");
+        std::fs::create_dir_all(&exe_dir).unwrap();
+        let triple = "aarch64-apple-darwin";
+        assert_eq!(find_sidecar_from(&exe_dir, triple), None);
+
+        // scripts/build-sidecar.sh writes binaries/claude-code-acp-<triple>.
+        let built = repo
+            .path()
+            .join("binaries/claude-code-acp-aarch64-apple-darwin");
+        std::fs::create_dir_all(built.parent().unwrap()).unwrap();
+        std::fs::write(&built, "").unwrap();
+        assert_eq!(find_sidecar_from(&exe_dir, triple), Some(built));
+
+        // A bundle's sidecar next to the executable wins.
+        let bundled = exe_dir.join("claude-code-acp");
+        std::fs::write(&bundled, "").unwrap();
+        assert_eq!(find_sidecar_from(&exe_dir, triple), Some(bundled));
     }
 
     fn claude_descriptor() -> &'static crate::types::ProviderDescriptor {

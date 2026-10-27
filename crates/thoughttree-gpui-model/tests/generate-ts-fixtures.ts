@@ -1,11 +1,10 @@
 // Run from the repository root with:
 // bun crates/thoughttree-gpui-model/tests/generate-ts-fixtures.ts
-// These golden cases are evaluated by the existing frontend's GraphModel.
+// These golden cases are evaluated by the TypeScript GraphModel, the Project reader of Tauri v0.6.0.
+// The palette cases came from the removed TypeScript palette. They are kept as they are; edit them by hand.
 import { GraphModel } from '../../../packages/graph-model/src/model';
 import { GraphSerialize } from '../../../packages/graph-model/src/serialize';
 import { normalizeProvenance } from '../../../packages/graph-model/src/normalize';
-import { PaletteSearch } from '../../../src/lib/palette/search';
-import type { HighlightedText } from '../../../src/lib/palette/types';
 import { parseKagiExport } from '../../../packages/graph-model/src/kagi';
 import { conversationToGraph } from '../../../packages/graph-model/src/import';
 import type { GraphNode, GraphEdge } from '../../../packages/graph-model/src/types';
@@ -44,32 +43,8 @@ const provenance = [
   { completeness: 'complete', references: [{ type: 'file', scope: 'vault', path: '../secret.txt', displayName: '/Users/alice/secret.txt', relations: ['read', 'bogus'] }, { type: 'url', url: 'file:///Users/alice/key', relations: [] }], activity: [{ type: 'tool', kind: 'execute', title: 'echo hello', status: 'completed', rawInput: 'secret' }, { type: 'unknown', providerType: 'newType', label: 'Unsupported' }] },
   { completeness: 'unknown', references: [{ type: 'url', url: 'custom:thing', title: 'reading /Users/alice/doc', relations: ['consulted'] }], activity: [{ type: 'tool', kind: 'read', title: 'Read src/lib.rs', status: 'unexpected' }, { type: 'raw', payload: 'drop me' }] },
 ].map(input => ({ input, expected: normalizeProvenance(input) }));
-const byteSpans = (text: HighlightedText | undefined) => text ? ({
-  text: text.text,
-  spans: text.spans.map(span => ({
-    start: new TextEncoder().encode(text.text.slice(0, span.start)).length,
-    end: new TextEncoder().encode(text.text.slice(0, span.end)).length,
-  })),
-}) : null;
-const paletteFixture = (name: string, corpus: GraphNode[], query: string) => ({
-  name, corpus, query,
-  expected: PaletteSearch.search(corpus, query, 20).hits.map(hit => ({ id: hit.node.id, title: byteSpans(hit.title), snippet: byteSpans(hit.snippet) })),
-});
-const palette = [
-  paletteFixture('UTF16 match position ranking', [user('ascii', 'xxx rust'), user('unicode', 'é😀rust')], 'rust'),
-  paletteFixture('title boundary excludes split surrogate', [user('title', 'x'.repeat(79) + '😀 suffix')], ''),
-  paletteFixture('file title limit', [file('f', `notes/${'x'.repeat(79)}😀.md`)], ''),
-  paletteFixture('folder query searches complete Vault path', [file('f', '研究/reference.md'), user('u', 'unrelated')], '研究'),
-  paletteFixture('snippet window and whitespace preserve boundary space', [user('snippet', 'a'.repeat(80) + ' 😀\n  target\t  ' + 'b'.repeat(140))], 'target'),
-  paletteFixture('Unicode regexp folding stays browser compatible', [user('ascii', 'k s'), user('kelvin', 'K'), user('long-s', 'ſ'), user('turkish', 'İ ı')], 'k'),
-  paletteFixture('Unicode token matches have valid byte spans', [user('greek', 'σΣς'), user('turkish', 'İ ı')], 'σ'),
-  paletteFixture('astral case folding stays browser compatible', [user('deseret', '𐐀 𐐨')], '𐐨'),
-  paletteFixture('Javascript whitespace token boundaries', [user('and', 'rust parser'), user('one', 'rust')], 'rust\ufeffparser'),
-  paletteFixture('overlapping literals merge highlights', [user('overlap', 'a+b aba ababa')], 'aba ba'),
-  paletteFixture('summary ranks before early content', [user('body', 'Rust'), { ...assistant('summary', 'Later Rust'), summary: 'Rust overview' }], 'Rust'),
-];
-const authored = await Bun.file(new URL('../../../docs/gpui/fixtures/parity.thoughttree', import.meta.url)).json();
-palette.push(paletteFixture('authored visual fixture Native rich answer', authored.graph.nodes, 'Native rich answer'));
+const output = new URL('./fixtures/typescript-parity.json', import.meta.url);
+const { palette } = await Bun.file(output).json();
 const imports = [];
 for (const name of ['kagi-export-v1.json', 'kagi-export-nested.json']) {
   const source = Bun.file(new URL(`../../../test/fixtures/${name}`, import.meta.url));
@@ -78,4 +53,4 @@ for (const name of ['kagi-export-v1.json', 'kagi-export-nested.json']) {
     imports.push({ name, input, graph: GraphSerialize.toJSON(conversationToGraph(parseKagiExport(input))) });
   }
 }
-await Bun.write(new URL('./fixtures/typescript-parity.json', import.meta.url), JSON.stringify({ cases, provenance, palette, imports }, null, 2) + '\n');
+await Bun.write(output, JSON.stringify({ cases, provenance, palette, imports }, null, 2) + '\n');

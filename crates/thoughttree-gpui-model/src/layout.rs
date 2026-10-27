@@ -1,6 +1,6 @@
-//! Tidy: the Layered layout, ported from `src/lib/layout/` in the Tauri
-//! frontend. Both must turn every case in `fixtures/layout/` into exactly the
-//! same positions, so this port keeps the TypeScript evaluation order:
+//! Tidy: the Layered layout, ported from the former TypeScript frontend. The
+//! cases in `fixtures/layout/` hold the TypeScript positions, and this port
+//! must reproduce them exactly, so it keeps the TypeScript evaluation order:
 //! the same sorts, the same iteration order and the same float operations.
 //!
 //! Each Graph component is laid out on its own (a small Sugiyama):

@@ -21,15 +21,9 @@ echo "Updating version files to $VERSION..."
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
 echo "  Updated package.json"
 
-# Update tauri.conf.json
-sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-echo "  Updated src-tauri/tauri.conf.json"
-
-# Update the Tauri and GPUI crates
-for MANIFEST in src-tauri/Cargo.toml crates/thoughttree-gpui/Cargo.toml; do
-  sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" "$MANIFEST"
-  echo "  Updated $MANIFEST"
-done
+# Update the GPUI crate, whose version the app bundle reports
+sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" crates/thoughttree-gpui/Cargo.toml
+echo "  Updated crates/thoughttree-gpui/Cargo.toml"
 
 # Update the workspace entries in Cargo.lock
 echo "  Updating Cargo.lock..."

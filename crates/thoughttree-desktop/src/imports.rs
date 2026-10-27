@@ -84,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_the_same_sanitized_kagi_fixture_as_tauri() {
+    fn reads_the_sanitized_kagi_fixture_as_text() {
         let fixture =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test/fixtures/kagi-export-v1.json");
         assert_eq!(

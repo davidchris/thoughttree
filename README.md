@@ -44,13 +44,12 @@ v0.6.0 is the final release for Linux and Windows. It gets no further fixes.
 
 ## Build from Source
 
-ThoughtTree has two desktop frontends: the existing Tauri app and the native [GPUI](https://gpui.rs/) app.
-Both use the same Project format, Vault, and provider adapters.
-The GPUI app uses Rust for its interface and does not require a webview.
+ThoughtTree is a native [GPUI](https://gpui.rs/) app.
+It uses Rust for its interface and does not require a webview.
 Desktop interaction checks currently cover macOS. Linux and Windows desktop behavior remains unverified.
 
 Install [Rust](https://rustup.rs/) stable and the Xcode command line tools on macOS.
-Install [Bun](https://bun.sh) to build the Tauri app or the bundled Claude adapter.
+Install [Bun](https://bun.sh) to build the bundled Claude adapter and to run the Project format checks.
 Clone the repository:
 
 ```bash
@@ -107,22 +106,15 @@ Otherwise it publishes the GitHub Release `ThoughtTree v<version>` with the DMG 
 A pull request that changes the workflow or the build scripts builds the same DMG as a workflow artifact and publishes nothing.
 A manual run of the workflow does the same.
 
-### Tauri app
-
-Releases after v0.6.0 do not include the Tauri app.
-Build the existing desktop app:
-
-```bash
-bun install
-bun run build:sidecar
-bun run tauri:build
-```
-
-The built app will be in `target/release/bundle/`.
-
 ### Development checks
 
-Install Bun for the TypeScript–Rust Project format comparison test.
+Run every check that CI requires:
+
+```bash
+just verify
+```
+
+The checks need Bun: a test opens a Project that the app saved with the TypeScript Project reader of v0.6.0.
 Run the portable model and desktop service tests:
 
 ```bash
@@ -136,7 +128,7 @@ cargo test --locked -p thoughttree-gpui
 ```
 
 The desktop service tests use an offline ACP fixture. They do not use your provider account.
-The [fixture guide](docs/gpui/fixture-adapter.md) explains how to compare both interfaces with isolated settings and synthetic data.
+The [fixture guide](docs/gpui/fixture-adapter.md) explains how to run the app with isolated settings and synthetic data.
 The [parity checklist](docs/gpui/parity.md) tracks behavior and screenshot evidence.
 
 ## Getting Started
@@ -165,17 +157,16 @@ Project files are saved in format v5 once this version runs; older ThoughtTree b
 ## Architecture
 
 ```
-React + ReactFlow + Zustand             GPUI + gpui-component
-            │                          │                 │
-     Tauri commands            Desktop service       Graph model
-            │                          │              (pure Rust)
-            └──────────────┬───────────┘
-                   thoughttree-core
-               ACP sessions and permissions
-               Vault files and guarded saves
-               Recovery and provider discovery
-                           │
-           codex-acp or bundled claude-code-acp
+            GPUI + gpui-component
+            │                   │
+     Desktop service        Graph model
+            │               (pure Rust)
+     thoughttree-core
+ ACP sessions and permissions
+ Vault files and guarded saves
+ Recovery and provider discovery
+            │
+codex-acp or bundled claude-code-acp
 ```
 
 ThoughtTree uses the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) to communicate with Codex and Claude Code.
@@ -183,10 +174,10 @@ Automatic node headings use the default provider: Codex Luna or Claude Haiku.
 
 `thoughttree-gpui-model` owns native Graph edits, undo history, layout, search, import, and Project format migrations.
 `thoughttree-desktop` connects the native interface to the shared core through asynchronous events.
-Neither crate depends on Tauri or GPUI.
+Neither crate depends on GPUI.
 `thoughttree-gpui` owns the canvas, native controls, dialogs, and rich text rendering.
 
-Both desktop apps share settings by default.
+Settings live in `config.json` in the app data directory, `~/Library/Application Support/com.david.thoughttree` on macOS.
 `THOUGHTTREE_CONFIG_DIR` selects a separate directory for `config.json`.
 `THOUGHTTREE_LOCAL_STATE_DIR` selects separate recovery and lock storage.
 These overrides support isolated tests and development sessions.
@@ -218,6 +209,4 @@ This check sends two small prompts from a temporary directory.
 ## Resources
 
 - [Agent Client Protocol](https://agentclientprotocol.com/)
-- [ReactFlow Docs](https://reactflow.dev/)
-- [Tauri v2 Docs](https://v2.tauri.app/)
 - [GPUI](https://gpui.rs/)
