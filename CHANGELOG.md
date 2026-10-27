@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0
+
+- The desktop app is now the native app. It replaces the Tauri app on macOS. Your projects and settings carry over. Linux and Windows users stay on v0.6.0.
+- Releases now ship one macOS arm64 DMG, `ThoughtTree_0.7.0_aarch64.dmg`. The app has an ad-hoc signature and is not notarized, so macOS blocks the first launch until you choose Open Anyway in System Settings > Privacy & Security. Releases no longer include Tauri builds.
+
 ## 0.6.0
 
 - Final Tauri release. macOS moves to the native app from v0.7.0. Linux and Windows stay on v0.6.0 until native builds exist. v0.6.0 gets no further security or dependency fixes.
