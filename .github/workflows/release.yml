@@ -4,59 +4,85 @@ on:
   push:
     tags:
       - 'v*'
+  # A pull request that changes the release path, or a manual run, builds the DMG without publishing it.
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/build-dmg.sh
+      - scripts/build-gpui.sh
+      - scripts/build-sidecar.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  release:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-            sidecar_target: 'darwin-arm64'
-          - platform: ubuntu-22.04
-            args: '--bundles deb,rpm'
-            sidecar_target: 'linux-x64'
-          - platform: windows-latest
-            args: ''
-            sidecar_target: 'windows-x64'
-
-    runs-on: ${{ matrix.platform }}
-
+  build:
+    name: Build macOS DMG
+    runs-on: macos-latest
+    outputs:
+      dmg: ${{ steps.dmg.outputs.name }}
+    # No caches: a release builds from a clean state.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          no-cache: true
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-
-      - name: Install dependencies (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Install frontend dependencies
+      - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build sidecar
-        run: bun run build:sidecar -- ${{ matrix.sidecar_target }}
+      - name: Build Claude adapter
+        run: bun run build:sidecar
 
-      - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+      - name: Build application bundle
+        run: ./scripts/build-gpui.sh
+
+      - name: Package DMG
+        id: dmg
+        # On a tag, the script fails before packaging when the tag differs from the bundle version.
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            dmg="$(./scripts/build-dmg.sh --tag "$GITHUB_REF_NAME")"
+          else
+            dmg="$(./scripts/build-dmg.sh)"
+          fi
+          echo "path=$dmg" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$dmg")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v7
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'ThoughtTree ${{ github.ref_name }}'
-          releaseBody: 'See CHANGELOG.md for details.'
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
+          name: ${{ steps.dmg.outputs.name }}
+          path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build.outputs.dmg }}
+
+      - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DMG: ${{ needs.build.outputs.dmg }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" "$DMG"
+          --verify-tag
+          --title "ThoughtTree $GITHUB_REF_NAME"
+          --notes "See [CHANGELOG.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md) for the changes in this release."

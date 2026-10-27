@@ -42,7 +42,8 @@ Its version is the `thoughttree-gpui` crate version, which the script reads with
 Omit `--debug` for an optimized release build.
 Use `--debug --no-build` to package an existing debug executable after `cargo build`.
 The script respects `CARGO_TARGET_DIR` and uses an ad-hoc signature for local execution.
-It does not create a notarized distribution or installer.
+It does not notarize the app.
+After a release build, `scripts/build-dmg.sh` packages the bundle as the release DMG.
 
 ## Provider setup
 

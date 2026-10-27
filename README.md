@@ -33,15 +33,14 @@ Gemini is no longer an available provider. Saved Gemini messages remain readable
 
 ## Download and Install
 
-ThoughtTree is currently available for macOS:
+For macOS on Apple silicon, download `ThoughtTree_<version>_aarch64.dmg` from [GitHub Releases](https://github.com/davidchris/thoughttree/releases).
 
-* **macOS:** Download the `.dmg` from [GitHub Releases](https://github.com/davidchris/thoughttree/releases)
+1. Open the `.dmg` file.
+2. Drag **ThoughtTree** onto the **Applications** link.
+3. Open ThoughtTree. The app has an ad-hoc signature and is not notarized, so macOS blocks the first launch. Open **System Settings > Privacy & Security** and select **Open Anyway**.
 
-After downloading:
-
-1. Double-click the `.dmg` file.
-2. Drag ThoughtTree to the Applications folder.
-3. Right-click ThoughtTree and select **Open** on the first launch. The app is not signed.
+From v0.7.0, the release contains the native GPUI app. It replaces the Tauri app on macOS and keeps your settings and recent Projects.
+v0.6.0 is the final release for Linux and Windows. It gets no further fixes.
 
 ## Build from Source
 
@@ -86,10 +85,31 @@ bun run build:sidecar
 The bundle is `target/release/bundle/ThoughtTree.app`.
 The script includes the Claude adapter when it exists.
 It applies a local signature. It does not notarize or publish the app.
-The manual **GPUI macOS bundle** workflow produces the same development bundle as a download artifact.
+
+Package the release bundle as the release DMG:
+
+```bash
+./scripts/build-dmg.sh
+```
+
+The DMG is `target/release/bundle/ThoughtTree_<version>_aarch64.dmg`.
+It contains `ThoughtTree.app` and a link to `/Applications`.
+
+### Release
+
+1. On a branch, run `./scripts/release.sh <version>` to update the version files.
+2. Merge the change through a pull request.
+3. Tag the squash commit `v<version>` and push the tag.
+
+The **Release** workflow then builds the DMG on macOS arm64.
+It stops before publishing when the tag does not match the bundle version.
+Otherwise it publishes the GitHub Release `ThoughtTree v<version>` with the DMG attached.
+A pull request that changes the workflow or the build scripts builds the same DMG as a workflow artifact and publishes nothing.
+A manual run of the workflow does the same.
 
 ### Tauri app
 
+Releases after v0.6.0 do not include the Tauri app.
 Build the existing desktop app:
 
 ```bash
