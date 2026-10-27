@@ -9110,7 +9110,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "filetime",
  "serde",
@@ -9175,7 +9175,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree-gpui"
-version = "0.5.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-channel",
