@@ -106,7 +106,7 @@ describe('GraphMutations.updateNode', () => {
     g = GraphMutations.addNode(g, a, { x: 0, y: 0 });
     g = GraphMutations.updateNode(g, 'a', { content: 'new', contentUpdatedAt: 42 });
     expect(g.nodes.get('a')?.content).toBe('new');
-    expect(g.nodes.get('a')?.contentUpdatedAt).toBe(42);
+    expect(g.nodes.get('a')).toMatchObject({ contentUpdatedAt: 42 });
     expect(g.nodes.get('a')?.timestamp).toBe(1);
   });
 
@@ -124,7 +124,7 @@ describe('GraphMutations.appendContent', () => {
     g = GraphMutations.addNode(g, a, { x: 0, y: 0 });
     g = GraphMutations.appendContent(g, 'a', ' world', 99);
     expect(g.nodes.get('a')?.content).toBe('hello world');
-    expect(g.nodes.get('a')?.contentUpdatedAt).toBe(99);
+    expect(g.nodes.get('a')).toMatchObject({ contentUpdatedAt: 99 });
   });
 });
 

@@ -1,32 +1,28 @@
 // @ts-check
 import js from "@eslint/js";
-import globals from "globals";
 import tseslint from "typescript-eslint";
 
-const TEST_FILES = ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "src/test/**"];
+const TEST_FILES = ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}"];
 
 export default tseslint.config(
   {
     ignores: [
       "dist/**",
       "node_modules/**",
-      "src-tauri/**",
       "target/**",
       ".sidecar-build/**",
       "**/vitest.config.ts",
-      "vite.config.ts",
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.{ts,tsx}", "packages/*/src/**/*.ts"],
+    files: ["packages/*/src/**/*.ts"],
     languageOptions: {
       parserOptions: {
         projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
-      globals: { ...globals.browser },
     },
     rules: {
       "@typescript-eslint/no-unused-vars": [

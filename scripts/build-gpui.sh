@@ -34,7 +34,7 @@ if [[ ! -x "$GPUI_BINARY" ]]; then
 fi
 
 GPUI_HOST="$(rustc -vV | sed -n 's/^host: //p')"
-GPUI_SIDECAR="$GPUI_ROOT/src-tauri/binaries/claude-code-acp-$GPUI_HOST"
+GPUI_SIDECAR="$GPUI_ROOT/binaries/claude-code-acp-$GPUI_HOST"
 if [[ "$(uname -s)" != Darwin ]]; then
     if [[ -x "$GPUI_SIDECAR" ]]; then
         cp "$GPUI_SIDECAR" "$GPUI_TARGET/$GPUI_PROFILE/claude-code-acp"
@@ -46,7 +46,7 @@ fi
 GPUI_BUNDLE="$GPUI_TARGET/$GPUI_PROFILE/bundle/ThoughtTree.app"
 mkdir -p "$GPUI_BUNDLE/Contents/MacOS" "$GPUI_BUNDLE/Contents/Resources"
 cp "$GPUI_BINARY" "$GPUI_BUNDLE/Contents/MacOS/thoughttree-gpui"
-cp "$GPUI_ROOT/src-tauri/icons/icon.icns" "$GPUI_BUNDLE/Contents/Resources/icon.icns"
+cp "$GPUI_ROOT/crates/thoughttree-gpui/resources/icon.icns" "$GPUI_BUNDLE/Contents/Resources/icon.icns"
 if [[ -x "$GPUI_SIDECAR" ]]; then
     cp "$GPUI_SIDECAR" "$GPUI_BUNDLE/Contents/MacOS/claude-code-acp"
 else

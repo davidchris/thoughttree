@@ -5,14 +5,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_ROOT/.sidecar-build"
-BINARIES_DIR="$PROJECT_ROOT/src-tauri/binaries"
+BINARIES_DIR="$PROJECT_ROOT/binaries"
 
 # Target can be passed as argument: darwin-arm64, darwin-x64, linux-x64, windows-x64
 TARGET="${1:-auto}"
 
 build_target() {
     local bun_target="$1"
-    local tauri_triple="$2"
+    local rust_triple="$2"
     local ext="${3:-}"
 
     echo "Building for $bun_target..."
@@ -20,7 +20,7 @@ build_target() {
         --compile \
         --minify \
         --target="$bun_target" \
-        --outfile "$BINARIES_DIR/claude-code-acp-${tauri_triple}${ext}"
+        --outfile "$BINARIES_DIR/claude-code-acp-${rust_triple}${ext}"
 }
 
 detect_platform() {

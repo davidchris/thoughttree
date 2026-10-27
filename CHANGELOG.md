@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Removed the Tauri app (`src/`, `src-tauri/`) from the repository. The native app is the only desktop app. `packages/graph-model` stays, so a test can prove that v0.6.0 opens Projects the native app saves.
+- `bun run build:sidecar` now writes the Claude sidecar to `binaries/` instead of `src-tauri/binaries/`. Run it again in an existing clone. `src-tauri/` holds only old build output and can be deleted.
+
 ## 0.7.0
 
 - The desktop app is now the native app. It replaces the Tauri app on macOS. Your projects and settings carry over. Linux and Windows users stay on v0.6.0.

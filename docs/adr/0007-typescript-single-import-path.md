@@ -1,7 +1,14 @@
 # ADR 0007: TypeScript single import path
 
-- Status: Accepted
+- Status: Superseded by [ADR 0010](0010-gpui-only-desktop-frontend.md)
 - Date: 2026-09-02
+
+> Superseded on 2026-10-27. The Tauri app, the only user of this import path,
+> left the repository. The native app parses Kagi exports and builds the Graph
+> in Rust (`crates/thoughttree-gpui-model/src/import.rs`). The TypeScript
+> parser stays in `packages/graph-model` with the Project reader of v0.6.0, and
+> `crates/thoughttree-gpui-model/tests/parity.rs` checks that both parsers
+> build the same Graph.
 
 ## Context
 

@@ -1,5 +1,13 @@
 //! Tidy (Layered) behaviour, and exact parity with the TypeScript Tidy through
 //! the shared fixture in `fixtures/layout/`.
+//!
+//! The TypeScript Tidy and its fixture generator are gone, so the `expected`
+//! positions in `fixtures/layout/` are golden values. To update a golden after
+//! an intended layout change, run
+//! `cargo test -p thoughttree-gpui-model --test layout`. Each failure names the
+//! fixture file and the node, with the new position (`left`) and the golden
+//! (`right`). Make sure that the new position is correct, write it into the
+//! `expected` entry of that node, and run the test again until it passes.
 
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -281,7 +289,7 @@ fn layout_is_deterministic_on_the_grid_and_keeps_every_node_and_edge() {
 #[test]
 fn layout_drops_duplicate_edges_by_the_same_key_as_typescript() {
     // "a" -> "b\0c" and "a\0b" -> "c" share the TypeScript key "a\0b\0c", so
-    // only the first counts; c stays a separate root, as in the Tauri Tidy.
+    // only the first counts; c stays a separate root, as in the TypeScript Tidy.
     let nodes = [
         node("a", 0., 0.),
         node("b\0c", 0., 0.),

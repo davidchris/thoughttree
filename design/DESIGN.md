@@ -103,16 +103,3 @@ Same tokens, same rules. Differences allowed:
 ## Copy tone
 
 Short declaratives. No hype, no exclamation marks, no "powerful", no "seamless". Say what happens.
-
-## Migration notes for the app
-
-Current app CSS (checked 2026-09):
-- No CSS variables. Hex values inline, ~25 distinct.
-- Blue `#3b82f6`/`#60a5fa` on user nodes, buttons, badges. Green `#22c55e`/`#4ade80` on assistant nodes and badges. Both become mint; role moves to fill vs outline.
-- Backgrounds `#0f0f17`, `#1a1a2e`, `#0d0d1a` map to `--tt-bg`, `--tt-surface`, `--tt-bg`.
-- Text `#e0e0e0`, `#cdd6f4` map to `--tt-text`. `#a6adc8`, `#bac2de` map to `--tt-text-muted`.
-- Radii 3/4/6/8/9/12px collapse to 6px, 4px for kbd.
-- Node border colour by role becomes the role dot.
-- Replace `src-tauri/icons/*` from `logo.svg`.
-
-Suggested order: import `tokens.css` in `App.css`, replace hex values file by file starting with `Graph/styles.css`, then `SidePanel`, `Toolbar`, `Palette`, `SettingsDialog`. Keep the diff mechanical.
