@@ -33,8 +33,7 @@ fn find_sidecar_from(exe_dir: &Path, target_triple: &str) -> Option<PathBuf> {
     }
     exe_dir.ancestors().take(10).find_map(|dir| {
         [
-            dir.join("binaries")
-                .join(format!("claude-code-acp-{target_triple}")),
+            dir.join(format!("binaries/claude-code-acp-{target_triple}")),
             dir.join("target/debug/claude-code-acp"),
             dir.join("target/release/claude-code-acp"),
         ]
