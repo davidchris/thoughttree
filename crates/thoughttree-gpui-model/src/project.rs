@@ -219,6 +219,9 @@ fn legacy_graph(value: &Value) -> Result<Graph, ProjectError> {
         let Some(Value::Object(mut raw)) = data.get(id).cloned() else {
             continue;
         };
+        // Legacy ReactFlow ids are the keys, just as in the TypeScript migration.
+        // The node must carry the same id, or edges and prompts lose it.
+        raw.insert("id".into(), Value::String(id.into()));
         if !raw.contains_key("contentUpdatedAt") {
             let timestamp = raw.get("timestamp").cloned().unwrap_or(Value::Null);
             raw.insert("contentUpdatedAt".into(), timestamp);
@@ -236,7 +239,6 @@ fn legacy_graph(value: &Value) -> Result<Graph, ProjectError> {
                 .cloned()
                 .ok_or(ProjectError::Invalid("missing legacy position"))?,
         )?;
-        // Legacy ReactFlow ids are the keys, just as in the TypeScript migration.
         graph.nodes.insert(id.into(), node);
         graph.layout.insert(id.into(), position);
     }

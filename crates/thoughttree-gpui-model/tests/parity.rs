@@ -190,6 +190,17 @@ fn legacy_node_data_that_is_not_an_object_is_dropped() {
 }
 
 #[test]
+fn legacy_node_ids_follow_their_nodedata_keys() {
+    let source = json!({"version": 2, "nodes": [{"id":"a","position":{"x":0,"y":0}}, {"id":"b","position":{"x":0,"y":200}}], "edges": [{"id":"e","source":"a","target":"b"}], "nodeData": {"a": {"id":"x","role":"user","content":"q","timestamp":1}, "b": {"id":"y","role":"assistant","content":"","timestamp":2}}});
+    let project = Project::from_json(&source.to_string()).unwrap();
+    let reopened = Project::from_json(&project.to_json().unwrap()).unwrap();
+    for graph in [&project.graph, &reopened.graph] {
+        assert!(graph.nodes.iter().all(|(key, node)| *key == node.id));
+        assert_eq!(graph.conversation_path_ids("b"), ["a", "b"]);
+    }
+}
+
+#[test]
 fn current_versions_round_trip_settings_provenance_images_and_files() {
     let mut graph = text_graph();
     let NodeKind::User(user) = &mut graph.nodes["root"].kind else {
