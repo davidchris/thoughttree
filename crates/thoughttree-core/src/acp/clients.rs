@@ -3,8 +3,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionNotification, SessionUpdate,
+    ContentBlock, PermissionOption, PermissionOptionKind, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
+    SessionNotification, SessionUpdate,
 };
 use async_trait::async_trait;
 use futures::lock::Mutex;
@@ -188,6 +189,20 @@ impl<S: SessionEventSink> StreamingClient<S> {
     }
 }
 
+/// Approve exactly this request. An "always allow" option would make the
+/// adapter add a session-wide rule, so later requests never reach the policy.
+fn allow_once(options: &[PermissionOption]) -> RequestPermissionResponse {
+    let outcome = options
+        .iter()
+        .find(|option| option.kind == PermissionOptionKind::AllowOnce)
+        .map_or(RequestPermissionOutcome::Cancelled, |option| {
+            RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
+                option.option_id.clone(),
+            ))
+        });
+    RequestPermissionResponse::new(outcome)
+}
+
 #[async_trait]
 impl<S: SessionEventSink> SessionClient for StreamingClient<S> {
     async fn request_permission(
@@ -231,55 +246,48 @@ impl<S: SessionEventSink> SessionClient for StreamingClient<S> {
         // AUTO-APPROVE: Read-only search tools (within notes directory) and Skills
         let auto_approve_patterns = ["Read", "Grep", "Glob", "WebSearch", "Skill"];
         if auto_approve_patterns.iter().any(|p| tool_name.contains(p)) {
-            // For file operations, validate they're within notes_directory using canonicalization
-            // This prevents symlink-based path traversal attacks
-            if let Some(locations) = &args.tool_call.fields.locations {
-                let canonical_notes = match std::fs::canonicalize(&self.notes_directory) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        warn!("Failed to canonicalize notes directory: {}", e);
-                        return Ok(RequestPermissionResponse::new(
-                            RequestPermissionOutcome::Cancelled,
-                        ));
-                    }
-                };
+            // Only a request that names its paths can be checked against the
+            // Vault. The Claude adapter sends none, and titles Bash requests
+            // with the command itself, so an unlocated request is denied.
+            let Some(locations) = args
+                .tool_call
+                .fields
+                .locations
+                .as_deref()
+                .filter(|locations| !locations.is_empty())
+            else {
+                warn!("Tool '{}' denied - no locations to check", tool_name);
+                return Ok(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Cancelled,
+                ));
+            };
 
-                for loc in locations {
-                    // Canonicalize the requested path to resolve symlinks
-                    let canonical_loc = match std::fs::canonicalize(&loc.path) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            warn!(
-                                "Tool '{}' denied - failed to canonicalize path {:?}: {}",
-                                tool_name, loc.path, e
-                            );
-                            return Ok(RequestPermissionResponse::new(
-                                RequestPermissionOutcome::Cancelled,
-                            ));
-                        }
-                    };
-
-                    if !canonical_loc.starts_with(&canonical_notes) {
-                        warn!(
-                            "Tool '{}' denied - path {:?} is outside notes directory",
-                            tool_name, loc.path
-                        );
-                        return Ok(RequestPermissionResponse::new(
-                            RequestPermissionOutcome::Cancelled,
-                        ));
-                    }
+            // Canonicalize both sides, so a symlink cannot escape the Vault.
+            let canonical_notes = match std::fs::canonicalize(&self.notes_directory) {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("Failed to canonicalize notes directory: {}", e);
+                    return Ok(RequestPermissionResponse::new(
+                        RequestPermissionOutcome::Cancelled,
+                    ));
+                }
+            };
+            for loc in locations {
+                let inside = std::fs::canonicalize(&loc.path)
+                    .is_ok_and(|path| path.starts_with(&canonical_notes));
+                if !inside {
+                    warn!(
+                        "Tool '{}' denied - path {:?} is outside notes directory",
+                        tool_name, loc.path
+                    );
+                    return Ok(RequestPermissionResponse::new(
+                        RequestPermissionOutcome::Cancelled,
+                    ));
                 }
             }
 
-            // Auto-approve by selecting first option
-            if let Some(first_opt) = args.options.first() {
-                info!("Auto-approving tool '{}'", tool_name);
-                return Ok(RequestPermissionResponse::new(
-                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                        first_opt.option_id.clone(),
-                    )),
-                ));
-            }
+            info!("Auto-approving tool '{}' once", tool_name);
+            return Ok(allow_once(&args.options));
         }
 
         // PROMPT USER: WebFetch (per-session approval)
@@ -561,6 +569,92 @@ mod tests {
                 PermissionOptionKind::AllowOnce,
             )],
         )
+    }
+
+    /// The options and order the Claude adapter sends with every request.
+    fn adapter_options() -> Vec<PermissionOption> {
+        vec![
+            PermissionOption::new(
+                "allow_always",
+                "Always Allow",
+                PermissionOptionKind::AllowAlways,
+            ),
+            PermissionOption::new("allow", "Allow", PermissionOptionKind::AllowOnce),
+            PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
+        ]
+    }
+
+    fn decide(
+        vault: &std::path::Path,
+        title: &str,
+        locations: Option<Vec<PathBuf>>,
+    ) -> RequestPermissionOutcome {
+        use agent_client_protocol::schema::v1::ToolCallLocation;
+
+        let mut fields = ToolCallUpdateFields::new().title(title);
+        if let Some(locations) = locations {
+            fields = fields.locations(
+                locations
+                    .into_iter()
+                    .map(ToolCallLocation::new)
+                    .collect::<Vec<_>>(),
+            );
+        }
+        let request = RequestPermissionRequest::new(
+            "session-1",
+            ToolCallUpdate::new("toolu_1", fields),
+            adapter_options(),
+        );
+        let client = StreamingClient::new(
+            RecordingSink::default(),
+            "node-42".to_string(),
+            "turn-42".to_string(),
+            PermissionBroker::new(),
+            vault.to_path_buf(),
+        );
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(client.request_permission(request))
+            .unwrap()
+            .outcome
+    }
+
+    #[test]
+    fn auto_approval_allows_once_and_only_for_located_vault_paths() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(vault.path().join("notes.md"), "hi").unwrap();
+        std::fs::write(outside.path().join("secret.md"), "key").unwrap();
+
+        match decide(
+            vault.path(),
+            "Read notes.md",
+            Some(vec![vault.path().join("notes.md")]),
+        ) {
+            RequestPermissionOutcome::Selected(selected) => {
+                assert_eq!(selected.option_id.0.as_ref(), "allow");
+            }
+            other => panic!("expected allow-once, got {other:?}"),
+        }
+        for (title, locations) in [
+            // The Claude adapter titles Bash with the command and sends no locations.
+            ("`cat Reading-list.md`", None),
+            ("Read File", None),
+            ("Read File", Some(vec![])),
+            (
+                "Read secret.md",
+                Some(vec![outside.path().join("secret.md")]),
+            ),
+        ] {
+            assert!(
+                matches!(
+                    decide(vault.path(), title, locations.clone()),
+                    RequestPermissionOutcome::Cancelled
+                ),
+                "{title} {locations:?}"
+            );
+        }
     }
 
     #[test]
