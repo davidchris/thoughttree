@@ -15,10 +15,17 @@ const DEV_SIDECAR_TRIPLE: &str = "x86_64-apple-darwin";
 #[cfg(not(target_os = "macos"))]
 const DEV_SIDECAR_TRIPLE: &str = "";
 
-/// Find the bundled claude-code-acp sidecar binary
+/// Find the bundled claude-code-acp sidecar binary. Only debug builds look
+/// for the development build: an installed app's ancestors include
+/// `/Applications`, `~/Downloads` and a DMG mount.
 pub fn find_sidecar_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    find_sidecar_from(exe.parent()?, DEV_SIDECAR_TRIPLE)
+    let dev_triple = if cfg!(debug_assertions) {
+        DEV_SIDECAR_TRIPLE
+    } else {
+        ""
+    };
+    find_sidecar_from(exe.parent()?, dev_triple)
 }
 
 /// The sidecar next to the executable (an app bundle), else the development
@@ -85,8 +92,9 @@ pub fn candidate_paths(
 }
 
 /// Find a provider's executable: first candidate path that exists.
-/// Security: Only checks known installation paths — no PATH/`which` lookup,
-/// which prevents PATH injection attacks.
+/// Security: the executable is found only in known installation paths, never
+/// through a PATH/`which` lookup. The child still inherits a PATH; see
+/// `adapter_command`.
 pub fn find_provider_executable(
     provider: &AgentProvider,
     custom_path: Option<&str>,
@@ -112,10 +120,9 @@ pub fn find_provider_executable(
         // nvm-managed npm globals: iterate known Node versions (no globbing).
         // Listing the versions dir costs a read_dir, so only scan it after
         // every other candidate missed.
-        std::fs::read_dir(home?.join(".nvm/versions/node"))
-            .ok()?
-            .flatten()
-            .map(|entry| entry.path().join("bin").join(descriptor.executable_name))
+        nvm_node_dirs(&home?)
+            .into_iter()
+            .map(|dir| dir.join("bin").join(descriptor.executable_name))
             .find(|path| path.exists())
     });
     match &found {
@@ -196,8 +203,9 @@ fn resolve_adapter_path(
     })
 }
 
-/// Config overrides for legacy adapters. Current adapters receive the same
-/// values through CODEX_CONFIG. Missing preferences preserve CLI defaults.
+/// `-c` config overrides, passed to every Codex adapter. Legacy adapters read
+/// them as arguments; `spawn_plain_adapter` also copies them into CODEX_CONFIG
+/// for current adapters. Missing preferences preserve CLI defaults.
 fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) -> Vec<String> {
     let mut args = Vec::new();
 
@@ -213,6 +221,29 @@ fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) ->
     }
 
     args
+}
+
+/// Node versions installed by nvm, newest first.
+fn nvm_node_dirs(home: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(home.join(".nvm/versions/node")) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<_> = entries.flatten().map(|entry| entry.path()).collect();
+    sort_newest_first(&mut dirs);
+    dirs
+}
+
+/// Compare `v22.1.0` as numbers, so it sorts before `v10.0.0` and `v9.0.0`.
+fn sort_newest_first(dirs: &mut [PathBuf]) {
+    dirs.sort_by_cached_key(|dir| {
+        let name = dir.file_name().and_then(|name| name.to_str()).unwrap_or("");
+        let version: Vec<u64> = name
+            .trim_start_matches('v')
+            .split('.')
+            .map(|part| part.parse().unwrap_or(0))
+            .collect();
+        std::cmp::Reverse(version)
+    });
 }
 
 /// Construct an adapter command shared by session startup and version probes.
@@ -234,11 +265,7 @@ fn adapter_command_with_path(path: &Path, inherited_path: Option<&std::ffi::OsSt
         PathBuf::from("/usr/local/bin"),
     ]);
     if let Some(home) = dirs::home_dir() {
-        if let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) {
-            let mut bins: Vec<_> = versions.flatten().map(|v| v.path().join("bin")).collect();
-            bins.sort();
-            paths.extend(bins);
-        }
+        paths.extend(nvm_node_dirs(&home).into_iter().map(|dir| dir.join("bin")));
     }
     // GUI launches may have no PATH at all; keep system tools available too.
     paths.extend([PathBuf::from("/usr/bin"), PathBuf::from("/bin")]);
@@ -410,6 +437,16 @@ mod tests {
         let bundled = exe_dir.join("claude-code-acp");
         std::fs::write(&bundled, "").unwrap();
         assert_eq!(find_sidecar_from(&exe_dir, triple), Some(bundled));
+    }
+
+    #[test]
+    fn nvm_versions_sort_newest_first_by_number() {
+        let mut dirs = ["v10.1.0", "v22.0.0", "v9.11.2", "v22.10.0"].map(PathBuf::from);
+        super::sort_newest_first(&mut dirs);
+        assert_eq!(
+            dirs,
+            ["v22.10.0", "v22.0.0", "v10.1.0", "v9.11.2"].map(PathBuf::from)
+        );
     }
 
     fn claude_descriptor() -> &'static crate::types::ProviderDescriptor {

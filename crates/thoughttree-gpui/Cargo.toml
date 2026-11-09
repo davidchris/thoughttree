@@ -1,6 +1,6 @@
 [package]
 name = "thoughttree-gpui"
-version = "0.7.0"
+version.workspace = true
 edition = "2021"
 publish = false
 description = "Native GPUI desktop frontend for ThoughtTree"

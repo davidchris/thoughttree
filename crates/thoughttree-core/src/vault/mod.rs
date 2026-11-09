@@ -576,6 +576,10 @@ mod tests {
             .map(|digit| {
                 std::process::Command::new(std::env::current_exe().unwrap())
                     .args(["--ignored", "--exact", "vault::tests::subprocess_writer"])
+                    .env(
+                        "THOUGHTTREE_LOCAL_STATE_DIR",
+                        super::local_state::root().unwrap(),
+                    )
                     .env("THOUGHTTREE_TEST_PROJECT", &path)
                     .env("THOUGHTTREE_TEST_DIGIT", digit)
                     .stdout(std::process::Stdio::null())
@@ -605,6 +609,10 @@ mod tests {
         fs::write(&path, "before").unwrap();
         let status = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--ignored", "--exact", "vault::tests::subprocess_writer"])
+            .env(
+                "THOUGHTTREE_LOCAL_STATE_DIR",
+                super::local_state::root().unwrap(),
+            )
             .env("THOUGHTTREE_TEST_PROJECT", &path)
             .env("THOUGHTTREE_TEST_CRASH", "1")
             .stdout(std::process::Stdio::null())

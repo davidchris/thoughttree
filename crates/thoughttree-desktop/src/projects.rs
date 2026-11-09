@@ -162,10 +162,11 @@ fn relative_name(root: &Path, path: &Path) -> String {
 }
 
 /// Match the existing desktop boundary for absolute picker paths and allow
-/// Vault-relative paths from the sidebar. Canonicalization rejects symlink
+/// Vault-relative paths from the sidebar. Only `.thoughttree` files qualify, so
+/// a Project save cannot replace a note. Canonicalization rejects symlink
 /// escapes, including a symlinked parent of a new Project file.
 fn validate_project_path(root: &Path, supplied: &Path) -> Result<PathBuf, VaultError> {
-    if supplied.as_os_str().is_empty()
+    if supplied.extension().and_then(|s| s.to_str()) != Some("thoughttree")
         || supplied
             .components()
             .any(|part| matches!(part, Component::ParentDir))

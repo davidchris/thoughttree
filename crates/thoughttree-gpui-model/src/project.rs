@@ -171,14 +171,15 @@ fn current_graph(value: &Value) -> Result<Graph, ProjectError> {
         ..Graph::default()
     };
     graph.edges = normalized_edges(value.get("edges"), &graph)?;
-    let layout: Vec<LayoutEntry> = serde_json::from_value(
-        value
-            .get("layout")
-            .cloned()
-            .ok_or(ProjectError::Invalid("missing graph layout"))?,
-    )?;
+    let layout = value
+        .get("layout")
+        .and_then(Value::as_array)
+        .ok_or(ProjectError::Invalid("missing graph layout"))?;
+    // serde_json writes a non-finite coordinate as null. Drop that entry, like
+    // any other unplaceable node, instead of failing the whole Project.
     graph.layout = layout
-        .into_iter()
+        .iter()
+        .filter_map(|entry| serde_json::from_value::<LayoutEntry>(entry.clone()).ok())
         .filter(|entry| entry.position.x.is_finite() && entry.position.y.is_finite())
         .map(|entry| (entry.id, entry.position))
         .collect();
@@ -216,18 +217,22 @@ fn legacy_graph(value: &Value) -> Result<Graph, ProjectError> {
         let Some(id) = flow.get("id").and_then(Value::as_str) else {
             continue;
         };
-        let Some(mut raw) = data.get(id).cloned() else {
+        let Some(Value::Object(mut raw)) = data.get(id).cloned() else {
             continue;
         };
-        if raw.get("contentUpdatedAt").is_none() {
-            raw["contentUpdatedAt"] = raw["timestamp"].clone();
+        // Legacy ReactFlow ids are the keys, just as in the TypeScript migration.
+        // The node must carry the same id, or edges and prompts lose it.
+        raw.insert("id".into(), Value::String(id.into()));
+        if !raw.contains_key("contentUpdatedAt") {
+            let timestamp = raw.get("timestamp").cloned().unwrap_or(Value::Null);
+            raw.insert("contentUpdatedAt".into(), timestamp);
         }
         if raw.get("role").and_then(Value::as_str) == Some("assistant")
-            && raw.get("provider").is_none()
+            && !raw.contains_key("provider")
         {
-            raw["provider"] = Value::String("claude-code".into());
+            raw.insert("provider".into(), Value::String("claude-code".into()));
         }
-        let Some(node) = normalize_node(&raw) else {
+        let Some(node) = normalize_node(&Value::Object(raw)) else {
             continue;
         };
         let position: Position = serde_json::from_value(
@@ -235,7 +240,6 @@ fn legacy_graph(value: &Value) -> Result<Graph, ProjectError> {
                 .cloned()
                 .ok_or(ProjectError::Invalid("missing legacy position"))?,
         )?;
-        // Legacy ReactFlow ids are the keys, just as in the TypeScript migration.
         graph.nodes.insert(id.into(), node);
         graph.layout.insert(id.into(), position);
     }

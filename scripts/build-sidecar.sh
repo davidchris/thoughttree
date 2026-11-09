@@ -4,7 +4,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-BUILD_DIR="$PROJECT_ROOT/.sidecar-build"
+# The adapter version and its dependency tree are pinned in package.json and bun.lock.
+ADAPTER_ENTRY="$PROJECT_ROOT/node_modules/@zed-industries/claude-code-acp/dist/index.js"
 BINARIES_DIR="$PROJECT_ROOT/binaries"
 
 # Target can be passed as argument: darwin-arm64, darwin-x64, linux-x64, windows-x64
@@ -16,7 +17,7 @@ build_target() {
     local ext="${3:-}"
 
     echo "Building for $bun_target..."
-    bun build ./node_modules/@zed-industries/claude-code-acp/dist/index.js \
+    bun build "$ADAPTER_ENTRY" \
         --compile \
         --minify \
         --target="$bun_target" \
@@ -64,17 +65,11 @@ if ! command -v bun &> /dev/null; then
     fi
 fi
 
-# Clean and create build directory
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
+if [ ! -f "$ADAPTER_ENTRY" ]; then
+    echo "Error: the pinned adapter is not installed. Run: bun install --frozen-lockfile"
+    exit 1
+fi
 mkdir -p "$BINARIES_DIR"
-
-cd "$BUILD_DIR"
-
-# Initialize and install the package
-echo "Installing @zed-industries/claude-code-acp..."
-bun init -y > /dev/null
-bun add @zed-industries/claude-code-acp
 
 # Auto-detect platform if not specified
 if [ "$TARGET" = "auto" ]; then
@@ -115,10 +110,6 @@ case "$TARGET" in
         exit 1
         ;;
 esac
-
-# Cleanup
-cd "$PROJECT_ROOT"
-rm -rf "$BUILD_DIR"
 
 echo "Sidecar binaries built successfully:"
 ls -lh "$BINARIES_DIR"/claude-code-acp-* 2>/dev/null || echo "(no binaries found)"

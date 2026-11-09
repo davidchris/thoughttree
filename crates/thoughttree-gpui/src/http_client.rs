@@ -20,6 +20,7 @@ use ureq::unversioned::{
 
 const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_REDIRECTS: u32 = 5;
+const USER_AGENT: &str = concat!("ThoughtTree/", env!("CARGO_PKG_VERSION"), " (GPUI)");
 
 pub struct NativeHttpClient {
     agent: ureq::Agent,
@@ -39,11 +40,11 @@ impl NativeHttpClient {
             .timeout_global(Some(Duration::from_secs(30)))
             .timeout_connect(Some(Duration::from_secs(10)))
             .max_redirects(MAX_REDIRECTS)
-            .user_agent("ThoughtTree/0.5 (GPUI)")
+            .user_agent(USER_AGENT)
             .build();
         Self {
             agent: ureq::Agent::with_parts(settings, DefaultConnector::new(), resolver),
-            user_agent: http::HeaderValue::from_static("ThoughtTree/0.5 (GPUI)"),
+            user_agent: http::HeaderValue::from_static(USER_AGENT),
         }
     }
 }

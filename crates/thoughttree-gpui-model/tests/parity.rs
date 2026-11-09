@@ -181,6 +181,26 @@ fn legacy_v1_and_v2_migration_preserves_layout_and_assumes_claude() {
 }
 
 #[test]
+fn legacy_node_data_that_is_not_an_object_is_dropped() {
+    for data in [json!("x"), json!(1), json!([1]), json!(null)] {
+        let source = json!({"version": 1, "nodes": [{"id":"a","position":{"x":0,"y":0}}, {"id":"b","position":{"x":0,"y":0}}], "edges": [], "nodeData": {"a": data, "b": {"id":"b","role":"user","content":"kept","timestamp":1}}});
+        let project = Project::from_json(&source.to_string()).unwrap();
+        assert_eq!(project.graph.nodes.keys().collect::<Vec<_>>(), ["b"]);
+    }
+}
+
+#[test]
+fn legacy_node_ids_follow_their_nodedata_keys() {
+    let source = json!({"version": 2, "nodes": [{"id":"a","position":{"x":0,"y":0}}, {"id":"b","position":{"x":0,"y":200}}], "edges": [{"id":"e","source":"a","target":"b"}], "nodeData": {"a": {"id":"x","role":"user","content":"q","timestamp":1}, "b": {"id":"y","role":"assistant","content":"","timestamp":2}}});
+    let project = Project::from_json(&source.to_string()).unwrap();
+    let reopened = Project::from_json(&project.to_json().unwrap()).unwrap();
+    for graph in [&project.graph, &reopened.graph] {
+        assert!(graph.nodes.iter().all(|(key, node)| *key == node.id));
+        assert_eq!(graph.conversation_path_ids("b"), ["a", "b"]);
+    }
+}
+
+#[test]
 fn current_versions_round_trip_settings_provenance_images_and_files() {
     let mut graph = text_graph();
     let NodeKind::User(user) = &mut graph.nodes["root"].kind else {
@@ -246,6 +266,30 @@ fn malformed_project_and_newer_version_fail_without_mutating_editor() {
     ));
     assert!(Project::from_json("{\"version\":5,\"graph\":{}}").is_err());
     assert_eq!(editor.project.graph.nodes.len(), 4);
+}
+
+#[test]
+fn non_finite_positions_are_dropped_on_load_and_refused_on_edit() {
+    let mut graph = text_graph();
+    graph.layout.insert(
+        "root".into(),
+        Position {
+            x: f64::NAN,
+            y: 0.0,
+        },
+    );
+    let saved = Project::from(graph).to_json().unwrap();
+    let project = Project::from_json(&saved).unwrap();
+    assert!(!project.graph.layout.contains_key("root"));
+    assert_eq!(project.graph.nodes.len(), 4);
+
+    let mut graph = project.graph;
+    let bad = Position {
+        x: 1.0,
+        y: f64::INFINITY,
+    };
+    assert!(graph.set_position("left", bad).is_err());
+    assert!(graph.layout["left"].y.is_finite());
 }
 
 #[test]
@@ -399,6 +443,21 @@ fn failed_turn_keeps_partial_response_and_ignores_stale_errors() {
     assert!(editor.undo());
     assert_eq!(editor.project.graph.nodes["left"], response);
     assert!(!editor.fail_turn("left", "current", "late error"));
+}
+
+#[test]
+fn failing_a_turn_whose_node_was_removed_still_ends_the_turn() {
+    let mut editor = Editor::new(Project::from(text_graph()));
+    editor.start_turn("left", "current").unwrap();
+    editor
+        .edit(|project| {
+            project.graph.remove_node("left");
+            Ok(())
+        })
+        .unwrap();
+    editor.fail_turn("left", "current", "connection closed");
+    assert!(editor.active_turns.is_empty());
+    assert!(editor.undo());
 }
 
 #[test]

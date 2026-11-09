@@ -1,7 +1,7 @@
 {
   "name": "thoughttree",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "workspaces": [
     "packages/*"
@@ -17,6 +17,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.10",
+    "@zed-industries/claude-code-acp": "0.16.2",
     "eslint": "^10.10.0",
     "typescript": "~5.8",
     "typescript-eslint": "^8.70.0",

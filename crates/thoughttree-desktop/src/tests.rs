@@ -222,6 +222,15 @@ fn project_boundary_rejects_traversal_and_outside_picker_paths() {
         ));
     }
     assert_eq!(fs::read_to_string(outside).unwrap(), "untouched");
+
+    // A Project save can replace only a Project file, never a note.
+    let note = desktop.notes_directory().unwrap().join("note.md");
+    fs::write(&note, "untouched").unwrap();
+    assert!(matches!(
+        desktop.save_project(&note, "modified", None),
+        Err(VaultError::InvalidPath)
+    ));
+    assert_eq!(fs::read_to_string(note).unwrap(), "untouched");
 }
 
 #[cfg(unix)]

@@ -61,7 +61,8 @@ impl Editor {
         }
     }
 
-    /// One user operation is one undo step. A rejected operation restores the
+    /// Each call is one undo step, so a caller that edits per keystroke records
+    /// one step per keystroke. A rejected operation restores the
     /// previous Graph and leaves selection, dirty state and redo untouched.
     pub fn edit<T>(
         &mut self,
@@ -210,13 +211,22 @@ impl Editor {
         if !self.matches_turn(node_id, turn_id) {
             return false;
         }
-        let Some(node) = self.project.graph.nodes.get_mut(node_id) else {
-            return false;
-        };
-        let NodeKind::Assistant(assistant) = &mut node.kind else {
-            return false;
+        // The node may have been removed while it streamed. The Turn still
+        // ends, or undo and Project replacement stay refused for the session.
+        let Some(assistant) =
+            self.project
+                .graph
+                .nodes
+                .get_mut(node_id)
+                .and_then(|node| match &mut node.kind {
+                    NodeKind::Assistant(assistant) => Some(assistant),
+                    _ => None,
+                })
+        else {
+            return self.finish_turn(node_id, turn_id);
         };
         assistant.incomplete = true;
+        let node = &mut self.project.graph.nodes[node_id];
         node.content.push_str(&format!("\n\n[Error: {error}]"));
         node.content_updated_at = Some(now_ms());
         node.summary_timestamp = None;
@@ -249,6 +259,9 @@ impl Editor {
     }
 
     pub fn is_node_blocked(&self, node_id: &str) -> bool {
+        if self.active_turns.is_empty() {
+            return false;
+        }
         let ancestors = self.project.graph.ancestors(node_id);
         let descendants = self.project.graph.descendants(node_id);
         self.active_turns

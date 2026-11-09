@@ -201,7 +201,7 @@ The app uses live model discovery, with a static catalog for adapters that retur
 To check discovery, streaming, and node headings with your existing Codex login, run:
 
 ```bash
-cargo run -p thoughttree-core --example codex_smoke
+cargo run -p thoughttree-core --example acp_smoke -- codex
 ```
 
 This check sends two small prompts from a temporary directory.

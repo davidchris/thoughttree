@@ -21,9 +21,9 @@ echo "Updating version files to $VERSION..."
 sed -i '' "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" package.json
 echo "  Updated package.json"
 
-# Update the GPUI crate, whose version the app bundle reports
-sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" crates/thoughttree-gpui/Cargo.toml
-echo "  Updated crates/thoughttree-gpui/Cargo.toml"
+# Update the workspace version, which every crate and the app bundle report
+sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+echo "  Updated Cargo.toml"
 
 # Update the workspace entries in Cargo.lock
 echo "  Updating Cargo.lock..."

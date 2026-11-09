@@ -1,7 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.7.1
 
+- Security: the app no longer approves a tool request automatically unless the request names its files and every file is in your notes directory. With Claude Code, this stops a shell command or a read outside the notes directory from running without a prompt. An approval now applies to one request only, not to the rest of the session.
+- Security: automatic node headings deny every tool request.
+- Security: an installed app runs only the Claude adapter inside its bundle. It no longer searches parent folders for a development build.
+- Security: saving a Project can replace only a `.thoughttree` file, never a note.
+- Older Projects (format v1 and v2) with malformed node data now open instead of closing the app, and their links stay connected after a save.
+- A Project with one invalid node position now opens. The node loses only its position.
+- If a response fails after you delete its node, undo works again.
+- A click on the connect handle without a drag no longer shows a cycle error or makes an empty node.
+- Save and New keep the dots in a name. "notes.v2" is saved as "notes.v2.thoughttree", not "notes.thoughttree".
+- With several Node versions installed through nvm, the app uses the newest one.
+- The app reports its real version to providers and image hosts.
+- The Claude adapter in the app is pinned to version 0.16.2, with all its dependencies locked.
+- The graph does less work on each refresh and redraw when no response is streaming.
 - Removed the Tauri app (`src/`, `src-tauri/`) from the repository. The native app is the only desktop app. `packages/graph-model` stays, so a test can prove that v0.6.0 opens Projects the native app saves.
 - `bun run build:sidecar` now writes the Claude sidecar to `binaries/` instead of `src-tauri/binaries/`. Run it again in an existing clone. `src-tauri/` holds only old build output and can be deleted.
 

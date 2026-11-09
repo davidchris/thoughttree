@@ -37,7 +37,7 @@ open target/debug/bundle/ThoughtTree.app
 ```
 
 The bundle has the name `ThoughtTree` and the identifier `com.david.thoughttree`, the same identifier as the Tauri app.
-Its version is the `thoughttree-gpui` crate version, which the script reads with `cargo metadata` and `jq`.
+Its version is the `thoughttree-gpui` crate version, which the script reads with `cargo metadata` and `jq`. All crates share the workspace version in the root `Cargo.toml`.
 
 Omit `--debug` for an optimized release build.
 Use `--debug --no-build` to package an existing debug executable after `cargo build`.
@@ -58,7 +58,7 @@ scripts/build-gpui.sh --debug --no-build
 
 `bun run build:sidecar` writes `binaries/claude-code-acp-<target triple>`.
 The bundle script copies the current architecture's sidecar when it exists.
-On macOS, `cargo run` also finds it there.
+On macOS, a debug `cargo run` also finds it there. Release builds use only the sidecar next to the executable.
 It does not download, authenticate, or configure a provider.
 Codex uses its configured ACP adapter directly.
 

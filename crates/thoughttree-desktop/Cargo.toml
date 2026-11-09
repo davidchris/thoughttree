@@ -1,6 +1,6 @@
 [package]
 name = "thoughttree-desktop"
-version = "0.5.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.89"
 license = "MIT"
@@ -10,11 +10,11 @@ description = "Native desktop services for ThoughtTree, independent of any UI to
 async-channel = "2"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 thoughttree-core = { path = "../thoughttree-core" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
 walkdir = "2"
 
 [dev-dependencies]
 filetime = "0.2"
+serde_json = "1"
 tempfile = "3"

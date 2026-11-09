@@ -26,6 +26,8 @@ pub enum GraphError {
     NotAssistant,
     #[error("Wait for the current response to finish before changing its lineage")]
     ActiveTurn,
+    #[error("GraphNode positions must be finite numbers")]
+    NonFinitePosition,
 }
 
 impl Graph {
@@ -118,6 +120,9 @@ impl Graph {
     pub fn set_position(&mut self, id: &str, position: Position) -> Result<(), GraphError> {
         if !self.nodes.contains_key(id) {
             return Err(GraphError::MissingNode(id.into()));
+        }
+        if !(position.x.is_finite() && position.y.is_finite()) {
+            return Err(GraphError::NonFinitePosition);
         }
         self.layout.insert(id.into(), position);
         Ok(())

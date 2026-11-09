@@ -591,6 +591,16 @@ fn dragging_a_connection_to_blank_canvas_creates_a_downstream_user(cx: &mut Test
     let (_directory, workspace, cx, _events) = workspace(cx);
     cx.simulate_resize(size(px(1200.), px(900.)));
     cx.run_until_parked();
+    // A click on either half of the handle is not a connection.
+    for y in [318., 323.] {
+        let handle = graph_point(&workspace, cx, Position { x: 86., y });
+        cx.simulate_click(handle, Modifiers::default());
+    }
+    assert_eq!(
+        read_state(&workspace, cx).editor.project.graph.nodes.len(),
+        3
+    );
+    assert_eq!(workspace.read_with(cx, |this, _| this.notice.clone()), None);
     let source = graph_point(&workspace, cx, Position { x: 86., y: 320. });
     let drop = Position { x: 600., y: 420. };
     let target = graph_point(&workspace, cx, drop);
@@ -1518,7 +1528,7 @@ fn card_and_panel_generate_without_editing_and_preserve_their_preview_behavior(
         );
         this.refresh(cx);
     });
-    // GPUI 0.2.2 retains old debug bounds. Check absent role controls before a
+    // GPUI retains old debug bounds. Check absent role controls before a
     // user panel has ever mounted, then exercise both real generation buttons.
     for id in ["answer", "file"] {
         cx.update(|window, cx| {

@@ -23,7 +23,7 @@ bun run test:run
 # Before committing Rust changes (CI enforces all three)
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo test --workspace   # off macOS add --exclude thoughttree-gpui, as just verify does
 ```
 
 ## Lint Rules

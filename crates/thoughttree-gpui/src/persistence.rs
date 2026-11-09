@@ -309,8 +309,8 @@ impl Workspace {
                     return;
                 }
                 match result {
-                    Ok(Ok(Some(mut path))) => {
-                        path.set_extension("thoughttree");
+                    Ok(Ok(Some(path))) => {
+                        let path = with_project_extension(path);
                         this.save_to_new_path(path, cx);
                     }
                     Ok(Ok(None)) => {}
@@ -416,8 +416,8 @@ impl Workspace {
                     return;
                 }
                 match result {
-                    Ok(Ok(Some(mut path))) => {
-                        path.set_extension("thoughttree");
+                    Ok(Ok(Some(path))) => {
+                        let path = with_project_extension(path);
                         this.replace_after_io(
                             move |desktop| new_empty_project(desktop, path),
                             window,
@@ -759,6 +759,18 @@ fn import_kagi_project(path: PathBuf) -> Result<LoadedProject, String> {
     })
 }
 
+/// Append `.thoughttree` unless the chosen name already ends in it. Replacing
+/// the extension would turn "notes.v2" into "notes.thoughttree".
+fn with_project_extension(mut path: PathBuf) -> PathBuf {
+    if path.extension().is_some_and(|ext| ext == "thoughttree") {
+        return path;
+    }
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".thoughttree");
+    path.set_file_name(name);
+    path
+}
+
 fn project_title(path: &std::path::Path) -> String {
     path.file_stem()
         .unwrap_or_default()
@@ -768,7 +780,22 @@ fn project_title(path: &std::path::Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::Transition;
+    use super::{with_project_extension, Transition};
+    use std::path::PathBuf;
+
+    #[test]
+    fn save_dialog_names_keep_their_dots() {
+        for (chosen, saved) in [
+            ("/v/notes.v2", "/v/notes.v2.thoughttree"),
+            ("/v/plan", "/v/plan.thoughttree"),
+            ("/v/plan.thoughttree", "/v/plan.thoughttree"),
+        ] {
+            assert_eq!(
+                with_project_extension(PathBuf::from(chosen)),
+                PathBuf::from(saved)
+            );
+        }
+    }
 
     #[test]
     fn an_earlier_open_cannot_replace_a_later_request_or_edited_graph() {
