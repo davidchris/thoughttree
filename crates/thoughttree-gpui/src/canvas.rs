@@ -816,7 +816,6 @@ impl Render for GraphCanvas {
         .size_full();
         let cards: Vec<_> = self
             .nodes
-            .clone()
             .iter()
             .filter(|(_, p)| {
                 let p = view.screen(*p);
