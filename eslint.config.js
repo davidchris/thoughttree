@@ -2,7 +2,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
-const TEST_FILES = ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}"];
+const TEST_FILES = ["**/*.test.ts", "**/*.spec.ts"];
 
 export default tseslint.config(
   {
