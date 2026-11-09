@@ -379,7 +379,7 @@ impl SessionClient for ModelDiscoveryClient {
     }
 }
 
-/// Simple ACP client for summarization - collects response text, auto-approves all tools
+/// ACP client for summarization: collects response text and denies every tool.
 pub struct SummaryClient {
     pub response_text: Arc<Mutex<String>>,
 }
@@ -398,38 +398,16 @@ impl Default for SummaryClient {
     }
 }
 
-/// Summary generation is background work, so keep tool access extremely strict.
-/// Deny-by-default and only allow explicit read-only discovery tools.
-pub fn is_allowed_summary_tool(tool_name: &str) -> bool {
-    const ALLOWED_PATTERNS: [&str; 3] = ["Read", "Grep", "Glob"];
-    ALLOWED_PATTERNS
-        .iter()
-        .any(|pattern| tool_name.contains(pattern))
-}
-
 #[async_trait]
 impl SessionClient for SummaryClient {
     async fn request_permission(
         &self,
         args: RequestPermissionRequest,
     ) -> agent_client_protocol::Result<RequestPermissionResponse> {
+        // Summaries run in the background with no user to ask, and the prompt
+        // needs no tools. A title cannot prove a request is read-only.
         let tool_name = args.tool_call.fields.title.as_deref().unwrap_or("Unknown");
-        if !is_allowed_summary_tool(tool_name) {
-            warn!("[summary] denying tool request: {}", tool_name);
-            return Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Cancelled,
-            ));
-        }
-
-        // For explicitly allowed read-only tools, select the first option (typically Allow).
-        if let Some(first_opt) = args.options.first() {
-            return Ok(RequestPermissionResponse::new(
-                RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(
-                    first_opt.option_id.clone(),
-                )),
-            ));
-        }
-
+        warn!("[summary] denying tool request: {}", tool_name);
         Ok(RequestPermissionResponse::new(
             RequestPermissionOutcome::Cancelled,
         ))
@@ -460,7 +438,7 @@ mod tests {
         TextContent, ToolCall, ToolCallId, ToolCallUpdate, ToolCallUpdateFields, UsageUpdate,
     };
 
-    use super::{is_allowed_summary_tool, SessionClient, StreamingClient, SEGMENT_SEPARATOR};
+    use super::{SessionClient, StreamingClient, SummaryClient, SEGMENT_SEPARATOR};
     use crate::acp::provenance::{
         FileTurnReference, ProvenanceCompleteness, TurnOutcome, TurnReference,
         TurnReferenceRelation,
@@ -658,13 +636,24 @@ mod tests {
     }
 
     #[test]
-    fn test_summary_tool_allowlist_only_allows_read_tools() {
-        assert!(is_allowed_summary_tool("Read"));
-        assert!(is_allowed_summary_tool("Grep"));
-        assert!(is_allowed_summary_tool("Glob"));
-        assert!(!is_allowed_summary_tool("Bash"));
-        assert!(!is_allowed_summary_tool("Write"));
-        assert!(!is_allowed_summary_tool("WebFetch"));
+    fn summary_client_denies_every_tool_request() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        for title in ["Read File", "Grep", "`cat Reading-list.md`"] {
+            let request = RequestPermissionRequest::new(
+                "session-1",
+                ToolCallUpdate::new("toolu_1", ToolCallUpdateFields::new().title(title)),
+                adapter_options(),
+            );
+            let response = runtime
+                .block_on(SummaryClient::new().request_permission(request))
+                .unwrap();
+            assert!(
+                matches!(response.outcome, RequestPermissionOutcome::Cancelled),
+                "{title}"
+            );
+        }
     }
 
     #[test]
