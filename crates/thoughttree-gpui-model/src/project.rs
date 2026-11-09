@@ -171,14 +171,15 @@ fn current_graph(value: &Value) -> Result<Graph, ProjectError> {
         ..Graph::default()
     };
     graph.edges = normalized_edges(value.get("edges"), &graph)?;
-    let layout: Vec<LayoutEntry> = serde_json::from_value(
-        value
-            .get("layout")
-            .cloned()
-            .ok_or(ProjectError::Invalid("missing graph layout"))?,
-    )?;
+    let layout = value
+        .get("layout")
+        .and_then(Value::as_array)
+        .ok_or(ProjectError::Invalid("missing graph layout"))?;
+    // serde_json writes a non-finite coordinate as null. Drop that entry, like
+    // any other unplaceable node, instead of failing the whole Project.
     graph.layout = layout
-        .into_iter()
+        .iter()
+        .filter_map(|entry| serde_json::from_value::<LayoutEntry>(entry.clone()).ok())
         .filter(|entry| entry.position.x.is_finite() && entry.position.y.is_finite())
         .map(|entry| (entry.id, entry.position))
         .collect();

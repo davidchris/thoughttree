@@ -269,6 +269,30 @@ fn malformed_project_and_newer_version_fail_without_mutating_editor() {
 }
 
 #[test]
+fn non_finite_positions_are_dropped_on_load_and_refused_on_edit() {
+    let mut graph = text_graph();
+    graph.layout.insert(
+        "root".into(),
+        Position {
+            x: f64::NAN,
+            y: 0.0,
+        },
+    );
+    let saved = Project::from(graph).to_json().unwrap();
+    let project = Project::from_json(&saved).unwrap();
+    assert!(!project.graph.layout.contains_key("root"));
+    assert_eq!(project.graph.nodes.len(), 4);
+
+    let mut graph = project.graph;
+    let bad = Position {
+        x: 1.0,
+        y: f64::INFINITY,
+    };
+    assert!(graph.set_position("left", bad).is_err());
+    assert!(graph.layout["left"].y.is_finite());
+}
+
+#[test]
 fn invalid_file_metadata_is_dropped() {
     for (field, value) in [
         ("path", json!("C:\\secret")),
