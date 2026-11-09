@@ -11,6 +11,7 @@ export default tseslint.config(
       "node_modules/**",
       "target/**",
       ".sidecar-build/**",
+      ".claude/**",
       "**/vitest.config.ts",
     ],
   },
