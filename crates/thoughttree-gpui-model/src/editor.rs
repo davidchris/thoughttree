@@ -61,7 +61,8 @@ impl Editor {
         }
     }
 
-    /// One user operation is one undo step. A rejected operation restores the
+    /// Each call is one undo step, so a caller that edits per keystroke records
+    /// one step per keystroke. A rejected operation restores the
     /// previous Graph and leaves selection, dirty state and redo untouched.
     pub fn edit<T>(
         &mut self,

@@ -92,8 +92,9 @@ pub fn candidate_paths(
 }
 
 /// Find a provider's executable: first candidate path that exists.
-/// Security: Only checks known installation paths — no PATH/`which` lookup,
-/// which prevents PATH injection attacks.
+/// Security: the executable is found only in known installation paths, never
+/// through a PATH/`which` lookup. The child still inherits a PATH; see
+/// `adapter_command`.
 pub fn find_provider_executable(
     provider: &AgentProvider,
     custom_path: Option<&str>,
@@ -202,8 +203,9 @@ fn resolve_adapter_path(
     })
 }
 
-/// Config overrides for legacy adapters. Current adapters receive the same
-/// values through CODEX_CONFIG. Missing preferences preserve CLI defaults.
+/// `-c` config overrides, passed to every Codex adapter. Legacy adapters read
+/// them as arguments; `spawn_plain_adapter` also copies them into CODEX_CONFIG
+/// for current adapters. Missing preferences preserve CLI defaults.
 fn codex_config_args(model_id: Option<&str>, effort: Option<ReasoningEffort>) -> Vec<String> {
     let mut args = Vec::new();
 

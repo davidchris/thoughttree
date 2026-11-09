@@ -1518,7 +1518,7 @@ fn card_and_panel_generate_without_editing_and_preserve_their_preview_behavior(
         );
         this.refresh(cx);
     });
-    // GPUI 0.2.2 retains old debug bounds. Check absent role controls before a
+    // GPUI retains old debug bounds. Check absent role controls before a
     // user panel has ever mounted, then exercise both real generation buttons.
     for id in ["answer", "file"] {
         cx.update(|window, cx| {
