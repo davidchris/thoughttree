@@ -7090,7 +7090,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree-core"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -7119,7 +7119,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree-desktop"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "async-channel",
  "dirs 5.0.1",
@@ -7134,7 +7134,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree-gpui"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -7167,7 +7167,7 @@ dependencies = [
 
 [[package]]
 name = "thoughttree-gpui-model"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "indexmap 2.12.1",
  "regex",

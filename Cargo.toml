@@ -4,7 +4,7 @@ resolver = "2"
 
 # One version for every crate: the app, and what it reports to adapters and web servers.
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 
 [profile.release]
 lto = true
