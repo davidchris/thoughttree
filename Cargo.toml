@@ -2,6 +2,10 @@
 members = ["crates/thoughttree-core", "crates/thoughttree-gpui-model", "crates/thoughttree-desktop", "crates/thoughttree-gpui"]
 resolver = "2"
 
+# One version for every crate: the app, and what it reports to adapters and web servers.
+[workspace.package]
+version = "0.7.0"
+
 [profile.release]
 lto = true
 strip = true

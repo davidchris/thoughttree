@@ -37,7 +37,7 @@ open target/debug/bundle/ThoughtTree.app
 ```
 
 The bundle has the name `ThoughtTree` and the identifier `com.david.thoughttree`, the same identifier as the Tauri app.
-Its version is the `thoughttree-gpui` crate version, which the script reads with `cargo metadata` and `jq`.
+Its version is the `thoughttree-gpui` crate version, which the script reads with `cargo metadata` and `jq`. All crates share the workspace version in the root `Cargo.toml`.
 
 Omit `--debug` for an optimized release build.
 Use `--debug --no-build` to package an existing debug executable after `cargo build`.
