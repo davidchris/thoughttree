@@ -210,13 +210,22 @@ impl Editor {
         if !self.matches_turn(node_id, turn_id) {
             return false;
         }
-        let Some(node) = self.project.graph.nodes.get_mut(node_id) else {
-            return false;
-        };
-        let NodeKind::Assistant(assistant) = &mut node.kind else {
-            return false;
+        // The node may have been removed while it streamed. The Turn still
+        // ends, or undo and Project replacement stay refused for the session.
+        let Some(assistant) =
+            self.project
+                .graph
+                .nodes
+                .get_mut(node_id)
+                .and_then(|node| match &mut node.kind {
+                    NodeKind::Assistant(assistant) => Some(assistant),
+                    _ => None,
+                })
+        else {
+            return self.finish_turn(node_id, turn_id);
         };
         assistant.incomplete = true;
+        let node = &mut self.project.graph.nodes[node_id];
         node.content.push_str(&format!("\n\n[Error: {error}]"));
         node.content_updated_at = Some(now_ms());
         node.summary_timestamp = None;

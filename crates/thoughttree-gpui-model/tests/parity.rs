@@ -446,6 +446,21 @@ fn failed_turn_keeps_partial_response_and_ignores_stale_errors() {
 }
 
 #[test]
+fn failing_a_turn_whose_node_was_removed_still_ends_the_turn() {
+    let mut editor = Editor::new(Project::from(text_graph()));
+    editor.start_turn("left", "current").unwrap();
+    editor
+        .edit(|project| {
+            project.graph.remove_node("left");
+            Ok(())
+        })
+        .unwrap();
+    editor.fail_turn("left", "current", "connection closed");
+    assert!(editor.active_turns.is_empty());
+    assert!(editor.undo());
+}
+
+#[test]
 fn file_only_and_image_only_inputs_are_valid_but_empty_user_text_is_not() {
     let mut graph = Graph::default();
     graph.add_node(GraphNode::user("u", "  ", 1.0), Position::default());
