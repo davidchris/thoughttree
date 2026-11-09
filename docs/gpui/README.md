@@ -58,7 +58,7 @@ scripts/build-gpui.sh --debug --no-build
 
 `bun run build:sidecar` writes `binaries/claude-code-acp-<target triple>`.
 The bundle script copies the current architecture's sidecar when it exists.
-On macOS, `cargo run` also finds it there.
+On macOS, a debug `cargo run` also finds it there. Release builds use only the sidecar next to the executable.
 It does not download, authenticate, or configure a provider.
 Codex uses its configured ACP adapter directly.
 

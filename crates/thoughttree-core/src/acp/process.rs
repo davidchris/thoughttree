@@ -15,10 +15,17 @@ const DEV_SIDECAR_TRIPLE: &str = "x86_64-apple-darwin";
 #[cfg(not(target_os = "macos"))]
 const DEV_SIDECAR_TRIPLE: &str = "";
 
-/// Find the bundled claude-code-acp sidecar binary
+/// Find the bundled claude-code-acp sidecar binary. Only debug builds look
+/// for the development build: an installed app's ancestors include
+/// `/Applications`, `~/Downloads` and a DMG mount.
 pub fn find_sidecar_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    find_sidecar_from(exe.parent()?, DEV_SIDECAR_TRIPLE)
+    let dev_triple = if cfg!(debug_assertions) {
+        DEV_SIDECAR_TRIPLE
+    } else {
+        ""
+    };
+    find_sidecar_from(exe.parent()?, dev_triple)
 }
 
 /// The sidecar next to the executable (an app bundle), else the development
