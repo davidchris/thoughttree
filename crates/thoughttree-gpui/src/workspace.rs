@@ -262,12 +262,7 @@ impl Workspace {
                 )
             })
             .collect();
-        let blocked = graph
-            .nodes
-            .values()
-            .filter(|node| self.editor.is_node_blocked(&node.id))
-            .map(|node| node.id.clone())
-            .collect();
+        let blocked = self.editor.blocked_node_ids().into_iter().collect();
         let generation_blocked = graph
             .nodes
             .values()

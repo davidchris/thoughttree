@@ -258,6 +258,9 @@ impl Editor {
     }
 
     pub fn is_node_blocked(&self, node_id: &str) -> bool {
+        if self.active_turns.is_empty() {
+            return false;
+        }
         let ancestors = self.project.graph.ancestors(node_id);
         let descendants = self.project.graph.descendants(node_id);
         self.active_turns
