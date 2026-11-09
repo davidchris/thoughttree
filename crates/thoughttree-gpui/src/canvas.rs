@@ -20,6 +20,9 @@ use crate::{
     viewport::{snap, Viewport, NODE_HEIGHT, NODE_WIDTH},
 };
 
+/// Screen pixels a pointer may move and still count as a click.
+const CLICK_SLOP: f64 = 4.;
+
 #[derive(Clone)]
 pub enum GraphEvent {
     Select(Vec<String>),
@@ -52,6 +55,7 @@ enum Gesture {
     },
     Connect {
         source: String,
+        start: Position,
         cursor: Position,
     },
     Minimap {
@@ -421,8 +425,15 @@ impl GraphCanvas {
                     .collect();
                 cx.emit(GraphEvent::Select(self.selection.iter().cloned().collect()));
             }
-            Some(Gesture::Connect { source, .. }) => {
-                let local = self.viewport.graph(self.local(ev.position));
+            Some(Gesture::Connect { source, start, .. }) => {
+                let release = self.local(ev.position);
+                // A click on the handle, without a drag, is not a connection.
+                if (release.x - start.x).hypot(release.y - start.y) < CLICK_SLOP {
+                    self.guides.clear();
+                    cx.notify();
+                    return;
+                }
+                let local = self.viewport.graph(release);
                 let target = self
                     .nodes
                     .iter()
@@ -675,9 +686,11 @@ impl GraphCanvas {
                         cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
                             cx.stop_propagation();
                             if this.interactive && !blocked {
+                                let start = this.local(ev.position);
                                 this.gesture = Some(Gesture::Connect {
                                     source: source_id.clone(),
-                                    cursor: this.local(ev.position),
+                                    start,
+                                    cursor: start,
                                 });
                                 cx.notify();
                             }
@@ -721,7 +734,7 @@ impl Render for GraphCanvas {
             _ => None,
         };
         let connection = match &self.gesture {
-            Some(Gesture::Connect { source, cursor }) => {
+            Some(Gesture::Connect { source, cursor, .. }) => {
                 positions.get(source).map(|p| (*p, *cursor))
             }
             _ => None,
