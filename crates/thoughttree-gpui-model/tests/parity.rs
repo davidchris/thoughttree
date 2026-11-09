@@ -181,6 +181,15 @@ fn legacy_v1_and_v2_migration_preserves_layout_and_assumes_claude() {
 }
 
 #[test]
+fn legacy_node_data_that_is_not_an_object_is_dropped() {
+    for data in [json!("x"), json!(1), json!([1]), json!(null)] {
+        let source = json!({"version": 1, "nodes": [{"id":"a","position":{"x":0,"y":0}}, {"id":"b","position":{"x":0,"y":0}}], "edges": [], "nodeData": {"a": data, "b": {"id":"b","role":"user","content":"kept","timestamp":1}}});
+        let project = Project::from_json(&source.to_string()).unwrap();
+        assert_eq!(project.graph.nodes.keys().collect::<Vec<_>>(), ["b"]);
+    }
+}
+
+#[test]
 fn current_versions_round_trip_settings_provenance_images_and_files() {
     let mut graph = text_graph();
     let NodeKind::User(user) = &mut graph.nodes["root"].kind else {

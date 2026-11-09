@@ -216,18 +216,19 @@ fn legacy_graph(value: &Value) -> Result<Graph, ProjectError> {
         let Some(id) = flow.get("id").and_then(Value::as_str) else {
             continue;
         };
-        let Some(mut raw) = data.get(id).cloned() else {
+        let Some(Value::Object(mut raw)) = data.get(id).cloned() else {
             continue;
         };
-        if raw.get("contentUpdatedAt").is_none() {
-            raw["contentUpdatedAt"] = raw["timestamp"].clone();
+        if !raw.contains_key("contentUpdatedAt") {
+            let timestamp = raw.get("timestamp").cloned().unwrap_or(Value::Null);
+            raw.insert("contentUpdatedAt".into(), timestamp);
         }
         if raw.get("role").and_then(Value::as_str) == Some("assistant")
-            && raw.get("provider").is_none()
+            && !raw.contains_key("provider")
         {
-            raw["provider"] = Value::String("claude-code".into());
+            raw.insert("provider".into(), Value::String("claude-code".into()));
         }
-        let Some(node) = normalize_node(&raw) else {
+        let Some(node) = normalize_node(&Value::Object(raw)) else {
             continue;
         };
         let position: Position = serde_json::from_value(
